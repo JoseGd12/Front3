@@ -1,0 +1,61 @@
+diff --git a/Controllers/EntregasInsumosController.cs b/Controllers/EntregasInsumosController.cs
+index 0000000..0000000 100644
+--- a/Controllers/EntregasInsumosController.cs
++++ b/Controllers/EntregasInsumosController.cs
+@@ -69,16 +69,17 @@ namespace BarberiaApi.Controllers
+                     var producto = await _context.Productos.FindAsync(detInput.ProductoId);
+                     if (producto == null) return BadRequest($"Producto {detInput.ProductoId} no encontrado");
+ 
+-                    if (producto.StockVentas < detInput.Cantidad)
++                    if (producto.StockInsumos < detInput.Cantidad)
+                         return BadRequest($"Stock insuficiente para el producto {producto.Nombre}");
+ 
+                     var detalle = new DetalleEntregasInsumo
+                     {
+                         ProductoId = detInput.ProductoId,
+                         Cantidad = detInput.Cantidad,
+                         PrecioHistorico = producto.PrecioVenta 
+                     };
+@@ -84,8 +85,8 @@ namespace BarberiaApi.Controllers
+                     // Fix: Ensure we use value or 0 for decimal? to decimal addition
+                     valorTotal += (detalle.PrecioHistorico ?? 0) * detInput.Cantidad;
+ 
+-                    producto.StockVentas -= detInput.Cantidad;
+-                    producto.StockInsumos += detInput.Cantidad;
++                    producto.StockInsumos = Math.Max(0, producto.StockInsumos - detInput.Cantidad);
++                    producto.StockTotal = producto.StockVentas + producto.StockInsumos;
+ 
+                     entrega.DetalleEntregasInsumos.Add(detalle);
+                 }
+@@ -178,8 +179,8 @@ namespace BarberiaApi.Controllers
+                         var producto = await _context.Productos.FindAsync(detalle.ProductoId);
+                         if (producto != null)
+                         {
+-                            producto.StockVentas += detalle.Cantidad;
+-                            producto.StockInsumos = Math.Max(0, producto.StockInsumos - detalle.Cantidad);
++                            producto.StockInsumos += detalle.Cantidad;
++                            producto.StockTotal = producto.StockVentas + producto.StockInsumos;
+                         }
+                     }
+                 }
+@@ -191,16 +192,16 @@ namespace BarberiaApi.Controllers
+                         var producto = await _context.Productos.FindAsync(detalle.ProductoId);
+                         if (producto != null)
+                         {
+-                            if (producto.StockVentas >= detalle.Cantidad)
++                            if (producto.StockInsumos >= detalle.Cantidad)
+                             {
+-                                producto.StockVentas -= detalle.Cantidad;
+-                                producto.StockInsumos += detalle.Cantidad;
++                                producto.StockInsumos = Math.Max(0, producto.StockInsumos - detalle.Cantidad);
++                                producto.StockTotal = producto.StockVentas + producto.StockInsumos;
+                             }
+                             else
+                             {
+                                 await transaction.RollbackAsync();
+-                                return BadRequest($"Stock insuficiente para reactivar la entrega. Producto: {producto.Nombre}, Stock actual: {producto.StockVentas}, Requerido: {detalle.Cantidad}");
++                                return BadRequest($"Stock insuficiente para reactivar la entrega. Producto: {producto.Nombre}, Stock actual: {producto.StockInsumos}, Requerido: {detalle.Cantidad}");
+                             }
+                         }
+                     }
+                 }

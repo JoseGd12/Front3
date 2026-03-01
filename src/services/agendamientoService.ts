@@ -1,0 +1,234 @@
+const API_BASE_URL = '/api';
+
+export interface Agendamiento {
+    id: number;
+    clienteId: number;
+    clienteNombre: string;
+    clienteTelefono: string;
+    barberoId: number;
+    barberoNombre: string;
+    servicioId: number | null;
+    servicioNombre: string;
+    paqueteId: number | null;
+    paqueteNombre: string | null;
+    fecha: string;
+    hora: string;
+    duracion: number;
+    precio: number;
+    estado: string;
+    notas: string;
+}
+
+export interface CreateAgendamientoData {
+    clienteId: number;
+    barberoId: number;
+    servicioId: number | null;
+    paqueteId: number | null;
+    fecha: string;
+    hora: string;
+    duracion: number;
+    precio: number;
+    estado: string;
+    notas: string;
+}
+
+export interface UpdateAgendamientoData extends CreateAgendamientoData {
+    id: number;
+}
+
+class AgendamientoService {
+    private async request(endpoint: string, options: RequestInit = {}): Promise<Response> {
+        const url = `${API_BASE_URL}${endpoint}`;
+
+        const config: RequestInit = {
+            ...options,
+            headers: {
+                ...options.headers,
+                'Content-Type': 'application/json',
+            },
+        };
+
+        try {
+            const response = await fetch(url, config);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Error ${response.status}: ${errorText}`);
+            }
+            return response;
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+        }
+    }
+
+    mapApiToComponent(api: any): Agendamiento {
+        if (!api) return this.getDefaultAgendamiento();
+
+        const fechaHora = api.fechaHora || api.FechaHora || '';
+        const fecha = fechaHora.split('T')[0] || '';
+        const hora = (fechaHora.split('T')[1] || '').substring(0, 5);
+
+        // Extraer duración numérica (de "60 minutos" a 60)
+        let duracionNum = 60;
+        const durStr = api.duracion || api.Duracion;
+        if (typeof durStr === 'string') {
+            duracionNum = parseInt(durStr) || 60;
+        } else if (typeof durStr === 'number') {
+            duracionNum = durStr;
+        }
+
+        // Intento robusto de obtener nombres de cliente, barbero y servicio
+        const clienteNom = api.clienteNombre || api.ClienteNombre ||
+            (api.cliente ? `${api.cliente.nombre || api.cliente.nombres || ''} ${api.cliente.apellido || api.cliente.apellidos || ''}`.trim() : '') ||
+            'Cliente Desconocido';
+
+        const barberoNom = api.barberoNombre || api.BarberoNombre ||
+            (api.barbero ? `${api.barbero.nombre || api.barbero.nombres || ''} ${api.barbero.apellido || api.barbero.apellidos || ''}`.trim() : '') ||
+            'Barbero Desconocido';
+
+        const servicioNom = api.servicioNombre || api.ServicioNombre ||
+            api.servicio?.nombre || api.Servicio?.Nombre ||
+            (api.paqueteNombre || api.PaqueteNombre) || 'Servicio';
+
+        return {
+            id: Number(api.id || api.Id || 0),
+            clienteId: Number(api.clienteId || api.ClienteId || 0),
+            clienteNombre: clienteNom,
+            clienteTelefono: api.cliente?.telefono || api.Cliente?.Telefono || '',
+            barberoId: Number(api.barberoId || api.BarberoId || 0),
+            barberoNombre: barberoNom,
+            servicioId: api.servicioId || api.ServicioId ? Number(api.servicioId || api.ServicioId) : null,
+            servicioNombre: servicioNom,
+            paqueteId: api.paqueteId || api.PaqueteId ? Number(api.paqueteId || api.PaqueteId) : null,
+            paqueteNombre: api.paqueteNombre || api.PaqueteNombre || null,
+            fecha: fecha,
+            hora: hora,
+            duracion: duracionNum,
+            precio: api.precio || api.Precio || 0,
+            estado: api.estado || api.Estado || 'Pendiente',
+            notas: api.notas || api.Notas || ''
+        };
+    }
+
+    private getDefaultAgendamiento(): Agendamiento {
+        return {
+            id: 0, clienteId: 0, clienteNombre: 'Desconocido', clienteTelefono: '',
+            barberoId: 0, barberoNombre: 'Desconocido', servicioId: 0, servicioNombre: 'Servicio',
+            paqueteId: null, paqueteNombre: null,
+            fecha: '', hora: '', duracion: 60, precio: 0, estado: 'Pendiente', notas: ''
+        };
+    }
+
+    async getAgendamientos(): Promise<Agendamiento[]> {
+        const response = await this.request('/Agendamientos');
+        let text = await response.text();
+
+        if (!text || !text.trim()) return [];
+
+        try {
+            const data = JSON.parse(text);
+            return Array.isArray(data) ? data.map(item => this.mapApiToComponent(item)) : [];
+        } catch (e) {
+            console.warn('Reparando JSON truncado...');
+            const lastBrace = text.lastIndexOf('}');
+            if (lastBrace !== -1) {
+                try {
+                    const repaired = text.substring(0, lastBrace + 1) + ']';
+                    const data = JSON.parse(repaired);
+                    return Array.isArray(data) ? data.map(item => this.mapApiToComponent(item)) : [];
+                } catch { return []; }
+            }
+            return [];
+        }
+    }
+
+    async createAgendamiento(data: CreateAgendamientoData): Promise<Agendamiento> {
+        const [y, m, d] = (data.fecha || '').split('-').map(Number);
+        const [h, min] = (data.hora || '').split(':').map(Number);
+
+        // Validar que tengamos valores numéricos válidos
+        const safeY = y || new Date().getFullYear();
+        const safeM = m ? m - 1 : new Date().getMonth();
+        const safeD = d || new Date().getDate();
+        const safeH = h || 0;
+        const safeMin = min || 0;
+
+        const apiBody = {
+            ClienteId: data.clienteId,
+            BarberoId: data.barberoId,
+            ServicioId: data.servicioId,
+            PaqueteId: data.paqueteId,
+            FechaHora: new Date(safeY, safeM, safeD, safeH, safeMin).toISOString(),
+            Duracion: `${data.duracion} minutos`,
+            Precio: data.precio,
+            Notas: data.notas,
+            Estado: data.estado || 'Pendiente'
+        };
+
+        const response = await this.request('/Agendamientos', {
+            method: 'POST',
+            body: JSON.stringify(apiBody)
+        });
+        const result = await response.json();
+        return this.mapApiToComponent(result);
+    }
+
+    async deleteAgendamiento(id: number): Promise<void> {
+        // El usuario indica que PUT/DELETE ya funcionan en el servidor.
+        const response = await this.request(`/Agendamientos/${id}`, { method: 'DELETE' });
+
+        if (!response.ok) {
+            console.error(`Error al eliminar agendamiento ${id}:`, response.status);
+        }
+    }
+
+    async updateAgendamiento(id: number, data: CreateAgendamientoData): Promise<Agendamiento> {
+        const [y, m, d] = (data.fecha || '').split('-').map(Number);
+        const [h, min] = (data.hora || '').split(':').map(Number);
+
+        const safeY = y || new Date().getFullYear();
+        const safeM = m ? m - 1 : new Date().getMonth();
+        const safeD = d || new Date().getDate();
+        const safeH = h || 0;
+        const safeMin = min || 0;
+
+        const apiBody = {
+            Id: id,
+            ClienteId: data.clienteId,
+            BarberoId: data.barberoId,
+            ServicioId: data.servicioId,
+            PaqueteId: data.paqueteId,
+            FechaHora: new Date(safeY, safeM, safeD, safeH, safeMin).toISOString(),
+            Duracion: `${data.duracion} minutos`,
+            Precio: data.precio,
+            Notas: data.notas,
+            Estado: data.estado || 'Pendiente'
+        };
+
+        const response = await this.request(`/Agendamientos/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(apiBody)
+        });
+
+        // El backend devuelve NoContent (204), así que no intentamos parsear JSON
+        if (response.status === 204) {
+            return this.mapApiToComponent({
+                ...apiBody,
+                id: id
+            });
+        }
+
+        const result = await response.json();
+        return this.mapApiToComponent(result);
+    }
+
+    async updateAgendamientoStatus(id: number, estado: string): Promise<void> {
+        // El backend ahora usa un objeto CambioEstadoInput
+        await this.request(`/Agendamientos/${id}/estado`, {
+            method: 'PATCH',
+            body: JSON.stringify({ estado })
+        });
+    }
+}
+
+export const agendamientoService = new AgendamientoService();

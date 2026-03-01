@@ -1,0 +1,262 @@
+import { initializeApp } from "firebase/app";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  applyActionCode,
+  deleteUser,
+  signOut as firebaseSignOut,
+  User as FirebaseUser,
+  UserCredential,
+  ActionCodeSettings
+} from "firebase/auth";
+
+// Configuración de Firebase - Proyecto: appbarber-845d7
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCa6o15lvjvVMMY82cBd1kTV-AOQLh1qWU",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "appbarber-845d7.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "appbarber-845d7",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "appbarber-845d7.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "309607252500",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:309607252500:web:e78174aaa828a28c3fdd01",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-6RC0F5GYGC"
+};
+
+// Inicializar Firebase
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+
+// Interfaces para tipado
+export interface FirebaseAuthError {
+  code: string;
+  message: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  emailVerified: boolean;
+}
+
+// Servicio de Autenticación Firebase
+export class FirebaseAuthService {
+  private auth = auth;
+
+  private getEmailVerificationActionCodeSettings(): ActionCodeSettings {
+    return {
+      url: `${window.location.origin}/verify-email`,
+      handleCodeInApp: true
+    };
+  }
+
+  private getPasswordResetActionCodeSettings(): ActionCodeSettings {
+    return {
+      url: `${window.location.origin}/reset-password`,
+      handleCodeInApp: true
+    };
+  }
+
+  // Obtener usuario actual
+  getCurrentUser(): FirebaseUser | null {
+    return this.auth.currentUser;
+  }
+
+  // Observador de estado de autenticación
+  onAuthStateChanged(callback: (user: FirebaseUser | null) => void) {
+    return this.auth.onAuthStateChanged(callback);
+  }
+
+  // Login con email y contraseña
+  async signIn(email: string, password: string): Promise<UserCredential> {
+    try {
+      const result = await signInWithEmailAndPassword(this.auth, email, password);
+
+      // Temporalmente desactivada la verificación de email para pruebas
+      // TODO: Reactivar cuando el sistema esté en producción
+      /*
+      if (!result.user.emailVerified) {
+        console.warn('⚠️ Email no verificado. Se ha enviado un email de verificación.');
+        await this.sendEmailVerification();
+        throw new Error('Por favor, verifica tu email antes de iniciar sesión. Hemos enviado un email de verificación a ' + email);
+      }
+      */
+
+      return result;
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Registro con email y contraseña
+  async signUp(
+    email: string,
+    password: string,
+    options?: { sendVerification?: boolean }
+  ): Promise<UserCredential> {
+    try {
+      const result = await createUserWithEmailAndPassword(this.auth, email, password);
+
+      const shouldSendVerification = options?.sendVerification !== false;
+      if (shouldSendVerification) {
+        await this.sendEmailVerification();
+      }
+
+      return result;
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Login con Google
+  async signInWithGoogle(): Promise<UserCredential> {
+    try {
+      const result = await signInWithPopup(this.auth, googleProvider);
+      return result;
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Enviar email de verificación
+  async sendEmailVerification(): Promise<void> {
+    const user = this.auth.currentUser;
+    if (!user) {
+      throw new Error('No hay usuario autenticado');
+    }
+
+    try {
+      await sendEmailVerification(user, this.getEmailVerificationActionCodeSettings());
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Verificar email con código de acción
+  async verifyEmailWithCode(code: string): Promise<void> {
+    try {
+      await applyActionCode(this.auth, code);
+      const current = this.auth.currentUser;
+      if (current) {
+        await current.reload();
+      }
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Eliminar usuario específico de Firebase (rollback de registro)
+  async deleteUser(user: FirebaseUser): Promise<void> {
+    try {
+      const { deleteUser } = await import("firebase/auth");
+      await deleteUser(user);
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Eliminar usuario actual de Firebase (mantener compatibilidad)
+  async deleteCurrentUser(): Promise<void> {
+    const user = this.auth.currentUser;
+    if (!user) return;
+    return this.deleteUser(user);
+  }
+
+  // Recuperar contraseña
+  async resetPassword(email: string): Promise<void> {
+    try {
+      await sendPasswordResetEmail(this.auth, email, this.getPasswordResetActionCodeSettings());
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Verificar código de restablecimiento
+  async verifyPasswordResetCode(code: string): Promise<string> {
+    try {
+      const { verifyPasswordResetCode } = await import("firebase/auth");
+      return await verifyPasswordResetCode(this.auth, code);
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Confirmar nuevo password
+  async confirmPasswordReset(code: string, newPassword: string): Promise<void> {
+    try {
+      const { confirmPasswordReset } = await import("firebase/auth");
+      await confirmPasswordReset(this.auth, code, newPassword);
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Cerrar sesión
+  async signOut(): Promise<void> {
+    try {
+      await firebaseSignOut(this.auth);
+    } catch (error: any) {
+      throw this.handleAuthError(error);
+    }
+  }
+
+  // Obtener perfil de usuario
+  getUserProfile(user: FirebaseUser): UserProfile {
+    return {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+      emailVerified: user.emailVerified
+    };
+  }
+
+  // Manejar errores de autenticación
+  private handleAuthError(error: any): FirebaseAuthError {
+    const errorMap: { [key: string]: string } = {
+      'auth/user-not-found': 'Usuario no encontrado',
+      'auth/wrong-password': 'Contraseña incorrecta',
+      'auth/email-already-in-use': 'El email ya está en uso',
+      'auth/weak-password': 'La contraseña es muy débil',
+      'auth/invalid-email': 'Email inválido',
+      'auth/user-disabled': 'Usuario deshabilitado',
+      'auth/too-many-requests': 'Demasiados intentos. Intente más tarde',
+      'auth/network-request-failed': 'Error de conexión',
+      'auth/popup-closed-by-user': 'Ventana cerrada por el usuario',
+      'auth/popup-blocked': 'Ventana emergente bloqueada',
+      'auth/cancelled-popup-request': 'Solicitud cancelada',
+      'auth/invalid-action-code': 'El enlace ya no es válido o ya fue utilizado',
+      'auth/expired-action-code': 'El enlace ha expirado, solicita uno nuevo'
+    };
+
+    return {
+      code: error.code || 'unknown',
+      message: errorMap[error.code] || error.message || 'Error desconocido'
+    };
+  }
+
+  // Verificar si el email está verificado
+  isEmailVerified(): boolean {
+    const user = this.auth.currentUser;
+    return user?.emailVerified || false;
+  }
+
+  // Recargar usuario para actualizar estado de verificación
+  async reloadUser(): Promise<void> {
+    const user = this.auth.currentUser;
+    if (user) {
+      await user.reload();
+    }
+  }
+}
+
+// Exportar instancia del servicio
+export const firebaseAuthService = new FirebaseAuthService();
+
+export default app;

@@ -1,0 +1,13 @@
+{
+  "id": 4,
+  "nombre": "Cadena",
+  "descripcion": "",
+  "precioVenta": 5000,
+  "precioCompra": 5000,
+  "stockVentas": 11,
+  "stockInsumos": 1219,
+  "stockTotal": 1230,
+  "categoriaId": 12,
+  "estado": true,
+  "imagenProduc": "/assets/images/0e6530ea-1551-4cfa-9884-92e4d236edb4.png"
+}

@@ -1,0 +1,503 @@
+﻿import { useState, useEffect } from "react";
+import { Input } from "../ui/input";
+import { Scissors, Plus, Edit, Trash2, Search, Eye, ChevronLeft, ChevronRight, ToggleRight, ToggleLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { Label } from "../ui/label";
+import { Textarea } from "../ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../ui/alert-dialog";
+import { useCustomAlert } from "../ui/custom-alert";
+import { apiService, Servicio } from "../../services/api";
+
+
+export function ServiciosPage() {
+  const { created, edited, deleted, AlertContainer } = useCustomAlert();
+  const [servicios, setServicios] = useState<Servicio[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [editingServicio, setEditingServicio] = useState<Servicio | null>(null);
+  const [selectedServicio, setSelectedServicio] = useState<Servicio | null>(null);
+  const [servicioToDelete, setServicioToDelete] = useState<Servicio | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const itemsPerPage = 5;
+
+  // Cargar servicios desde la API
+  const loadServicios = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await apiService.getServicios();
+      setServicios(data);
+    } catch (err: any) {
+      console.error('Error cargando servicios:', err);
+      setError(err.message || 'Error al cargar los servicios');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadServicios();
+  }, []);
+
+  const [nuevoServicio, setNuevoServicio] = useState({
+    nombre: '',
+    descripcion: '',
+    duracion: 30,
+    precio: 0,
+    estado: true
+  });
+
+  const filteredServicios = servicios.filter(servicio => {
+    const matchesSearch = servicio.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      servicio.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch;
+  });
+
+  const totalPages = Math.ceil(filteredServicios.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const displayedServicios = filteredServicios.slice(startIndex, startIndex + itemsPerPage);
+
+
+  const handleCreateServicio = async () => {
+    try {
+      setSubmitting(true);
+      await apiService.createServicio(nuevoServicio);
+      await loadServicios(); // Recargar todos los servicios
+      setNuevoServicio({ nombre: '', descripcion: '', duracion: 30, precio: 0, estado: true });
+      setIsDialogOpen(false);
+
+      created("Servicio creado ✔️", `El servicio "${nuevoServicio.nombre}" ha sido agregado exitosamente.`);
+    } catch (err: any) {
+      console.error('Error creando servicio:', err);
+      setError(err.message || 'Error al crear el servicio');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEditServicio = (servicio: Servicio) => {
+    setEditingServicio(servicio);
+    setNuevoServicio({
+      nombre: servicio.nombre,
+      descripcion: servicio.descripcion,
+      duracion: servicio.duracion,
+      precio: servicio.precio,
+      estado: servicio.estado
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleUpdateServicio = async () => {
+    if (editingServicio) {
+      try {
+        setSubmitting(true);
+        await apiService.updateServicio(editingServicio.id, nuevoServicio);
+        await loadServicios(); // Recargar todos los servicios
+        setEditingServicio(null);
+        setNuevoServicio({ nombre: '', descripcion: '', duracion: 30, precio: 0, estado: true });
+        setIsDialogOpen(false);
+
+        edited("Servicio editado ✔️", `El servicio "${nuevoServicio.nombre}" ha sido actualizado exitosamente.`);
+      } catch (err: any) {
+        console.error('Error actualizando servicio:', err);
+        setError(err.message || 'Error al actualizar el servicio');
+      } finally {
+        setSubmitting(false);
+      }
+    }
+  };
+
+  const handleDeleteServicio = (servicio: Servicio) => {
+    setServicioToDelete(servicio);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (servicioToDelete) {
+      try {
+        await apiService.deleteServicio(servicioToDelete.id);
+        await loadServicios(); // Recargar todos los servicios
+        setIsDeleteDialogOpen(false);
+
+        deleted("Servicio eliminado ✔️", `El servicio "${servicioToDelete.nombre}" ha sido eliminado exitosamente del catálogo.`);
+        setServicioToDelete(null);
+      } catch (err: any) {
+        console.error('Error eliminando servicio:', err);
+        setError(err.message || 'Error al eliminar el servicio');
+      }
+    }
+  };
+
+  const toggleActivo = async (servicioId: number) => {
+    const servicio = servicios.find(s => s.id === servicioId);
+    if (!servicio) return;
+
+    const nuevoEstado = !servicio.estado;
+
+    // Actualización optimista local
+    setServicios(prev =>
+      prev.map(s => s.id === servicioId ? { ...s, estado: nuevoEstado, activo: nuevoEstado } : s)
+    );
+
+    try {
+      await apiService.updateServicioStatus(servicioId, nuevoEstado);
+      edited(`Servicio ${nuevoEstado ? 'activado' : 'desactivado'} ✔️`, `El servicio "${servicio.nombre}" ha sido ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente.`);
+    } catch (err: any) {
+      // Revertir si falla
+      setServicios(prev =>
+        prev.map(s => s.id === servicioId ? { ...s, estado: !nuevoEstado, activo: !nuevoEstado } : s)
+      );
+      console.error('Error actualizando estado del servicio:', err);
+      setError(err.message || 'Error al actualizar el estado del servicio');
+    }
+  };
+
+  return (
+    <>
+      <main className="flex-1 overflow-auto p-8 bg-black-primary">
+        {/* Tabla de Servicios */}
+        <div className="elegante-card">
+          {/* Controles y Filtros */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-dark">
+            <div className="flex flex-wrap items-center gap-4">
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    className="elegante-button-primary gap-2 flex items-center"
+                    onClick={() => {
+                      setEditingServicio(null);
+                      setNuevoServicio({ nombre: '', descripcion: '', duracion: 30, precio: 0, estado: true });
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nuevo Servicio
+                  </button>
+                </DialogTrigger>
+              </Dialog>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
+                <Input
+                  placeholder="Buscar servicios..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="elegante-input pl-11 w-80"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {/* Loading State */}
+            {loading && (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+                <h3 className="text-lg font-semibold text-white-primary mb-2">Cargando servicios...</h3>
+                <p className="text-gray-lightest">Por favor espera un momento</p>
+              </div>
+            )}
+
+            {/* Error State */}
+            {error && !loading && (
+              <div className="text-center py-8">
+                <div className="bg-red-500/20 border border-red-500 rounded-lg p-4 mb-4">
+                  <h3 className="text-lg font-semibold text-red-400 mb-2">Error al cargar los servicios</h3>
+                  <p className="text-red-300 mb-4">{error}</p>
+                  <button
+                    onClick={loadServicios}
+                    className="px-4 py-2 bg-orange-primary text-white rounded-lg hover:bg-orange-primary/80 transition-colors"
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Data Table */}
+            {!loading && !error && (
+              <>
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-dark">
+                      <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Servicio</th>
+                      <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Descripción</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Duración</th>
+                      <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Precio</th>
+                      <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedServicios.map((servicio) => (
+                      <tr key={servicio.id} className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
+                        <td className="py-4 px-4">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-xl bg-gray-medium flex items-center justify-center">
+                              <Scissors className="w-5 h-5 text-orange-primary" />
+                            </div>
+                            <span className="text-gray-lighter">{servicio.nombre}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className="text-gray-lighter">{servicio.descripcion}</span>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="text-gray-lighter">{servicio.duracion} min</span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <span className="text-gray-lighter">${(servicio.precio ?? 0).toLocaleString('es-CO')}</span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedServicio(servicio);
+                                setIsDetailDialogOpen(true);
+                              }}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Ver detalles"
+                            >
+                              <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
+                            </button>
+                            <button
+                              onClick={() => handleEditServicio(servicio)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Editar"
+                            >
+                              <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
+                            </button>
+                            <button
+                              onClick={() => toggleActivo(servicio.id)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Cambiar estado"
+                            >
+                              {servicio.estado ? (
+                                <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
+                              ) : (
+                                <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteServicio(servicio)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {displayedServicios.length === 0 && (
+                  <div className="text-center py-8">
+                    <Scissors className="w-16 h-16 text-gray-medium mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-white-primary mb-2">No se encontraron servicios</h3>
+                    <p className="text-gray-lightest">Intenta con otros términos de búsqueda</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Paginación */}
+          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
+            <div className="text-sm text-gray-lightest">
+              Página {currentPage} de {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4 text-gray-lightest" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4 text-gray-lightest" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Dialog de Creación/Edición */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-md w-full">
+            <DialogHeader>
+              <DialogTitle className="text-white-primary">
+                {editingServicio ? 'Editar Servicio' : 'Crear Nuevo Servicio'}
+              </DialogTitle>
+              <DialogDescription className="text-gray-lightest">
+                Completa la información del servicio
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label className="text-white-primary">Nombre del Servicio</Label>
+                <Input
+                  value={nuevoServicio.nombre}
+                  onChange={(e) => setNuevoServicio({ ...nuevoServicio, nombre: e.target.value })}
+                  placeholder="Ej: Corte Moderno"
+                  className="elegante-input"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white-primary">Descripción</Label>
+              <Textarea
+                value={nuevoServicio.descripcion}
+                onChange={(e) => setNuevoServicio({ ...nuevoServicio, descripcion: e.target.value })}
+                placeholder="Describe el servicio detalladamente"
+                className="elegante-input"
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white-primary">Duración (min)</Label>
+              <Input
+                type="number"
+                value={nuevoServicio.duracion}
+                onChange={(e) => setNuevoServicio({ ...nuevoServicio, duracion: parseInt(e.target.value) || 0 })}
+                className="elegante-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white-primary">Precio ($)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={nuevoServicio.precio}
+                onChange={(e) => setNuevoServicio({ ...nuevoServicio, precio: parseFloat(e.target.value) || 0 })}
+                className="elegante-input"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={nuevoServicio.estado}
+                onChange={(e) => setNuevoServicio({ ...nuevoServicio, estado: e.target.checked })}
+                className="rounded"
+              />
+              <Label className="text-white-primary">Servicio activo</Label>
+            </div>
+            <div className="flex justify-end space-x-3 pt-6 border-t border-gray-dark mt-6">
+              <button onClick={() => setIsDialogOpen(false)} className="elegante-button-secondary">
+                Cancelar
+              </button>
+              <button
+                onClick={editingServicio ? handleUpdateServicio : handleCreateServicio}
+                className="elegante-button-primary"
+                disabled={!nuevoServicio.nombre || submitting}
+              >
+                {submitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    {editingServicio ? 'Actualizando...' : 'Creando...'}
+                  </>
+                ) : (
+                  <>{editingServicio ? 'Actualizar' : 'Crear'} Servicio</>
+                )}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de Detalle */}
+        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-7xl overflow-visible">
+            <DialogHeader>
+              <DialogTitle className="text-white-primary">Detalle del Servicio</DialogTitle>
+              <DialogDescription className="text-gray-lightest">
+                Información completa del servicio
+              </DialogDescription>
+            </DialogHeader>
+            {selectedServicio && (
+              <div className="grid grid-cols-4 gap-6 pt-4">
+                <div className="col-span-4 flex items-center space-x-4 mb-4">
+                  <div className="w-16 h-16 rounded-xl bg-gray-medium flex items-center justify-center">
+                    <Scissors className="w-8 h-8 text-orange-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white-primary">{selectedServicio.nombre}</h3>
+                  </div>
+                </div>
+
+                <div className="col-span-4">
+                  <p className="text-sm text-gray-light mb-2">Descripción del Servicio</p>
+                  <div className="bg-gray-medium p-3 rounded-lg border border-gray-dark">
+                    <p className="text-white-primary">{selectedServicio.descripcion}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-light mb-2">Duración</p>
+                  <p className="font-semibold text-white-primary text-lg">{selectedServicio.duracion} min</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-light mb-2">Precio</p>
+                  <p className="font-semibold text-orange-primary text-lg">${(selectedServicio.precio ?? 0).toLocaleString('es-CO')}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-light mb-2">Estado del Servicio</p>
+                  <button
+                    onClick={() => toggleActivo(selectedServicio.id)}
+                    className={`px-3 py-1 rounded-lg text-xs transition-colors bg-gray-medium text-gray-lighter`}
+                  >
+                    {selectedServicio.estado ? 'ACTIVO' : 'INACTIVO'}
+                  </button>
+                </div>
+                <div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Diálogo de Confirmación para Eliminar */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent className="bg-gray-darkest border-gray-dark">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-white-primary flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-400" />
+                Confirmar Eliminación
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-gray-lightest">
+                ¿Estás seguro de que deseas eliminar el servicio{' '}
+                <span className="font-semibold text-orange-primary">
+                  "{servicioToDelete?.nombre}"
+                </span>?
+                <br />
+                <br />
+                <span className="text-red-400 font-medium">
+                  Esta acción no se puede deshacer.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="elegante-button-secondary">
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                className="bg-red-600 hover:bg-red-700 text-white border-red-600 hover:border-red-700"
+              >
+                Eliminar Servicio
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertContainer />
+      </main>
+    </>
+  );
+}
