@@ -1,0 +1,653 @@
+import React, { useState, useEffect } from "react";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import {
+  Tags,
+  Plus,
+  Edit,
+  Trash2,
+  Search,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  AlertCircle,
+  Power,
+  PowerOff,
+  ToggleRight,
+  ToggleLeft,
+  Hash
+} from "lucide-react";
+import { Switch } from "../ui/switch";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { Label } from "../ui/label";
+import { useCustomAlert } from "../ui/custom-alert";
+import { useDoubleConfirmation } from "../ui/double-confirmation";
+import { categoriaService, Categoria } from "../../services/categoriaService";
+import { productoService, ApiProducto } from "../../services/productos";
+
+
+export function CategoriasPage() {
+  const { created, edited, error: showAlertError, AlertContainer } = useCustomAlert();
+  const { confirmDeleteAction, DoubleConfirmationContainer } = useDoubleConfirmation();
+
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [selectedCategoria, setSelectedCategoria] = useState<Categoria | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(5);
+  const [error, setError] = useState('');
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("all");
+  const [productos, setProductos] = useState<ApiProducto[]>([]);
+
+  const [nuevaCategoria, setNuevaCategoria] = useState({
+    nombre: '',
+    descripcion: '',
+    estado: true
+  });
+
+  const [editCategoria, setEditCategoria] = useState({
+    nombre: '',
+    descripcion: '',
+    estado: true
+  });
+
+  // Cargar categorías desde la API
+  const loadCategorias = async () => {
+    try {
+      setLoading(true);
+      const [categoriasData, productosData] = await Promise.all([
+        categoriaService.getCategorias().catch(err => {
+          console.error('❌ Error cargando categorías:', err);
+          return [];
+        }),
+        productoService.getProductos().catch(err => {
+          console.error('❌ Error cargando productos:', err);
+          return [];
+        })
+      ]);
+      setCategorias(categoriasData);
+      setProductos(productosData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+      setError('Error al cargar la información');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCategorias();
+  }, []);
+
+  const filteredCategorias = categorias.filter(categoria => {
+    const searchMatch = categoria.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      categoria.id.toString().includes(searchTerm);
+
+    const statusMatch = filterStatus === "all" ||
+      (filterStatus === "active" && categoria.estado) ||
+      (filterStatus === "inactive" && !categoria.estado);
+
+    return searchMatch && statusMatch;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredCategorias.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const displayedCategorias = filteredCategorias.slice(startIndex, startIndex + itemsPerPage);
+
+  const validateForm = (form: any, isEdit: boolean = false) => {
+    if (!form.nombre || form.nombre.trim().length === 0) {
+      setError('El nombre de la categoría es obligatorio');
+      return false;
+    }
+
+    if (form.nombre.length < 3 || form.nombre.length > 50) {
+      setError('El nombre debe tener entre 3 y 50 caracteres');
+      return false;
+    }
+
+    if (form.descripcion && form.descripcion.length > 200) {
+      setError('La descripción no puede exceder los 200 caracteres');
+      return false;
+    }
+
+    // Verificar si el nombre ya existe
+    const nombreExiste = categorias.some(c =>
+      c.nombre.toLowerCase() === form.nombre.toLowerCase() &&
+      (!isEdit || c.id !== selectedCategoria?.id)
+    );
+
+    if (nombreExiste) {
+      setError('Ya existe una categoría con este nombre');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleCreateCategoria = async () => {
+    if (!validateForm(nuevaCategoria)) {
+      return;
+    }
+
+    try {
+      await categoriaService.createCategoria({
+        nombre: nuevaCategoria.nombre,
+        descripcion: nuevaCategoria.descripcion,
+        estado: nuevaCategoria.estado
+      });
+
+      await loadCategorias(); // Recargar las categorías
+
+      setIsDialogOpen(false);
+      setNuevaCategoria({
+        nombre: '',
+        descripcion: '',
+        estado: true
+      });
+      setError('');
+
+      created(nuevaCategoria.nombre, 'Categoría creada exitosamente');
+    } catch (error) {
+      console.error('Error creando categoría:', error);
+      setError('Error al crear la categoría');
+    }
+  };
+
+  const handleEditClick = (categoria: Categoria) => {
+    setSelectedCategoria(categoria);
+    setEditCategoria({
+      nombre: categoria.nombre,
+      descripcion: categoria.descripcion || '',
+      estado: categoria.estado
+    });
+    setError('');
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateCategoria = async () => {
+    if (!selectedCategoria || !validateForm(editCategoria, true)) {
+      return;
+    }
+
+    try {
+      await categoriaService.updateCategoria(selectedCategoria.id, {
+        id: selectedCategoria.id,
+        nombre: editCategoria.nombre,
+        descripcion: editCategoria.descripcion,
+        estado: editCategoria.estado
+      });
+
+      await loadCategorias(); // Recargar las categorías
+
+      setIsEditDialogOpen(false);
+      setSelectedCategoria(null);
+      setError('');
+
+      edited(editCategoria.nombre, 'Categoría actualizada exitosamente');
+    } catch (error) {
+      console.error('Error actualizando categoría:', error);
+      setError('Error al actualizar la categoría');
+    }
+  };
+  const handleDeleteClick = async (categoria: Categoria) => {
+    // 1. Verificar si hay productos asociados a esta categoría
+    const productosAsociados = productos.filter(p =>
+      p.categoria && (p.categoria.id === categoria.id || p.categoria.nombre === categoria.nombre)
+    );
+
+    if (productosAsociados.length > 0) {
+      // Si hay productos asociados, no permitir la eliminación y mostrar mensaje de error
+      showAlertError(
+        "No se puede eliminar",
+        `La categoría "${categoria.nombre}" tiene ${productosAsociados.length} productos asociados. Por favor, remueva o cambie la categoría de estos productos antes de eliminarla.`
+      );
+      return;
+    }
+
+    // 2. Si no hay productos asociados, mostrar confirmación
+    confirmDeleteAction(
+      categoria.nombre,
+      async () => {
+        try {
+          await categoriaService.deleteCategoria(categoria.id);
+          await loadCategorias(); // Recargar las categorías y productos
+        } catch (error) {
+          console.error('Error eliminando categoría:', error);
+          setError('Error al eliminar la categoría');
+          throw error;
+        }
+      },
+      {
+        confirmMessage: `¿Estás seguro de que deseas eliminar la categoría "${categoria.nombre}"? esta acción no se puede deshacer.`,
+        successMessage: `La categoría "${categoria.nombre}" ha sido eliminada exitosamente.`,
+        requireInput: false
+      }
+    );
+  };
+
+  const handleToggleStatus = async (categoria: Categoria) => {
+    try {
+      await categoriaService.updateCategoriaStatus(categoria.id, !categoria.estado);
+      await loadCategorias(); // Recargar las categorías
+      edited(categoria.nombre, `Categoría ${!categoria.estado ? 'activada' : 'desactivada'} exitosamente`);
+    } catch (error) {
+      console.error('Error cambiando estado:', error);
+      setError('Error al cambiar el estado de la categoría');
+    }
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <header className="bg-black-primary border-b border-gray-dark px-8 py-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-white-primary">Gestión de Categorías</h1>
+            <p className="text-sm text-gray-lightest mt-1">Administra las categorías de productos</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-auto p-8 bg-black-primary">
+        {/* Sección Principal */}
+        <div className="elegante-card">
+          {/* Barra de Controles */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-dark">
+            <div className="flex flex-wrap items-center gap-4">
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    className="elegante-button-primary gap-2 flex items-center"
+                    onClick={() => {
+                      setNuevaCategoria({
+                        nombre: '',
+                        descripcion: '',
+                        estado: true
+                      });
+                      setError('');
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nueva Categoría
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="bg-gray-darkest border-gray-dark max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle className="text-white-primary flex items-center gap-2">
+                      <Plus className="w-5 h-5 text-orange-primary" />
+                      Crear Nueva Categoría
+                    </DialogTitle>
+                    <DialogDescription className="text-gray-lightest">
+                      Completa la información de la categoría
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    {error && (
+                      <div className="flex items-center space-x-2 p-3 rounded-lg bg-red-900/20 border border-red-600/30">
+                        <AlertCircle className="w-5 h-5 text-red-400" />
+                        <span className="text-red-400 text-sm">{error}</span>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label className="text-white-primary">Nombre de la Categoría *</Label>
+                      <Input
+                        value={nuevaCategoria.nombre}
+                        onChange={(e) => setNuevaCategoria({ ...nuevaCategoria, nombre: e.target.value })}
+                        placeholder="Ej: Cuidado Capilar"
+                        className="elegante-input"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary">Descripción</Label>
+                      <textarea
+                        value={nuevaCategoria.descripcion}
+                        onChange={(e) => setNuevaCategoria({ ...nuevaCategoria, descripcion: e.target.value })}
+                        placeholder="Descripción de la categoría..."
+                        className="elegante-input w-full min-h-[180px] resize-none"
+                        rows={7}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary">Estado</Label>
+                      <div className="flex items-center space-x-3">
+                        <Switch
+                          checked={nuevaCategoria.estado}
+                          onCheckedChange={(checked) => setNuevaCategoria({ ...nuevaCategoria, estado: checked })}
+                          className="data-[state=checked]:bg-orange-primary"
+                        />
+                        <span className={`text-sm font-medium ${nuevaCategoria.estado ? 'text-orange-primary' : 'text-gray-lightest'}`}>
+                          {nuevaCategoria.estado ? 'Activa' : 'Inactiva'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-lightest">
+                      * Campos obligatorios
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
+                    <button onClick={() => {
+                      setIsDialogOpen(false);
+                      setError('');
+                    }} className="elegante-button-secondary">
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleCreateCategoria}
+                      className="elegante-button-primary"
+                      disabled={!nuevaCategoria.nombre}
+                    >
+                      Crear Categoría
+                    </button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
+                <Input
+                  placeholder="Buscar categorías..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="elegante-input pl-11 w-64"
+                />
+              </div>
+
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as any)}
+                className="elegante-input w-48"
+              >
+                <option value="all">Todos los estados</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-gray-lightest">
+                Mostrando {displayedCategorias.length} de {filteredCategorias.length} categorías
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Categorías */}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-dark">
+
+                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Nombre</th>
+                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Descripción</th>
+                  <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
+                  <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedCategorias.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center">
+                      <Tags className="w-12 h-12 text-gray-medium mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-white-primary mb-2">
+                        {loading ? 'Cargando categorías...' : 'No hay categorías'}
+                      </h3>
+                      <p className="text-gray-lightest">
+                        {loading ? 'Por favor espera un momento.' :
+                          searchTerm ? 'No se encontraron categorías con ese criterio de búsqueda.' :
+                            'Comience agregando una nueva categoría.'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  displayedCategorias.map((categoria) => (
+                    <tr
+                      key={categoria.id}
+                      className="border-b border-gray-dark hover:bg-gray-darker transition-colors"
+                    >
+
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-orange-primary rounded-lg flex items-center justify-center">
+                            <Tags className="w-4 h-4 text-black-primary" />
+                          </div>
+                          <span className="font-medium text-white-primary">{categoria.nombre}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="text-sm text-gray-lightest">{categoria.descripcion || 'Sin descripción'}</span>
+                      </td>
+                      <td className="py-4 px-4 text-center ">
+                        <span className={`px-2 py-1 rounded-full text-xs ${categoria.estado
+                          ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                          {categoria.estado ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleToggleStatus(categoria)}
+                            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                            title={categoria.estado ? "Desactivar" : "Activar"}
+                          >
+                            {categoria.estado ? (
+                              <ToggleRight className="w-4 h-4 text-green-400" />
+                            ) : (
+                              <ToggleLeft className="w-4 h-4 text-red-400" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedCategoria(categoria);
+                              setIsDetailDialogOpen(true);
+                            }}
+                            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                            title="Ver detalle"
+                          >
+                            <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
+                          </button>
+                          <button
+                            onClick={() => handleEditClick(categoria)}
+                            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                            title="Editar"
+                          >
+                            <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(categoria)}
+                            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            {/* Paginación */}
+            <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
+              <div className="text-sm text-gray-lightest">
+                Página {currentPage} de {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-lightest" />
+                </button>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-lightest" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla antigua - OLD */}
+          <div style={{ display: 'none' }}>
+
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter" />
+              <Input
+                placeholder="Buscar categoría por nombre o ID"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="elegante-input pl-10 w-80"
+              />
+            </div>
+          </div>
+        </div>
+
+
+
+        {/* Dialog de Edición */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="text-white-primary flex items-center gap-2">
+                <Edit className="w-5 h-5 text-orange-primary" />
+                Editar Categoría
+              </DialogTitle>
+              <DialogDescription className="text-gray-lightest">
+                Modifica la información de la categoría
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              {error && (
+                <div className="flex items-center space-x-2 p-3 rounded-lg bg-red-900/20 border border-red-600/30">
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                  <span className="text-red-400 text-sm">{error}</span>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label className="text-white-primary">Nombre de la Categoría *</Label>
+                <Input
+                  value={editCategoria.nombre}
+                  onChange={(e) => setEditCategoria({ ...editCategoria, nombre: e.target.value })}
+                  placeholder="Ej: Cuidado Capilar"
+                  className="elegante-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white-primary">Descripción</Label>
+                <textarea
+                  value={editCategoria.descripcion}
+                  onChange={(e) => setEditCategoria({ ...editCategoria, descripcion: e.target.value })}
+                  placeholder="Descripción de la categoría..."
+                  className="elegante-input w-full min-h-[180px] resize-none"
+                  rows={7}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white-primary">Estado</Label>
+                <div className="flex items-center space-x-3">
+                  <Switch
+                    checked={editCategoria.estado}
+                    onCheckedChange={(checked) => setEditCategoria({ ...editCategoria, estado: checked })}
+                    className="data-[state=checked]:bg-orange-primary"
+                  />
+                  <span className={`text-sm font-medium ${editCategoria.estado ? 'text-orange-primary' : 'text-gray-lightest'}`}>
+                    {editCategoria.estado ? 'Activa' : 'Inactiva'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-lightest">
+                * Campos obligatorios
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
+              <button onClick={() => {
+                setIsEditDialogOpen(false);
+                setError('');
+                setSelectedCategoria(null);
+              }} className="elegante-button-secondary">
+                Cancelar
+              </button>
+              <button
+                onClick={handleUpdateCategoria}
+                className="elegante-button-primary"
+                disabled={!editCategoria.nombre}
+              >
+                Guardar Cambios
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de Detalle */}
+        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-white-primary">Detalle de Categoría</DialogTitle>
+              <DialogDescription className="text-gray-lightest">
+                {selectedCategoria?.id} - {selectedCategoria?.nombre}
+              </DialogDescription>
+            </DialogHeader>
+            {selectedCategoria && (
+              <div className="space-y-6 pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-light">ID de Categoría</p>
+                    <p className="font-semibold text-orange-primary">{selectedCategoria.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-light">Estado</p>
+                    <div className="flex items-center space-x-2 mt-1">
+                      {selectedCategoria.estado ? (
+                        <Power className="w-4 h-4 text-orange-primary" />
+                      ) : (
+                        <PowerOff className="w-4 h-4 text-gray-lightest" />
+                      )}
+                      <span className={`font-semibold ${selectedCategoria.estado ? 'text-orange-primary' : 'text-gray-lightest'}`}>
+                        {selectedCategoria.estado ? 'Activa' : 'Inactiva'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-light">Nombre</p>
+                  <p className="font-semibold text-white-primary text-lg">{selectedCategoria.nombre}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-light">Descripción</p>
+                  <p className="text-white-primary">{selectedCategoria.descripcion || 'Sin descripción'}</p>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t border-gray-dark">
+                  <button
+                    onClick={() => setIsDetailDialogOpen(false)}
+                    className="elegante-button-primary"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+
+      </main>
+
+      <AlertContainer />
+      <DoubleConfirmationContainer />
+    </>
+  );
+}

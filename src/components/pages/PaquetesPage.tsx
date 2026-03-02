@@ -1,0 +1,1162 @@
+import React, { useState, useEffect } from "react";
+import {
+  Gift,
+  Plus,
+  Edit,
+  ToggleLeft,
+  ToggleRight,
+  Search,
+  Eye,
+  Clock,
+  DollarSign,
+  Scissors,
+  Package,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Trash2,
+  Calculator,
+  FileText
+} from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Textarea } from "../ui/textarea";
+import { useCustomAlert } from "../ui/custom-alert";
+import { useDoubleConfirmation } from "../ui/double-confirmation";
+import { apiService, Paquete } from "../../services/api";
+
+import { servicioService, Servicio } from "../../services/servicioService";
+
+const categorias = ["Premium", "Clásico", "Moderno", "Especial"];
+
+export function PaquetesPage() {
+  const { created, edited, deleted, error: showErrorAlert, AlertContainer } = useCustomAlert();
+  const { confirmCreateAction, DoubleConfirmationContainer } = useDoubleConfirmation();
+  const [paquetes, setPaquetes] = useState<Paquete[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [editingPaquete, setEditingPaquete] = useState<Paquete | null>(null);
+  const [selectedPaquete, setSelectedPaquete] = useState<Paquete | null>(null);
+  const [detallePaquete, setDetallePaquete] = useState<any[]>([]);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCategoria, setFilterCategoria] = useState("all");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(8);
+
+  // Servicios disponibles cargados desde la API
+  const [serviciosDisponibles, setServiciosDisponibles] = useState<Servicio[]>([]);
+  // Mapa paqueteId -> nombres de servicios (para mostrar en columna Paquete)
+  const [serviciosPorPaqueteId, setServiciosPorPaqueteId] = useState<Map<number, string[]>>(new Map());
+
+  // Construir nombres de servicios por paquete desde DetallePaquetes
+  const enrichPaquetesWithServicios = async () => {
+    try {
+      const detalles = await apiService.getDetallePaquetes();
+      const map = new Map<number, string[]>();
+      for (const d of detalles) {
+        const list = map.get(d.paqueteId) || [];
+        if (d.nombreServicio && d.nombreServicio.trim()) list.push(d.nombreServicio.trim());
+        map.set(d.paqueteId, list);
+      }
+      setServiciosPorPaqueteId(map);
+    } catch (e) {
+      console.error('Error cargando detalles para lista de paquetes:', e);
+      setServiciosPorPaqueteId(new Map());
+    }
+  };
+
+  // Load initial data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [paquetesData, serviciosData] = await Promise.all([
+          apiService.getPaquetes(),
+          servicioService.getServicios()
+        ]);
+        setPaquetes(paquetesData);
+        setServiciosDisponibles(serviciosData.filter(s => s.estado === true));
+        await enrichPaquetesWithServicios(paquetesData);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Function to reload paquetes
+  const loadPaquetes = async () => {
+    try {
+      setLoading(true);
+      const data = await apiService.getPaquetes();
+      setPaquetes(data);
+      await enrichPaquetesWithServicios();
+    } catch (error) {
+      console.error('Error loading paquetes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to load detalle paquete
+  const loadDetallePaquete = async (paqueteId: number) => {
+    try {
+      setLoadingDetalle(true);
+
+      // 1. Obtener los detalles específicos desde el endpoint de detalles
+      const data = await apiService.getDetallePaquetesByPaqueteId(paqueteId);
+      setDetallePaquete(data);
+
+      // 2. Opcionalmente recargar el paquete por ID para asegurar que tiene los strings de servicios
+      const fullPaquete = await apiService.getPaqueteById(paqueteId);
+      if (fullPaquete) {
+        setSelectedPaquete(fullPaquete);
+      }
+    } catch (error) {
+      console.error('Error loading detalle paquete:', error);
+      setDetallePaquete([]);
+    } finally {
+      setLoadingDetalle(false);
+    }
+  };
+
+  const [servicioSeleccionado, setServicioSeleccionado] = useState('');
+  const [serviciosAgregados, setServiciosAgregados] = useState<Array<{ nombre: string, precio: number }>>([]);
+  const [precioInput, setPrecioInput] = useState<string>('');
+  const [porcentajeInput, setPorcentajeInput] = useState<string>('');
+  const [nuevoPaquete, setNuevoPaquete] = useState({
+    nombre: '',
+    descripcion: '',
+    servicios: [] as string[],
+    serviciosTexto: '',
+    duracion: 0,
+    precio: 0,
+    descuento: 0,
+    categoria: '',
+    activo: true,
+    metodoPago: '',
+    porcentajeDescuento: 0
+  });
+
+  const [horaInput, setHoraInput] = useState('');
+  const [minutosInput, setMinutosInput] = useState('');
+
+  // Estado inicial para reset
+  const estadoInicialPaquete = {
+    nombre: '',
+    descripcion: '',
+    servicios: [] as string[],
+    serviciosTexto: '',
+    duracion: 0,
+    precio: 0,
+    descuento: 0,
+    categoria: '',
+    activo: true,
+    metodoPago: '',
+    porcentajeDescuento: 0
+  };
+
+  const filteredPaquetes = paquetes.filter(paquete => {
+    const matchesSearch = paquete.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      paquete.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategoria = filterCategoria === "all" || paquete.categoria === filterCategoria;
+    return matchesSearch && matchesCategoria;
+  });
+
+  const totalPages = Math.ceil(filteredPaquetes.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const displayedPaquetes = filteredPaquetes.slice(startIndex, startIndex + itemsPerPage);
+
+
+
+  // Funciones para manejar servicios automáticamente con precios
+  const agregarServicio = () => {
+    if (!servicioSeleccionado) return;
+
+    const yaExiste = serviciosAgregados.find(s => s.nombre === servicioSeleccionado);
+    if (!yaExiste) {
+      const servicioEncontrado = serviciosDisponibles.find(s => s.nombre === servicioSeleccionado);
+      if (!servicioEncontrado) return;
+
+      const precioServicio = servicioEncontrado.precio;
+
+      const nuevosServicios = [...serviciosAgregados, {
+        id: servicioEncontrado.id,
+        nombre: servicioSeleccionado,
+        precio: precioServicio
+      }];
+
+      setServiciosAgregados(nuevosServicios);
+      const nuevoPrecio = nuevosServicios.reduce((total, s) => total + s.precio, 0);
+      setPrecioInput(String(nuevoPrecio));
+      setNuevoPaquete({
+        ...nuevoPaquete,
+        servicios: nuevosServicios.map(s => s.nombre),
+        serviciosTexto: nuevosServicios.map(s => s.nombre).join(', '),
+        precio: nuevoPrecio
+      });
+    }
+
+    setServicioSeleccionado('');
+  };
+
+  const eliminarServicio = (nombreServicio: string) => {
+    const nuevosServicios = serviciosAgregados.filter(s => s.nombre !== nombreServicio);
+
+    setServiciosAgregados(nuevosServicios);
+    const nuevoPrecio = nuevosServicios.reduce((total, s) => total + s.precio, 0);
+    setPrecioInput(nuevoPrecio > 0 ? String(nuevoPrecio) : '');
+    setNuevoPaquete({
+      ...nuevoPaquete,
+      servicios: nuevosServicios.map(s => s.nombre),
+      serviciosTexto: nuevosServicios.map(s => s.nombre).join(', '),
+      precio: nuevoPrecio
+    });
+  };
+
+  // Funciones para cálculos automáticos
+  const calcularSubtotal = () => {
+    return nuevoPaquete.precio;
+  };
+
+  const calcularDescuento = (subtotal: number) => {
+    return subtotal * (nuevoPaquete.porcentajeDescuento / 100);
+  };
+
+  const calcularTotal = () => {
+    const subtotal = calcularSubtotal();
+    const descuento = calcularDescuento(subtotal);
+    return subtotal - descuento;
+  };
+
+  const handleCreatePaquete = async () => {
+    const nombreTrim = (nuevoPaquete.nombre || '').trim();
+
+    if (!nombreTrim || !nuevoPaquete.descripcion || serviciosAgregados.length === 0) {
+      return;
+    }
+
+    // Validar que no exista otro paquete con el mismo nombre (case-insensitive)
+    const nombreLower = nombreTrim.toLowerCase();
+    const nombreDuplicado = paquetes.some(
+      (p) => (p.nombre || '').trim().toLowerCase() === nombreLower
+    );
+
+    if (nombreDuplicado) {
+      showErrorAlert(
+        "No se puede crear el paquete",
+        `El nombre "${nombreTrim}" ya existe. Por favor elige otro nombre para el paquete.`
+      );
+      return;
+    }
+
+    try {
+      // 1. Preparar la estructura para el endpoint /completo
+      const paqueteData = {
+        ...nuevoPaquete,
+        nombre: nombreTrim,
+        precio: parseFloat(nuevoPaquete.precio.toString()),
+        duracion: Number(nuevoPaquete.duracion) || 60,
+        detalles: serviciosAgregados.map(s => ({
+          servicioId: (s as any).id,
+          cantidad: 1
+        }))
+      };
+
+      // 2. Crear paquete y detalles en una sola transacción API
+      const createdPaquete = await apiService.createPaqueteCompleto(paqueteData);
+
+      setPaquetes([...paquetes, createdPaquete]);
+      setNuevoPaquete({ ...estadoInicialPaquete });
+      setServiciosAgregados([]);
+      setIsDialogOpen(false);
+      setPrecioInput('');
+      setPorcentajeInput('');
+      setHoraInput('');
+      setMinutosInput('');
+
+      created("Paquete creado exitosamente ✔️", `El paquete "${createdPaquete.nombre}" ha sido creado correctamente con todos sus servicios en una sola operación.`);
+    } catch (error) {
+      console.error('Error creating paquete completo:', error);
+    }
+  };
+
+  const handleEditPaquete = (paquete: Paquete) => {
+    setEditingPaquete(paquete);
+    const serviciosArray = Array.isArray(paquete.servicios) ? paquete.servicios : [];
+    const serviciosTexto = serviciosArray.join(', ');
+
+    // Convertir servicios a objetos con nombre y precio
+    const serviciosConPrecio = serviciosArray.map((nombreServicio: string) => {
+      const servicioEncontrado = serviciosDisponibles.find(s => s.nombre === nombreServicio);
+      return {
+        id: servicioEncontrado ? servicioEncontrado.id : 0,
+        nombre: nombreServicio,
+        precio: servicioEncontrado ? servicioEncontrado.precio : 0
+      };
+    });
+
+    setNuevoPaquete({
+      nombre: paquete.nombre || '',
+      descripcion: paquete.descripcion || '',
+      servicios: serviciosArray,
+      serviciosTexto: serviciosTexto,
+      duracion: paquete.duracion || 60,
+      precio: paquete.precio || 0,
+      descuento: paquete.descuento || 0,
+      categoria: paquete.categoria || '',
+      activo: paquete.activo ?? true,
+      metodoPago: '',
+      porcentajeDescuento: 0
+    });
+    setPrecioInput(String(paquete.precio || 0));
+    setPorcentajeInput('0');
+
+    const totalMinutos = paquete.duracion || 0;
+    const h = Math.floor(totalMinutos / 60);
+    const m = totalMinutos % 60;
+    setHoraInput(h > 0 ? String(h) : '');
+    setMinutosInput(m > 0 ? String(m) : '');
+
+    setServiciosAgregados(serviciosConPrecio);
+    setIsDialogOpen(true);
+  };
+
+  const handleUpdatePaquete = async () => {
+    if (!editingPaquete) return;
+
+    const nombreTrim = (nuevoPaquete.nombre || '').trim();
+    if (!nombreTrim) {
+      showErrorAlert(
+        "Nombre inválido",
+        "El nombre del paquete es obligatorio."
+      );
+      return;
+    }
+
+    // Validar duplicado contra otros paquetes (excluyendo el que se está editando)
+    const nombreLower = nombreTrim.toLowerCase();
+    const nombreDuplicado = paquetes.some(
+      (p) => p.id !== editingPaquete.id && (p.nombre || '').trim().toLowerCase() === nombreLower
+    );
+
+    if (nombreDuplicado) {
+      showErrorAlert(
+        "No se puede actualizar el paquete",
+        `El nombre "${nombreTrim}" ya existe. Por favor elige otro nombre para el paquete.`
+      );
+      return;
+    }
+
+    const nombrePaquete = nombreTrim;
+    const tempPaqueteData = { ...nuevoPaquete, nombre: nombreTrim };
+
+    // Cerrar el modal temporalmente para evitar conflictos de z-index
+    setIsDialogOpen(false);
+
+    confirmCreateAction(
+      `${nombrePaquete}`,
+      async () => {
+        try {
+          const updatedPaquete = await apiService.updatePaquete(editingPaquete.id, {
+            ...tempPaqueteData,
+            precio: parseFloat(tempPaqueteData.precio.toString()),
+            precioOriginal: parseFloat(tempPaqueteData.precio.toString()) * (1 + tempPaqueteData.descuento / 100)
+          });
+
+          // Actualizar detalles (borrar y volver a crear)
+          console.log(`🔄 Actualizando detalles para el paquete ${editingPaquete.id}`);
+          await apiService.deleteDetallePaquetesByPaqueteId(editingPaquete.id);
+
+          for (const servicio of serviciosAgregados) {
+            await apiService.createDetallePaquete({
+              paqueteId: editingPaquete.id,
+              servicioId: (servicio as any).id,
+              cantidad: 1
+            });
+          }
+
+          await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
+          setEditingPaquete(null);
+          setNuevoPaquete({ ...estadoInicialPaquete });
+          setServiciosAgregados([]);
+
+          edited("Paquete actualizado exitosamente ✔️", `El paquete "${nombrePaquete}" ha sido actualizado correctamente con la nueva información.`);
+        } catch (error) {
+          console.error('Error updating paquete:', error);
+        }
+      },
+      {
+        confirmTitle: 'Actualizar Paquete',
+        confirmMessage: `¿Estás seguro de que deseas actualizar el paquete "${nombrePaquete}"? Se aplicarán todos los cambios realizados en el formulario.`,
+        successTitle: 'Paquete actualizado exitosamente ✔️',
+        successMessage: `El paquete "${nombrePaquete}" ha sido actualizado correctamente con la nueva información.`,
+        requireInput: false
+      }
+    );
+  };
+
+  const handleToggleEstadoPaquete = (paquete: Paquete) => {
+    const nombrePaquete = paquete.nombre;
+    const nuevoEstado = !paquete.activo;
+
+    confirmCreateAction(
+      `${nombrePaquete}`,
+      async () => {
+        try {
+          await apiService.updatePaqueteStatus(paquete.id, nuevoEstado);
+          await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
+          edited(`Paquete ${nuevoEstado ? 'activado' : 'desactivado'} ✔️`, `El paquete "${nombrePaquete}" ha sido ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente.`);
+        } catch (error) {
+          console.error('Error updating paquete status:', error);
+        }
+      },
+      {
+        confirmTitle: `${nuevoEstado ? 'Activar' : 'Desactivar'} Paquete`,
+        confirmMessage: `¿Estás seguro de que deseas ${nuevoEstado ? 'activar' : 'desactivar'} el paquete "${nombrePaquete}"?`,
+        successTitle: `Paquete ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente ✔`,
+        successMessage: `El paquete "${nombrePaquete}" ha sido ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente.`,
+        requireInput: false
+      }
+    );
+  };
+
+  const handleEliminarPaquete = (paquete: Paquete) => {
+    const nombrePaquete = paquete.nombre;
+
+    confirmCreateAction(
+      `${nombrePaquete}`,
+      async () => {
+        try {
+          await apiService.deletePaquete(paquete.id);
+          await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
+          deleted("Paquete eliminado exitosamente ✔️", `El paquete "${nombrePaquete}" ha sido eliminado permanentemente del sistema.`);
+        } catch (error) {
+          console.error('Error deleting paquete:', error);
+        }
+      },
+      {
+        confirmTitle: 'Eliminar Paquete',
+        confirmMessage: `¿Estás seguro de que deseas eliminar permanentemente el paquete "${nombrePaquete}"? Esta acción no se puede deshacer y se perderán todos los datos asociados.`,
+        successTitle: 'Paquete eliminado exitosamente ✔️',
+        successMessage: `El paquete "${nombrePaquete}" ha sido eliminado permanentemente del sistema.`,
+        requireInput: true
+      }
+    );
+  };
+
+  const toggleEstadoPaquete = (paqueteId: number) => {
+    const paquete = paquetes.find(p => p.id === paqueteId);
+    if (!paquete) return;
+
+    handleToggleEstadoPaquete(paquete);
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <header className="bg-black-primary border-b border-gray-dark px-8 py-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-white-primary">Paquetes de Servicios</h1>
+            <p className="text-sm text-gray-lightest mt-1">Gestiona combinaciones de servicios con descuentos especiales</p>
+          </div>
+
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-auto p-8 bg-black-primary">
+        {/* Sección Principal */}
+        <div className="elegante-card">
+          {/* Barra de Controles */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-dark">
+            <div className="flex flex-wrap items-center gap-4">
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    className="elegante-button-primary gap-2 flex items-center"
+                    onClick={() => {
+                      setEditingPaquete(null);
+                      setNuevoPaquete({ ...estadoInicialPaquete });
+                      setServiciosAgregados([]);
+                      setServicioSeleccionado('');
+                      setPrecioInput('');
+                      setPorcentajeInput('');
+                      setHoraInput('');
+                      setMinutosInput('');
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nuevo Paquete
+                  </button>
+                </DialogTrigger>
+              </Dialog>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
+                <Input
+                  placeholder="Buscar paquetes..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="elegante-input pl-11 w-80"
+                />
+              </div>
+
+              <select
+                value={filterCategoria}
+                onChange={(e) => setFilterCategoria(e.target.value)}
+                className="elegante-input"
+              >
+                <option value="all">Todas las categorías</option>
+                {categorias.map((categoria) => (
+                  <option key={categoria} value={categoria}>{categoria}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-gray-lightest">
+                Mostrando {displayedPaquetes.length} de {filteredPaquetes.length} paquetes
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+                <h3 className="text-lg font-semibold text-white-primary mb-2">Cargando paquetes...</h3>
+                <p className="text-gray-lightest">Por favor espera un momento</p>
+              </div>
+            ) : (
+              <>
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-dark">
+                      <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Nombre</th>
+                      <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Paquete</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Servicios</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Duración</th>
+                      <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Precio</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
+                      <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedPaquetes.map((paquete) => (
+                      <tr key={paquete.id} className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
+                        <td className="py-4 px-4">
+                          <span className="text-gray-lighter">{paquete.nombre}</span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-orange-primary rounded-lg flex items-center justify-center shrink-0">
+                              <Package className="w-5 h-5 text-black-primary" />
+                            </div>
+                            <span className="text-gray-lighter text-sm" title={(() => {
+                              const nombres = serviciosPorPaqueteId.get(paquete.id) ?? paquete.servicios ?? [];
+                              return Array.isArray(nombres) ? nombres.join(', ') : String(nombres);
+                            })()}>
+                              {(() => {
+                                const nombres = serviciosPorPaqueteId.get(paquete.id) ?? paquete.servicios ?? [];
+                                const list = Array.isArray(nombres) ? nombres : [];
+                                const text = list.length > 0 ? list.join(', ') : paquete.nombre;
+                                return text || paquete.nombre;
+                              })()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="text-gray-lighter">{paquete.servicios.length} servicios</span>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="text-gray-lighter">{paquete.duracion} min</span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <span className="text-gray-lighter">${(paquete.precio ?? 0).toLocaleString('es-CO')}</span>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="px-3 py-1 rounded-full text-xs bg-gray-medium text-gray-lighter">
+                            {paquete.activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleToggleEstadoPaquete(paquete)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title={paquete.activo ? "Desactivar paquete" : "Activar paquete"}
+                            >
+                              {paquete.activo ? (
+                                <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
+                              ) : (
+                                <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedPaquete(paquete);
+                                setIsDetailDialogOpen(true);
+                                loadDetallePaquete(paquete.id); // Cargar detalles del paquete
+                              }}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Ver Detalle"
+                            >
+                              <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
+                            </button>
+                            <button
+                              onClick={() => handleEditPaquete(paquete)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Editar"
+                            >
+                              <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
+                            </button>
+                            <button
+                              onClick={() => handleEliminarPaquete(paquete)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {displayedPaquetes.length === 0 && !loading && (
+                  <div className="text-center py-8">
+                    <Gift className="w-16 h-16 text-gray-medium mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-white-primary mb-2">No se encontraron paquetes</h3>
+                    <p className="text-gray-lightest">Intenta con otros términos de búsqueda</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Paginación */}
+          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
+            <div className="text-sm text-gray-lightest">
+              Página {currentPage} de {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4 text-gray-lightest" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4 text-gray-lightest" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Dialog de Creación/Edición */}
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingPaquete(null);
+            setNuevoPaquete({ ...estadoInicialPaquete });
+            setServiciosAgregados([]);
+            setServicioSeleccionado('');
+            setPrecioInput('');
+            setPorcentajeInput('');
+            setHoraInput('');
+            setMinutosInput('');
+          }
+        }}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-white-primary flex items-center gap-2">
+                <Package className="w-5 h-5 text-orange-primary" />
+                {editingPaquete ? 'Editar Paquete' : 'Crear Nuevo Paquete'}
+              </DialogTitle>
+              <DialogDescription className="text-gray-lightest">
+                {editingPaquete ? 'Modifica la información del paquete seleccionado' : 'Crea una nueva combinación de servicios con descuentos especiales'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 pt-4">
+              {/* Nombre y Descripción */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Package className="w-4 h-4 text-orange-primary" />
+                    Nombre del Paquete *
+                  </Label>
+                  <Input
+                    value={nuevoPaquete.nombre}
+                    onChange={(e) => setNuevoPaquete({ ...nuevoPaquete, nombre: e.target.value })}
+                    placeholder="Ej: Paquete Premium Completo"
+                    className="elegante-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-orange-primary" />
+                    Precio ($) *
+                  </Label>
+                  <Input
+                    type="number"
+                    value={precioInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.length <= 15) {
+                        setPrecioInput(val);
+                        const nRaw = val.trim() === '' ? 0 : Number(val);
+                        const n = Number.isFinite(nRaw) ? Math.max(0, nRaw) : 0;
+                        setNuevoPaquete({ ...nuevoPaquete, precio: n });
+                      }
+                    }}
+                    className="elegante-input no-spin"
+                    min="0"
+                    step="100"
+                    placeholder=""
+                  />
+                  <div className="flex justify-start mt-1">
+                    <span className="text-xs text-gray-500 font-medium">
+                      {precioInput.length}/15 caracteres
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Duración y Descuento */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-orange-primary" />
+                    Duración (minutos)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={horaInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const h = Math.max(0, parseInt(val, 10) || 0);
+                          const m = Math.max(0, parseInt(minutosInput, 10) || 0);
+                          setHoraInput(val);
+                          setNuevoPaquete({ ...nuevoPaquete, duracion: h * 60 + m });
+                        }}
+                        placeholder="0"
+                        className="elegante-input no-spin"
+                      />
+                      <span className="text-gray-lightest text-sm whitespace-nowrap">h</span>
+                    </div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={59}
+                        step={1}
+                        value={minutosInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const m = Math.max(0, Math.min(59, parseInt(val, 10) || 0));
+                          const h = Math.max(0, parseInt(horaInput, 10) || 0);
+                          setMinutosInput(val);
+                          setNuevoPaquete({ ...nuevoPaquete, duracion: h * 60 + m });
+                        }}
+                        placeholder="0"
+                        className="elegante-input no-spin"
+                      />
+                      <span className="text-gray-lightest text-sm whitespace-nowrap">min</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Total: {(nuevoPaquete.duracion || 0)} min
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Calculator className="w-4 h-4 text-orange-primary" />
+                    Porcentaje Descuento (%)
+                  </Label>
+                  <Input
+                    type="number"
+                    value={porcentajeInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPorcentajeInput(val);
+                      const nRaw = val.trim() === '' ? 0 : Number(val);
+                      const n = Number.isFinite(nRaw) ? Math.max(0, Math.min(100, nRaw)) : 0;
+                      setNuevoPaquete({ ...nuevoPaquete, porcentajeDescuento: n });
+                    }}
+                    className="elegante-input no-spin"
+                    min="0"
+                    max="100"
+                    step="1"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              {/* Descripción */}
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-orange-primary" />
+                  Descripción
+                </Label>
+                <Textarea
+                  value={nuevoPaquete.descripcion}
+                  onChange={(e) => setNuevoPaquete({ ...nuevoPaquete, descripcion: e.target.value })}
+                  placeholder="Describe el paquete de servicios"
+                  className="elegante-input"
+                  rows={3}
+                />
+              </div>
+
+              {/* Gestión de Servicios: primero Agregar servicio */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Scissors className="w-4 h-4 text-orange-primary" />
+                    Agregar servicio
+                  </Label>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <select
+                      value={servicioSeleccionado}
+                      onChange={(e) => setServicioSeleccionado(e.target.value)}
+                      className="elegante-input flex-1"
+                    >
+                      <option value="">Selecciona un servicio</option>
+                      {serviciosDisponibles.map((servicio, index) => (
+                        <option key={index} value={servicio.nombre}>
+                          {servicio.nombre} - ${(servicio.precio ?? 0).toLocaleString('es-CO')}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        agregarServicio();
+                      }}
+                      className="elegante-button-primary px-4 py-2"
+                      disabled={!servicioSeleccionado}
+                    >
+                      Agregar Servicio
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de servicios agregados */}
+                {serviciosAgregados.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-lg font-semibold text-white-primary mb-2">Servicios incluidos</h4>
+                    <div className="space-y-3 max-h-48 overflow-y-auto">
+                      {serviciosAgregados.map((servicio, index) => (
+                        <div key={index} className="flex items-center justify-between bg-gray-darker p-4 rounded-xl border border-gray-dark">
+                          <span className="text-white-primary font-semibold">{servicio.nombre}</span>
+                          <span className="text-white-primary font-medium">
+                            ${(servicio.precio ?? 0).toLocaleString('es-CO')}
+                          </span>
+                          <button
+                            onClick={() => eliminarServicio(servicio.nombre)}
+                            className="ml-3 p-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors shrink-0"
+                            title="Eliminar servicio"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Servicios seleccionados (debajo de Agregar servicio) */}
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Scissors className="w-4 h-4 text-orange-primary" />
+                  Servicios Seleccionados *
+                </Label>
+                <Input
+                  value={nuevoPaquete.serviciosTexto}
+                  readOnly
+                  disabled
+                  placeholder="Agrega servicios desde el selector superior"
+                  className="elegante-input bg-gray-medium cursor-not-allowed"
+                />
+                <p className="text-gray-lightest text-xs">
+                  Los servicios agregados se mostrarán aquí. Puedes editar el precio de cada uno.
+                </p>
+              </div>
+
+              {/* Resumen de Totales */}
+              {nuevoPaquete.precio > 0 && (
+                <div className="bg-gray-darker border border-gray-dark rounded-lg p-4">
+                  <h3 className="text-white-primary font-semibold mb-3 flex items-center gap-2">
+                    <Package className="w-4 h-4 text-orange-primary" />
+                    Resumen de Totales
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-lightest">Subtotal:</span>
+                      <span className="text-white-primary">${calcularSubtotal().toLocaleString('es-CO')}</span>
+                    </div>
+                    {nuevoPaquete.porcentajeDescuento > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-lightest">Descuento ({nuevoPaquete.porcentajeDescuento}%):</span>
+                        <span className="text-red-400">-${calcularDescuento(calcularSubtotal()).toLocaleString('es-CO')}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-lg font-bold border-t border-gray-dark pt-2">
+                      <span className="text-white-primary">Total:</span>
+                      <span className="text-orange-primary">${calcularTotal().toLocaleString('es-CO')}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-4 pt-4 border-t border-gray-dark">
+                <button
+                  onClick={() => {
+                    setIsDialogOpen(false);
+                    setEditingPaquete(null);
+                    setNuevoPaquete({ ...estadoInicialPaquete });
+                    setServiciosAgregados([]);
+                    setServicioSeleccionado('');
+                    setPrecioInput('');
+                    setPorcentajeInput('');
+                  }}
+                  className="elegante-button-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={editingPaquete ? handleUpdatePaquete : handleCreatePaquete}
+                  className="elegante-button-primary"
+                >
+                  {editingPaquete ? 'Actualizar' : 'Crear'} Paquete
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+
+
+        {/* Dialog de Detalle del Paquete - Mismo layout que Editar, solo lectura */}
+        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto">
+            {selectedPaquete && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-white-primary flex items-center gap-2">
+                    <Eye className="w-5 h-5 text-orange-primary" />
+                    Ver detalle del paquete
+                  </DialogTitle>
+                  <DialogDescription className="text-gray-lightest">
+                    Información del paquete (solo lectura)
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6 pt-4">
+                  {/* Nombre y Precio - solo lectura */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Package className="w-4 h-4 text-orange-primary" />
+                        Nombre del Paquete
+                      </Label>
+                      <Input
+                        value={selectedPaquete.nombre ?? ''}
+                        readOnly
+                        disabled
+                        className="elegante-input bg-gray-medium cursor-not-allowed"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-orange-primary" />
+                        Precio ($)
+                      </Label>
+                      <Input
+                        value={selectedPaquete.precio != null ? String(selectedPaquete.precio) : ''}
+                        readOnly
+                        disabled
+                        className="elegante-input bg-gray-medium cursor-not-allowed no-spin"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Duración y Porcentaje Descuento - solo lectura */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-orange-primary" />
+                        Duración (minutos)
+                      </Label>
+                      <p className="elegante-input bg-gray-medium cursor-not-allowed py-2.5 px-3 text-gray-lightest">
+                        {selectedPaquete.duracion != null && selectedPaquete.duracion > 0
+                          ? (() => {
+                              const h = Math.floor((selectedPaquete.duracion || 0) / 60);
+                              const m = (selectedPaquete.duracion || 0) % 60;
+                              if (h > 0) {
+                                return `${h} h ${m} min (${selectedPaquete.duracion} min total)`;
+                              }
+                              return `${m} min`;
+                            })()
+                          : '0 min'}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Calculator className="w-4 h-4 text-orange-primary" />
+                        Porcentaje Descuento (%)
+                      </Label>
+                      <Input
+                        value={selectedPaquete.descuento != null ? String(selectedPaquete.descuento) : '0'}
+                        readOnly
+                        disabled
+                        className="elegante-input bg-gray-medium cursor-not-allowed no-spin"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Descripción - solo lectura */}
+                  <div className="space-y-2">
+                    <Label className="text-white-primary flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-orange-primary" />
+                      Descripción
+                    </Label>
+                    <Textarea
+                      value={selectedPaquete.descripcion ?? ''}
+                      readOnly
+                      disabled
+                      rows={3}
+                      className="elegante-input bg-gray-medium cursor-not-allowed resize-none"
+                    />
+                  </div>
+
+                  {/* Servicios agregados - solo lectura */}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Scissors className="w-4 h-4 text-orange-primary" />
+                        Agregar servicio
+                      </Label>
+                      <p className="text-gray-lightest text-sm">Los servicios del paquete se muestran abajo (solo lectura).</p>
+                    </div>
+
+                    {loadingDetalle ? (
+                      <div className="flex items-center justify-center py-6 bg-gray-darker rounded-lg">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-primary"></div>
+                        <span className="ml-3 text-gray-lightest">Cargando servicios...</span>
+                      </div>
+                    ) : (
+                      (detallePaquete.length > 0 || (selectedPaquete.servicios && selectedPaquete.servicios.length > 0)) && (
+                        <div className="space-y-3">
+                          <h4 className="text-lg font-semibold text-white-primary mb-3">Servicios incluidos</h4>
+                          <div className="space-y-3 max-h-48 overflow-y-auto">
+                            {detallePaquete.length > 0 ? (
+                              detallePaquete.map((detalle: any, index: number) => (
+                                <div key={index} className="flex items-center justify-between bg-gray-darker p-4 rounded-xl border border-gray-dark">
+                                  <span className="text-white-primary font-semibold">{detalle.nombreServicio}</span>
+                                  <span className="text-white-primary font-medium">
+                                    ${(detalle.precioServicio ?? 0).toLocaleString('es-CO')}
+                                  </span>
+                                </div>
+                              ))
+                            ) : (
+                              selectedPaquete.servicios?.map((servicio: string, index: number) => {
+                                const servicioInfo = serviciosDisponibles.find(s => s.nombre === servicio);
+                                return (
+                                  <div key={index} className="flex items-center justify-between bg-gray-darker p-4 rounded-xl border border-gray-dark">
+                                    <span className="text-white-primary font-semibold">{servicio}</span>
+                                    <span className="text-white-primary font-medium">
+                                      ${servicioInfo ? (servicioInfo.precio ?? 0).toLocaleString('es-CO') : '0'}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {/* Servicios seleccionados - solo lectura */}
+                  <div className="space-y-2">
+                    <Label className="text-white-primary flex items-center gap-2">
+                      <Scissors className="w-4 h-4 text-orange-primary" />
+                      Servicios seleccionados
+                    </Label>
+                    <Input
+                      value={Array.isArray(selectedPaquete.servicios) ? selectedPaquete.servicios.join(', ') : ''}
+                      readOnly
+                      disabled
+                      className="elegante-input bg-gray-medium cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* Resumen de totales - solo lectura */}
+                  <div className="bg-gray-darker border border-gray-dark rounded-lg p-4">
+                    <h3 className="text-white-primary font-semibold mb-3 flex items-center gap-2">
+                      <Package className="w-4 h-4 text-orange-primary" />
+                      Resumen de totales
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      {(selectedPaquete.precioOriginal ?? selectedPaquete.precio) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-lightest">Subtotal / Precio original:</span>
+                          <span className="text-white-primary">
+                            ${(selectedPaquete.precioOriginal ?? selectedPaquete.precio ?? 0).toLocaleString('es-CO')}
+                          </span>
+                        </div>
+                      )}
+                      {selectedPaquete.descuento != null && Number(selectedPaquete.descuento) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-lightest">Descuento ({selectedPaquete.descuento}%):</span>
+                          <span className="text-red-400">
+                            -${(((selectedPaquete.precioOriginal ?? selectedPaquete.precio ?? 0) * Number(selectedPaquete.descuento) / 100)).toLocaleString('es-CO')}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-lg font-bold border-t border-gray-dark pt-2">
+                        <span className="text-white-primary">Total:</span>
+                        <span className="text-orange-primary">${(selectedPaquete.precio ?? 0).toLocaleString('es-CO')}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4 border-t border-gray-dark">
+                    <button
+                      onClick={() => setIsDetailDialogOpen(false)}
+                      className="elegante-button-secondary"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <AlertContainer />
+        <DoubleConfirmationContainer />
+      </main>
+    </>
+  );
+}
