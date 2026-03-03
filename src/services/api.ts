@@ -68,31 +68,58 @@ class ApiService {
     const formData = new FormData();
     formData.append('file', file);
 
-    try {
-      const url = `${API_BASE_URL}/Images/upload`;
-      console.log(`API [POST]: ${url} (Cloudinary Upload)`);
+    const url = `${API_BASE_URL}/Images/upload`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
 
-      const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ API Error [${response.status}]: ${errorText}`);
-        throw new Error(`Error al subir imagen (${response.status}): ${errorText || response.statusText}`);
-      }
-
-      const result = await response.json();
-      console.log('📤 Respuesta de Cloudinary:', result);
-      // El servidor devuelve un objeto { url: "...", publicId: "..." }
-      const imageUrl = result.url || result;
-      console.log('📤 URL de Cloudinary recibida:', imageUrl);
-      return imageUrl;
-    } catch (error) {
-      console.error('Error uploading image to Cloudinary:', error);
-      throw error;
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`Error al subir imagen (${response.status}): ${errorText || response.statusText}`);
     }
+
+    const contentType = response.headers.get('content-type') || '';
+    const raw = contentType.includes('application/json')
+      ? await response.json()
+      : await response.text();
+
+    const candidate =
+      typeof raw === 'string'
+        ? raw
+        : (raw?.relativeUrl ?? raw?.url ?? raw?.path ?? raw?.filePath ?? raw?.location ?? '');
+
+    const normalized = this.normalizeImagePath(candidate);
+    if (!normalized) {
+      throw new Error('Respuesta inválida del servidor al subir imagen');
+    }
+    return normalized;
+  }
+
+  private normalizeImagePath(value: unknown): string {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+
+    if (/^data:/i.test(text)) return '';
+
+    if (/^https?:\/\//i.test(text)) {
+      try {
+        const u = new URL(text);
+        const pathname = u.pathname.startsWith('/') ? u.pathname : `/${u.pathname}`;
+        const looksLikeApiServed =
+          pathname.startsWith('/assets/') ||
+          pathname.startsWith('/Images/') ||
+          pathname.startsWith('/images/') ||
+          pathname.startsWith('/api/Images/') ||
+          pathname.startsWith('/api/images/');
+        return looksLikeApiServed ? pathname : '';
+      } catch {
+        return '';
+      }
+    }
+
+    if (text.startsWith('/')) return text;
+    return `/${text}`;
   }
 
   private async request(endpoint: string, options: RequestInit = {}): Promise<Response> {

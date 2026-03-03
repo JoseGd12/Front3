@@ -152,7 +152,23 @@ class ProductoService {
         data = data.$values;
       }
 
-      return Array.isArray(data) ? data.map(item => this.mapFromApiFormat(item)) : [];
+      const mapped = Array.isArray(data) ? data.map(item => this.mapFromApiFormat(item)) : [];
+      if (!CATEGORIAS_LOADED || Object.keys(CATEGORIA_MAP).length === 0) {
+        try {
+          const cats = await this.getCategorias();
+          const idToName: { [id: number]: string } = {};
+          cats.forEach(c => { idToName[c.id] = c.nombre; });
+          mapped.forEach(p => {
+            if (p.categoria && p.categoria.id && (!p.categoria.nombre || p.categoria.nombre.trim() === '')) {
+              const name = idToName[p.categoria.id];
+              if (name) p.categoria = { id: p.categoria.id, nombre: name };
+            }
+          });
+        } catch {
+          // ignore
+        }
+      }
+      return mapped;
     } catch (error) {
       console.error('Error fetching productos:', error);
       throw error;
@@ -163,7 +179,20 @@ class ProductoService {
     try {
       const response = await this.request(`/Productos/${id}`);
       const data = await response.json();
-      return this.mapFromApiFormat(data);
+      const mapped = this.mapFromApiFormat(data);
+      if (mapped?.categoria && mapped.categoria.id && (!mapped.categoria.nombre || mapped.categoria.nombre.trim() === '')) {
+        try {
+          const cats = CATEGORIAS_LOADED ? [] : await this.getCategorias();
+          if (!CATEGORIAS_LOADED && cats.length === 0) {
+            // noop
+          }
+          const name = Object.entries(CATEGORIA_MAP).find(([, cid]) => cid === mapped.categoria!.id)?.[0];
+          if (name) mapped.categoria = { id: mapped.categoria.id, nombre: name };
+        } catch {
+          // ignore
+        }
+      }
+      return mapped;
     } catch (error) {
       return null;
     }

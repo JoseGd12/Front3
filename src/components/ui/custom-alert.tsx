@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, createContext, useContext, type ReactNode } from "react";
 import { CheckCircle, AlertTriangle, X, Info, AlertCircle, Trash2, Edit, Plus } from "lucide-react";
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'created' | 'edited' | 'deleted';
@@ -11,6 +11,40 @@ interface CustomAlertProps {
   message?: string;
   autoClose?: boolean;
   autoCloseDelay?: number;
+}
+
+type AlertItem = {
+  id: string;
+  type: AlertType;
+  title: string;
+  message?: string;
+  autoClose?: boolean;
+  autoCloseDelay?: number;
+};
+
+type AlertContextValue = {
+  alerts: AlertItem[];
+  add: (a: AlertItem) => void;
+  remove: (id: string) => void;
+};
+
+const AlertContext = createContext<AlertContextValue | null>(null);
+
+export function AlertProvider({ children }: { children: ReactNode }) {
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const add = (a: AlertItem) => {
+    setAlerts(prev => {
+      const exists = prev.some(p => p.type === a.type && p.title === a.title && (p.message || '') === (a.message || ''));
+      if (exists) return prev;
+      return [a, ...prev];
+    });
+  };
+  const remove = (id: string) => setAlerts(prev => prev.filter(al => al.id !== id));
+  return (
+    <AlertContext.Provider value={{ alerts, add, remove }}>
+      {children}
+    </AlertContext.Provider>
+  );
 }
 
 const alertIcons = {
@@ -68,7 +102,7 @@ export function CustomAlert({
   title,
   message,
   autoClose = true,
-  autoCloseDelay = 4000
+  autoCloseDelay = 8000
 }: CustomAlertProps) {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -88,7 +122,7 @@ export function CustomAlert({
     setIsVisible(false);
     setTimeout(() => {
       onClose();
-    }, 200);
+    }, 700);
   };
 
   if (!isOpen) return null;
@@ -98,58 +132,33 @@ export function CustomAlert({
 
   return (
     <div
-      className={`fixed inset-0 z-alert flex items-center justify-center p-4 transition-all duration-200 ${isVisible ? 'bg-black-primary/80 backdrop-blur-sm' : 'bg-black-primary/0'
-        }`}
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-      }}
+      className={`relative elegante-card ${styles.bgColor} border-2 ${styles.borderColor} w-80 max-w-[92vw] shadow-lg transition-all duration-700 ease-out will-change-transform will-change-opacity transform ${
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+      }`}
       style={{ pointerEvents: 'all' }}
     >
-      <div
-        className={`relative max-w-md w-full transition-all duration-200 transform ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
-          }`}
-        onClick={(e) => e.stopPropagation()}
+      <button
+        onClick={handleClose}
+        className="absolute top-3 right-3 p-1 rounded-lg hover:bg-gray-darker transition-colors"
+        aria-label="Cerrar notificación"
       >
-        <div className={`elegante-card ${styles.bgColor} border-2 ${styles.borderColor} relative`}>
-          {/* Botón de cerrar */}
-          <button
-            onClick={handleClose}
-            className="absolute top-4 right-4 p-1 rounded-lg hover:bg-gray-darker transition-colors"
-          >
-            <X className="w-4 h-4 text-gray-lighter" />
-          </button>
-
-          {/* Contenido */}
-          <div className="pr-8">
-            <div className="flex items-start space-x-3">
-              <div className={`flex-shrink-0 mt-0.5`}>
-                <Icon className={`w-6 h-6 ${styles.iconColor}`} />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <h3 className="text-white-primary font-semibold text-base mb-1">
-                  {title}
-                </h3>
-                {message && (
-                  <p className="text-gray-lightest text-sm leading-relaxed">
-                    {message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Botón de acción */}
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={handleClose}
-                className="elegante-button-primary px-4 py-2 text-sm"
-              >
-                Entendido
-              </button>
-            </div>
+        <X className="w-4 h-4 text-gray-lighter" />
+      </button>
+      <div className="pr-6">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0 mt-0.5">
+            <Icon className={`w-6 h-6 ${styles.iconColor}`} />
           </div>
-
+          <div className="flex-1 min-w-0 break-words whitespace-pre-wrap">
+            <h3 className="text-white-primary font-semibold text-base mb-1">
+              {title}
+            </h3>
+            {message && (
+              <p className="text-gray-lightest text-sm leading-relaxed">
+                {message}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -158,14 +167,8 @@ export function CustomAlert({
 
 // Hook para manejar alertas
 export function useCustomAlert() {
-  const [alerts, setAlerts] = useState<Array<{
-    id: string;
-    type: AlertType;
-    title: string;
-    message?: string;
-    autoClose?: boolean;
-    autoCloseDelay?: number;
-  }>>([]);
+  const ctx = useContext(AlertContext);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
   const showAlert = (
     type: AlertType,
@@ -177,29 +180,27 @@ export function useCustomAlert() {
     }
   ) => {
     const id = Date.now().toString();
-    const alert = {
+    const alert: AlertItem = {
       id,
       type,
       title,
       message,
       autoClose: options?.autoClose ?? true,
-      autoCloseDelay: options?.autoCloseDelay ?? 4000,
+      autoCloseDelay: options?.autoCloseDelay ?? 8000,
     };
 
-    setAlerts(prev => [alert, ...prev]);
-
-    // Auto-remove si autoClose está habilitado
-    if (alert.autoClose) {
-      setTimeout(() => {
-        removeAlert(id);
-      }, alert.autoCloseDelay);
+    if (ctx) {
+      ctx.add(alert);
+    } else {
+      setAlerts(prev => [alert, ...prev]);
     }
 
     return id;
   };
 
   const removeAlert = (id: string) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== id));
+    if (ctx) ctx.remove(id);
+    else setAlerts(prev => prev.filter(alert => alert.id !== id));
   };
 
   const success = (title: string, message?: string, options?: { autoClose?: boolean; autoCloseDelay?: number }) =>
@@ -223,22 +224,35 @@ export function useCustomAlert() {
   const deleted = (title: string, message?: string, options?: { autoClose?: boolean; autoCloseDelay?: number }) =>
     showAlert('deleted', title, message, options);
 
-  const AlertContainer = () => (
-    <>
-      {alerts.map((alert) => (
-        <CustomAlert
-          key={alert.id}
-          isOpen={true}
-          onClose={() => removeAlert(alert.id)}
-          type={alert.type}
-          title={alert.title}
-          message={alert.message}
-          autoClose={alert.autoClose}
-          autoCloseDelay={alert.autoCloseDelay}
-        />
-      ))}
-    </>
-  );
+  const AlertContainer = () => {
+    if (ctx) return null;
+    return (
+      <div
+        className="fixed z-alert flex flex-col items-end gap-3 pointer-events-none"
+        style={{
+          bottom: `max(env(safe-area-inset-bottom), 24px)`,
+          right: `max(env(safe-area-inset-right), 24px)`,
+          maxHeight: 'calc(100vh - 48px)',
+          overflowY: 'auto',
+          paddingLeft: '12px'
+        }}
+      >
+        {alerts.map((alert) => (
+          <div key={alert.id} className="pointer-events-auto">
+            <CustomAlert
+              isOpen={true}
+              onClose={() => removeAlert(alert.id)}
+              type={alert.type}
+              title={alert.title}
+              message={alert.message}
+              autoClose={alert.autoClose}
+              autoCloseDelay={Math.max(8000, alert.autoCloseDelay ?? 8000)}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return {
     success,
@@ -250,4 +264,35 @@ export function useCustomAlert() {
     deleted,
     AlertContainer,
   };
+}
+
+export function GlobalAlertContainer() {
+  const ctx = useContext(AlertContext);
+  if (!ctx) return null;
+  return (
+    <div
+      className="fixed z-alert flex flex-col items-end gap-3 pointer-events-none"
+      style={{
+        bottom: `max(env(safe-area-inset-bottom), 24px)`,
+        right: `max(env(safe-area-inset-right), 24px)`,
+        maxHeight: 'calc(100vh - 48px)',
+        overflowY: 'auto',
+        paddingLeft: '12px'
+      }}
+    >
+      {ctx.alerts.map((alert) => (
+        <div key={alert.id} className="pointer-events-auto">
+          <CustomAlert
+            isOpen={true}
+            onClose={() => ctx.remove(alert.id)}
+            type={alert.type}
+            title={alert.title}
+            message={alert.message}
+            autoClose={alert.autoClose}
+            autoCloseDelay={Math.max(8000, alert.autoCloseDelay ?? 8000)}
+          />
+        </div>
+      ))}
+    </div>
+  );
 }

@@ -1,6 +1,8 @@
   import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./components/AuthContext";
+import { Toaster } from "sonner";
 import { ThemeProvider } from "./components/ThemeContext";
+import { AlertProvider, GlobalAlertContainer } from "./components/ui/custom-alert";
 import { Dashboard } from "./components/Dashboard";
 import { ClienteDashboard } from "./components/ClienteDashboard";
 import { LandingPage } from "./components/LandingPage";
@@ -104,7 +106,23 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppContent />
+        <AlertProvider>
+          <>
+            <AppContent />
+            <GlobalAlertContainer />
+            <Toaster
+              position="bottom-right"
+              duration={8000}
+              closeButton
+              toastOptions={{
+                style: {
+                  fontSize: '0.95rem',
+                  lineHeight: '1.4',
+                },
+              }}
+            />
+          </>
+        </AlertProvider>
       </AuthProvider>
     </ThemeProvider>
   );

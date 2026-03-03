@@ -810,7 +810,10 @@ export function VentasPage() {
           nombre: producto.nombre,
           cantidad: cantidadProducto,
           precio: producto.precio || producto.precioBase,
-          imagen: (producto as ApiProducto).imagenProduc || ''
+          imagen: (producto as ApiProducto).imagenProduc || '',
+          categoria: (typeof (producto as any).categoria === 'string'
+            ? (producto as any).categoria
+            : ((producto as any).categoria?.nombre || ''))
         }]
       });
       setTarjetaProductoInputs((prev) => ({
@@ -2017,9 +2020,19 @@ export function VentasPage() {
                                   <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                                     {(() => {
                                       const query = normalizeSearchText(productSearchTerm);
-                                      const filteredResults = productosAPI.filter(p =>
-                                        normalizeSearchText(p.nombre).includes(query)
-                                      ).slice(0, 20);
+                                      const filteredResults = productosAPI.filter(p => {
+                                        const categoriaLabel = typeof (p as any).categoria === 'string'
+                                          ? (p as any).categoria
+                                          : ((p as any).categoria?.nombre || '');
+                                        const searchableText = normalizeSearchText([
+                                          p.id,
+                                          p.nombre,
+                                          categoriaLabel,
+                                          p.stockVentas,
+                                          p.precio || p.precioBase
+                                        ].join(" "));
+                                        return searchableText.includes(query);
+                                      }).slice(0, 20);
 
                                       if (filteredResults.length === 0) {
                                         return (
@@ -2046,6 +2059,11 @@ export function VentasPage() {
                                                 {producto.nombre}
                                               </p>
                                               <p className="text-[10px] text-gray-lightest">${formatCurrency(producto.precio || producto.precioBase)}</p>
+                                              <p className="text-[10px] text-gray-400">
+                                                {typeof (producto as any).categoria === 'string'
+                                                  ? (producto as any).categoria
+                                                  : ((producto as any).categoria?.nombre || 'Sin categoría')}
+                                              </p>
                                             </div>
                                             <div className="text-right">
                                               <p className="text-[9px] text-gray-lightest uppercase tracking-widest leading-none mb-1">Stock</p>

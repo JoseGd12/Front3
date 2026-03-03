@@ -26,6 +26,7 @@ export interface Proveedor {
   activo?: boolean; // Alias para estado
   fechaCreacion?: string;
   // Campos específicos para Jurídico adicionales
+  tipoDocumentoRepresentante?: string;
   documentoRepresentante?: string;
   telefonoRepresentante?: string;
   correoRepresentante?: string;
@@ -35,6 +36,11 @@ export interface Proveedor {
   // Campo específico para Natural
   personaContacto?: string;
   apellidos?: string;
+  // Contacto adicional (Natural)
+  tipoDocumentoContactoAdicional?: string;
+  documentoContactoAdicional?: string;
+  telefonoContactoAdicional?: string;
+  correoContactoAdicional?: string;
 }
 
 class ProveedorService {
@@ -149,7 +155,8 @@ class ProveedorService {
   private mapFromApi(apiData: any): Proveedor {
     if (!apiData) return { nombre: "", id: 0 };
 
-    const tipo = (apiData.tipoProveedor as 'Juridico' | 'Natural') || 'Juridico';
+    const rawTipo = (apiData.tipoProveedor ?? apiData.TipoProveedor ?? 'Juridico');
+    const tipo = String(rawTipo).toLowerCase() === 'natural' ? 'Natural' : 'Juridico';
     // Para personas naturales, si nit está vacío usamos el número de identificación
     const nitValue = apiData.nit || apiData.numeroIdentificacion || "";
 
@@ -192,6 +199,7 @@ class ProveedorService {
       activo: isEstadoTrue,
       fechaCreacion: apiData.fechaCreacion || apiData.FechaCreacion || new Date().toLocaleDateString('es-CO'),
       // Campos opcionales que podrían venir
+      tipoDocumentoRepresentante: apiData.tipoDocumentoRepresentante || apiData.TipoDocumentoRepresentante || "",
       sectorEconomico: apiData.sectorEconomico || apiData.SectorEconomico || "",
       anosOperacion: apiData.anosOperacion || apiData.AnosOperacion || 0,
       paginaWeb: apiData.paginaWeb || apiData.PaginaWeb || "",
@@ -199,7 +207,12 @@ class ProveedorService {
       telefonoRepresentante: apiData.telefonoRepresentante || apiData.TelefonoRepresentante || "",
       correoRepresentante: apiData.correoRepresentante || apiData.CorreoRepresentante || "",
       personaContacto: apiData.personaContacto || apiData.PersonaContacto || "",
-      apellidos: apiData.apellidos || apiData.Apellidos || ""
+      apellidos: apiData.apellidos || apiData.Apellidos || "",
+      // Contacto adicional (Natural)
+      tipoDocumentoContactoAdicional: apiData.tipoDocumentoContactoAdicional || "",
+      documentoContactoAdicional: apiData.documentoContactoAdicional || "",
+      telefonoContactoAdicional: apiData.telefonoContactoAdicional || "",
+      correoContactoAdicional: apiData.correoContactoAdicional || ""
     };
   }
 

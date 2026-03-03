@@ -81,10 +81,22 @@ class InsumosService {
       };
 
       const data: Insumo[] = (Array.isArray(raw) ? raw : []).map((p: any) => {
-        const categoria =
-          typeof p?.categoria === 'string'
-            ? p.categoria
-            : (p?.categoria?.nombre ?? p?.categoria?.name ?? p?.categoria?.descripcion ?? '');
+        const categoria = (() => {
+          if (typeof p?.categoria === 'string') return p.categoria;
+          const candidates = [
+            p?.categoria?.nombre,
+            p?.Categoria?.Nombre,
+            p?.categoria?.name,
+            p?.categoriaNombre,
+            p?.CategoriaNombre,
+            p?.producto?.categoria?.nombre,
+            p?.Producto?.Categoria?.Nombre,
+            p?.producto?.categoriaNombre,
+            p?.Producto?.CategoriaNombre,
+          ];
+          const found = candidates.find((v) => typeof v === 'string' && v);
+          return found ?? '';
+        })();
 
         const stockVentas = pickNumber(p, ['stockVentas', 'StockVentas', 'stockVenta', 'StockVenta'], Number.NaN);
         const stockInsumos = pickNumber(p, ['stockInsumos', 'StockInsumos'], Number.NaN);
@@ -184,10 +196,22 @@ class InsumosService {
       if (!text) return null;
 
       const p: any = JSON.parse(text);
-      const categoria =
-        typeof p?.categoria === 'string'
-          ? p.categoria
-          : (p?.categoria?.nombre ?? p?.categoria?.name ?? p?.categoria?.descripcion ?? '');
+      const categoria = (() => {
+        if (typeof p?.categoria === 'string') return p.categoria;
+        const candidates = [
+          p?.categoria?.nombre,
+          p?.Categoria?.Nombre,
+          p?.categoria?.name,
+          p?.categoriaNombre,
+          p?.CategoriaNombre,
+          p?.producto?.categoria?.nombre,
+          p?.Producto?.Categoria?.Nombre,
+          p?.producto?.categoriaNombre,
+          p?.Producto?.CategoriaNombre,
+        ];
+        const found = candidates.find((v) => typeof v === 'string' && v);
+        return found ?? '';
+      })();
 
       const stockVentas = pickNumber(p, ['stockVentas', 'StockVentas', 'stockVenta', 'StockVenta'], Number.NaN);
       const stockInsumos = pickNumber(p, ['stockInsumos', 'StockInsumos'], Number.NaN);

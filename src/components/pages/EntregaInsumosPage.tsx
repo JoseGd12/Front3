@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Input } from "../ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Plus,
   Search,
   Eye,
@@ -32,6 +39,7 @@ import { apiService, ApiUser } from "../../services/api";
 import { barberosService, Barbero } from "../../services/barberosService";
 import { insumosService, Insumo } from "../../services/insumosService";
 import ImageRenderer from "../ui/ImageRenderer";
+import { useCustomAlert } from "../ui/custom-alert";
 
 // Función para formatear moneda colombiana con puntos para separar miles
 const formatCurrency = (amount: number | undefined | null): string => {
@@ -49,7 +57,7 @@ import { useAuth } from "../AuthContext"; // Import newly added
 
 export function EntregaInsumosPage() {
   const { user } = useAuth(); // Get user from context
-  const { confirmCreateAction, confirmDeleteAction, confirmEditAction, DoubleConfirmationContainer } = useDoubleConfirmation();
+  const { confirmDeleteAction, confirmEditAction, DoubleConfirmationContainer } = useDoubleConfirmation();
 
   const generateCurrentDate = () => {
     const now = new Date();
@@ -91,7 +99,7 @@ export function EntregaInsumosPage() {
   const [selectedEntrega, setSelectedEntrega] = useState<EntregaInsumo | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(5);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
   const [insumoSearchTerm, setInsumoSearchTerm] = useState("");
   const [showInsumoResults, setShowInsumoResults] = useState(false);
   const [barberoSearchTerm, setBarberoSearchTerm] = useState("");
@@ -102,6 +110,7 @@ export function EntregaInsumosPage() {
   const [cantidadInsumo, setCantidadInsumo] = useState(0);
   const [cantidadInsumoInput, setCantidadInsumoInput] = useState('');
   const [tarjetaInputsEntrega, setTarjetaInputsEntrega] = useState<Record<number, { cantidad?: string }>>({});
+  const { created, AlertContainer } = useCustomAlert();
 
   const shakeClass = entregaValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
   const barberoInputRef = useRef<HTMLInputElement | null>(null);
@@ -109,6 +118,7 @@ export function EntregaInsumosPage() {
   const cantidadInputRef = useRef<HTMLInputElement | null>(null);
   const addProductoRowRef = useRef<HTMLDivElement | null>(null);
   const productosAgregadosRef = useRef<HTMLDivElement | null>(null);
+  const numeroEntregas = 21 + entregas.length;
 
   // Función para normalizar texto de búsqueda (quitar tildes, minúsculas)
   const normalizeSearchText = (value: unknown): string => {
@@ -127,6 +137,96 @@ export function EntregaInsumosPage() {
     return getFullName(barbero.nombre, barbero.apellido) || 'Sin asignar';
   };
 
+  const getBarberoDocumentoById = (barberoId: number | string | undefined | null) => {
+    if (barberoId === undefined || barberoId === null) return '';
+    const id = typeof barberoId === 'string' ? Number(barberoId) : barberoId;
+    const barbero = barberos.find(b => b.id === id);
+    return String(barbero?.documento || '');
+  };
+
+  const getBarberoDisplay = (entrega: EntregaInsumo | null | undefined) => {
+    if (!entrega) return 'Sin asignar';
+    const entregaAny = entrega as any;
+    const barberoValue = entregaAny.barbero ?? entregaAny.Barbero;
+    let documentoValue =
+      entregaAny.barberoDocumento ??
+      entregaAny.BarberoDocumento ??
+      '';
+
+    if (barberoValue) {
+      if (typeof barberoValue === 'string') return barberoValue;
+      const nombre =
+        barberoValue.nombre ??
+        barberoValue.Nombre ??
+        barberoValue.nombres ??
+        barberoValue.Nombres ??
+        barberoValue.primerNombre ??
+        barberoValue.PrimerNombre ??
+        barberoValue.name ??
+        barberoValue.Name ??
+        barberoValue.nombreBarbero ??
+        barberoValue.NombreBarbero;
+      const apellido =
+        barberoValue.apellido ??
+        barberoValue.Apellido ??
+        barberoValue.apellidos ??
+        barberoValue.Apellidos ??
+        barberoValue.primerApellido ??
+        barberoValue.PrimerApellido ??
+        barberoValue.lastName ??
+        barberoValue.LastName ??
+        barberoValue.apellidoBarbero ??
+        barberoValue.ApellidoBarbero;
+      const fullName = getFullName(nombre, apellido);
+      if (!documentoValue) {
+        documentoValue =
+          barberoValue.documento ??
+          barberoValue.Documento ??
+          '';
+      }
+      if (fullName) {
+        return `${fullName}${documentoValue ? ` — CC ${documentoValue}` : ''}`;
+      }
+    }
+
+    const directName =
+      entregaAny.barberoNombre ??
+      entregaAny.nombreBarbero ??
+      entregaAny.BarberoNombre ??
+      entregaAny.NombreBarbero ??
+      entregaAny.barberoFullName ??
+      entregaAny.BarberoFullName;
+    if (directName) return String(directName);
+
+    const barberoId =
+      entregaAny.barberoId ??
+      entregaAny.BarberoId ??
+      entregaAny.barberoSeleccionado ??
+      entregaAny.BarberoSeleccionado;
+    const nombreById = getBarberoNombreById(barberoId);
+    if (!documentoValue) {
+      documentoValue = getBarberoDocumentoById(barberoId);
+    }
+    if (nombreById && nombreById !== 'Sin asignar') {
+      return `${nombreById}${documentoValue ? ` — CC ${documentoValue}` : ''}`;
+    }
+
+    const barberoDocumento =
+      entregaAny.barberoDocumento ??
+      entregaAny.BarberoDocumento ??
+      entregaAny.documentoBarbero ??
+      entregaAny.DocumentoBarbero;
+    if (barberoDocumento) {
+      const match = barberos.find(b => String(b.documento ?? '') === String(barberoDocumento));
+      if (match) {
+        const fullName = getFullName(match.nombre, match.apellido);
+        if (fullName) return `${fullName} — CC ${String(barberoDocumento)}`;
+      }
+    }
+
+    return 'Sin asignar';
+  };
+
   const getProductoNombreById = (productoId: number | string | undefined | null) => {
     if (productoId === undefined || productoId === null) return 'Sin asignar';
     const id = typeof productoId === 'string' ? Number(productoId) : productoId;
@@ -140,6 +240,65 @@ export function EntregaInsumosPage() {
     const usuario = users.find(u => u.id === id);
     if (!usuario) return 'Sin asignar';
     return getFullName(usuario.nombre, usuario.apellido) || 'Sin asignar';
+  };
+
+  const getUsuarioDocumentoById = (usuarioId: number | string | undefined | null) => {
+    if (usuarioId === undefined || usuarioId === null) return '';
+    const id = typeof usuarioId === 'string' ? Number(usuarioId) : usuarioId;
+    const usuario = users.find(u => u.id === id);
+    return String((usuario as any)?.documento || (usuario as any)?.Documento || '');
+  };
+
+  const getResponsableDisplay = (entrega: EntregaInsumo | null | undefined) => {
+    if (!entrega) return 'N/A';
+    const e: any = entrega as any;
+    let doc =
+      e.responsableDocumento ??
+      e.ResponsableDocumento ??
+      e.usuarioDocumento ??
+      e.UsuarioDocumento ??
+      '';
+
+    const respObj = e.responsable ?? e.Responsable ?? e.usuario ?? e.Usuario;
+    if (respObj) {
+      if (typeof respObj === 'string') {
+        return `${respObj}${doc ? ` — CC ${doc}` : ''}`;
+      }
+      const nombre =
+        respObj.nombre ?? respObj.Nombre ?? respObj.primerNombre ?? respObj.PrimerNombre ?? respObj.name ?? respObj.Name;
+      const apellido =
+        respObj.apellido ?? respObj.Apellido ?? respObj.primerApellido ?? respObj.PrimerApellido ?? respObj.lastName ?? respObj.LastName;
+      if (!doc) {
+        doc = respObj.documento ?? respObj.Documento ?? '';
+      }
+      const fullName = getFullName(nombre, apellido);
+      if (fullName) return `${fullName}${doc ? ` — CC ${doc}` : ''}`;
+    }
+
+    const nombreDirecto =
+      e.responsableNombre ?? e.ResponsableNombre ?? e.usuarioNombre ?? e.UsuarioNombre ?? e.responsable ?? e.usuario;
+    if (nombreDirecto) {
+      return `${String(nombreDirecto)}${doc ? ` — CC ${doc}` : ''}`;
+    }
+
+    const uid =
+      e.responsableId ?? e.ResponsableId ?? e.usuarioId ?? e.UsuarioId ?? e.userId ?? e.UserId;
+    const nombreById = getUsuarioNombreById(uid);
+    if (!doc) doc = getUsuarioDocumentoById(uid);
+    if (nombreById && nombreById !== 'Sin asignar') {
+      return `${nombreById}${doc ? ` — CC ${doc}` : ''}`;
+    }
+
+    const docFromEntrega =
+      e.responsableDocumento ?? e.ResponsableDocumento ?? e.usuarioDocumento ?? e.UsuarioDocumento;
+    if (docFromEntrega) {
+      const match = users.find(u => String((u as any)?.documento || (u as any)?.Documento || '') === String(docFromEntrega));
+      if (match) {
+        const fullName = getFullName((match as any).nombre, (match as any).apellido);
+        if (fullName) return `${fullName} — CC ${String(docFromEntrega)}`;
+      }
+    }
+    return 'N/A';
   };
 
   // Cargar datos desde la API
@@ -161,7 +320,7 @@ export function EntregaInsumosPage() {
         console.log('🔵 Entregas desde API:', entregasData);
         console.log('🔵 Usuarios desde API:', usersData);
 
-        setBarberos(barberosData.filter(b => b.estado === true));
+        setBarberos(barberosData);
         setInsumos(insumosData.filter(i => i.activo === true));
         setEntregas(entregasData);
         setUsers(usersData);
@@ -188,29 +347,116 @@ export function EntregaInsumosPage() {
 
   const [insumoSeleccionado, setInsumoSeleccionado] = useState(0); // Cambiar a number
 
-  // Filtros y paginación
-  const filteredEntregas = entregas.filter(entrega => {
-    const barberoNombre = getBarberoNombreById((entrega as any).barberoId);
-    const entregaId = String(entrega.id || '');
+  function normalizeEstado(estado: string) {
+    return (estado || '').toLowerCase().trim();
+  }
+  function isCompletadaEstado(estado: string) {
+    const e = normalizeEstado(estado);
+    return e === 'entregado' || e === 'completada' || e === 'completado';
+  }
+  function isAnuladaEstado(estado: string) {
+    const e = normalizeEstado(estado);
+    return e === 'anulado' || e === 'anulada';
+  }
+  function getEstadoDisplay(estado: string) {
+    if (isCompletadaEstado(estado)) return 'Completada';
+    if (isAnuladaEstado(estado)) return 'Anulada';
+    return estado || 'N/A';
+  }
+  function getEstadoColor(estado: string) {
+    if (isAnuladaEstado(estado)) {
+      return 'bg-red-500/10 text-red-400 border border-red-500/20';
+    }
+    if (isCompletadaEstado(estado)) {
+      return 'bg-green-500/10 text-green-400 border border-green-500/20';
+    }
+    return 'bg-gray-medium text-gray-lighter';
+  }
 
-    return barberoNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      entregaId.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filtros y paginación
+  const filteredEntregas = entregas.filter((entrega) => {
+    const q = normalizeSearchText(searchTerm);
+    if (!q) return true;
+    const numero = String(entrega.id || '');
+    const documento = String((entrega as any).barberoDocumento || getBarberoDocumentoById((entrega as any).barberoId) || '');
+    const nombre = getBarberoNombreById((entrega as any).barberoId);
+    const totalInsumos = String(entrega.cantidadTotal ?? '');
+    const fecha = formatDate(entrega.fecha || generateCurrentDate());
+    const estadoDisplay = getEstadoDisplay(String(entrega.estado || ''));
+    // Solo columnas visibles de la tabla: Número, Documento, Nombre, Total Insumos, Fecha, Estado
+    const searchable = normalizeSearchText([numero, documento, nombre, totalInsumos, fecha, estadoDisplay].join(' '));
+    return searchable.includes(q);
   });
 
   const totalPages = Math.ceil(filteredEntregas.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const displayedEntregas = filteredEntregas.slice(startIndex, startIndex + itemsPerPage);
 
-  // Funciones auxiliares
-  const getEstadoColor = (estado: string) => {
-    const estadoNormalizado = (estado || '').toLowerCase().trim();
-    if (estadoNormalizado === 'anulado') {
-      return 'bg-red-500/10 text-red-400 border border-red-500/20';
-    }
-    if (estadoNormalizado === 'entregado') {
-      return 'bg-green-500/10 text-green-400 border border-green-500/20';
-    }
-    return 'bg-gray-medium text-gray-lighter';
+
+  const getDetalleInsumosNormalized = (entrega: EntregaInsumo | null | undefined) => {
+    if (!entrega) return [] as Array<{ id: number; nombre: string; categoria: string; cantidad: number; precio: number; imagen?: string }>;
+
+    const raw =
+      (entrega as any).insumosDetalle ||
+      (entrega as any).detalleEntregasInsumos ||
+      (entrega as any).detalles ||
+      (entrega as any).insumos ||
+      (entrega as any).productos ||
+      [];
+
+    const list = Array.isArray(raw) ? raw : [];
+
+    return list.map((detalle: any, index: number) => {
+      const producto = detalle?.producto || detalle || {};
+
+      const categoriaValue =
+        producto?.categoria?.nombre ||
+        producto?.categoria?.Nombre ||
+        producto?.categoriaNombre ||
+        producto?.CategoriaNombre ||
+        producto?.categoria ||
+        detalle?.categoria?.nombre ||
+        detalle?.categoria?.Nombre ||
+        detalle?.categoriaNombre ||
+        detalle?.CategoriaNombre ||
+        detalle?.categoria ||
+        detalle?.Categoria ||
+        '';
+
+      const imagenValue =
+        producto?.imagen ||
+        producto?.imagenProduc ||
+        producto?.ImagenProduc ||
+        producto?.imagenUrl ||
+        detalle?.imagen ||
+        detalle?.imagenProduc ||
+        detalle?.ImagenProduc ||
+        detalle?.imagenUrl ||
+        '';
+
+      const cantidadValue = Number(detalle?.cantidad ?? producto?.cantidad ?? 0);
+      const precioValue = Number(
+        detalle?.precio ??
+        detalle?.Precio ??
+        detalle?.precioUnitario ??
+        detalle?.precioHistorico ??
+        detalle?.PrecioHistorico ??
+        producto?.precio ??
+        producto?.Precio ??
+        producto?.precioVenta ??
+        producto?.PrecioVenta ??
+        0
+      );
+
+      return {
+        id: Number(producto?.id ?? detalle?.id ?? index),
+        nombre: String(producto?.nombre ?? producto?.Nombre ?? detalle?.nombre ?? detalle?.Nombre ?? `Insumo ${index + 1}`),
+        categoria: String(categoriaValue || 'Sin categoría'),
+        cantidad: Number.isFinite(cantidadValue) ? cantidadValue : 0,
+        precio: Number.isFinite(precioValue) ? precioValue : 0,
+        imagen: imagenValue || undefined,
+      };
+    });
   };
 
   const getTarjetaInputEntrega = (insumo: { id: number; cantidad: number }) => {
@@ -481,8 +727,10 @@ export function EntregaInsumosPage() {
       setCantidadInsumoInput('');
       setTarjetaInputsEntrega({});
       setIsDialogOpen(false);
-
-      toast.success(`Entrega ${numeroEntrega} registrada exitosamente para ${getFullName(barbero?.nombre, barbero?.apellido) || 'Sin asignar'}`);
+      created(
+        "Entrega creada ✔️",
+        `La entrega ${numeroEntrega} ha sido registrada exitosamente para ${getFullName(barbero?.nombre, barbero?.apellido) || 'Sin asignar'}.`
+      );
     } catch (error: any) {
       console.error('Error creando entrega:', error);
       toast.error(error?.message || 'Error al registrar la entrega');
@@ -494,22 +742,12 @@ export function EntregaInsumosPage() {
   // Función para ver detalles completos de una entrega consumiendo la API
   const handleViewDetails = async (entrega: EntregaInsumo) => {
     try {
-      console.log(`🔍 Obteniendo detalles completos de entrega ${entrega.id}...`);
-
       // Obtener detalles completos desde la API
       const entregaCompleta = await entregaInsumosService.getEntregaById(entrega.id.toString());
 
       if (entregaCompleta) {
-        console.log('✅ Detalles completos obtenidos:', entregaCompleta);
-        console.log('🔍 Estructura del barbero:', (entregaCompleta as any).barbero);
-        console.log('🔍 Barbero ID:', (entregaCompleta as any).barberoId);
-        console.log('🔍 Estructura de insumosDetalle:', (entregaCompleta as any).insumosDetalle);
-        console.log('🔍 Tipo de insumosDetalle:', typeof (entregaCompleta as any).insumosDetalle);
-        console.log('🔍 Length de insumosDetalle:', (entregaCompleta as any).insumosDetalle?.length);
-        console.log('🔍 Todos los detalles de la entrega:', JSON.stringify(entregaCompleta, null, 2));
         setSelectedEntrega(entregaCompleta);
       } else {
-        console.warn('⚠️ No se pudieron obtener detalles completos, usando datos locales');
         setSelectedEntrega(entrega);
       }
 
@@ -767,7 +1005,7 @@ export function EntregaInsumosPage() {
             font-size: 12px;
             font-weight: bold;
             display: inline-block;
-            ${entrega.estado === 'Entregado' ? 'background: #10B981; color: white;' : 'background: #EF4444; color: white;'}
+            ${isCompletadaEstado(entrega.estado || '') ? 'background: #10B981; color: white;' : 'background: #EF4444; color: white;'}
           }
         </style>
       </head>
@@ -792,7 +1030,7 @@ export function EntregaInsumosPage() {
             <div class="info-card">
               <div class="info-label">Estado</div>
               <div class="info-value">
-                <span class="status-badge">${entrega.estado}</span>
+                <span class="status-badge">${getEstadoDisplay(entrega.estado || '')}</span>
               </div>
             </div>
             <div class="info-card">
@@ -877,6 +1115,17 @@ export function EntregaInsumosPage() {
   // Estadísticas
   const totalEntregas = entregas.reduce((sum: number, entrega: EntregaInsumo) => sum + entrega.valorTotal, 0);
 
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-auto p-8 bg-black-primary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+          <p className="text-white-primary text-lg">Cargando entregas...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       {/* Header */}
@@ -891,16 +1140,6 @@ export function EntregaInsumosPage() {
       </header>
 
       <main className="flex-1 overflow-auto p-8 bg-black-primary">
-        {/* Loading Overlay */}
-        {loading && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-darkest border border-gray-dark rounded-lg p-6 flex items-center gap-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-primary"></div>
-              <span className="text-white-primary">Cargando datos...</span>
-            </div>
-          </div>
-        )}
-
         {/* Sección Principal */}
         <div className="elegante-card">
           {/* Barra de Controles */}
@@ -952,7 +1191,7 @@ export function EntregaInsumosPage() {
                             Número de Entrega (Automático)
                           </Label>
                           <Input
-                            value="###"
+                            value={numeroEntregas.toString().padStart(3, "0")}
                             disabled
                             className="elegante-input bg-gray-medium"
                           />
@@ -1028,7 +1267,7 @@ export function EntregaInsumosPage() {
                                     onClick={() => {
                                       setNuevaEntrega({ ...nuevaEntrega, barberoSeleccionado: Number(barbero.id ?? 0) });
                                       setBarberoSearchTerm(
-                                        `${getFullName(barbero.nombre, barbero.apellido) || ""}${barbero.documento ? ` — ${barbero.documento}` : ""}`
+                                        `${getFullName(barbero.nombre, barbero.apellido) || ""}${barbero.documento ? ` — CC ${barbero.documento}` : ""}`
                                       );
                                       setShowBarberoResults(false);
                                       if (showEntregaFormErrors) setShowEntregaFormErrors(false);
@@ -1059,8 +1298,8 @@ export function EntregaInsumosPage() {
                       <div className="space-y-4">
                         <h3 className="text-lg font-semibold text-white-primary">Agregar Productos</h3>
 
-                        <div ref={addProductoRowRef} className="grid grid-cols-3 gap-3 items-end">
-                          <div className="space-y-2 col-span-8 relative">
+                        <div ref={addProductoRowRef} className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2 relative">
                             <Label className="text-white-primary flex items-center gap-2">
                               <ShoppingBag className="w-4 h-4 text-orange-primary" />
                               Producto *
@@ -1099,7 +1338,14 @@ export function EntregaInsumosPage() {
                                     const query = normalizeSearchText(insumoSearchTerm);
                                     const filteredResults = insumos
                                       .filter(i =>
-                                        normalizeSearchText([i.id, i.nombre, i.categoria, i.stock, i.stockInsumos, i.stockVentas].join(" ")).includes(query)
+                                        normalizeSearchText([
+                                             i.id,
+                                          i.nombre,
+                                          i.categoria,
+                                          i.stock,
+                                          i.stockInsumos,
+                                          i.stockVentas
+                                        ].join(" ")).includes(query)
                                       )
                                       .slice(0, 20);
 
@@ -1127,11 +1373,13 @@ export function EntregaInsumosPage() {
                                             <p className="text-white-primary font-medium text-sm group-hover:text-orange-secondary transition-colors">
                                               {insumo.nombre}
                                             </p>
-                                            <p className="text-[10px] text-gray-lightest">{insumo.categoria}</p>
+                                            <p className="text-[10px] text-gray-lightest">
+                                              {insumo.categoria || 'Sin categoría'}
+                                            </p>
                                           </div>
                                           <div className="text-right">
-                                            <p className="text-[9px] text-gray-lightest uppercase tracking-widest leading-none mb-1">Stock</p>
-                                            <p className={`text-xs font-bold ${(insumo.stockInsumos ?? insumo.stock) > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            <p className="text-[9px] text-gray-lightest leading-none mb-1">Stock insumos</p>
+                                            <p className={`text-xs font-bold ${(((insumo.stockInsumos ?? insumo.stock) ?? 0) > 0) ? 'text-blue-400' : 'text-red-400'}`}>
                                               {insumo.stockInsumos !== undefined ? insumo.stockInsumos : insumo.stock}
                                             </p>
                                           </div>
@@ -1147,7 +1395,7 @@ export function EntregaInsumosPage() {
                             )}
                           </div>
 
-                          <div className="space-y-2 col-span-2">
+                          <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
                               <Hash className="w-4 h-4 text-orange-primary" />
                               Cantidad *
@@ -1173,20 +1421,48 @@ export function EntregaInsumosPage() {
                                 }
                               }}
                             />
-                            
-                            {showAddInsumoErrors && (!cantidadInsumoInput.trim() || !cantidadInsumo || cantidadInsumo <= 0) && (
-                              <p className="text-xs text-red-400">Este campo es obligatorio.</p>
-                            )}
+                            <div className="flex justify-start mt-1">
+                              <span className="text-xs text-gray-500 font-medium">
+                                {cantidadInsumoInput.length}/10 caracteres
+                              </span>
+                            </div>
+                            {(() => {
+                              const selected = insumos.find(i => Number(i.id) === Number(insumoSeleccionado));
+                              const stockDisp = selected ? (selected.stockInsumos ?? selected.stock) : 0;
+                              const qty = Number(cantidadInsumoInput || 0);
+                              const existente = (() => {
+                                if (!selected) return 0;
+                                const yaAgregado = (nuevaEntrega.insumos || []).find(i => Number(i.id) === Number((selected as any).id));
+                                return Number(yaAgregado?.cantidad || 0);
+                              })();
+                              const sumaDeseada = existente + (Number.isFinite(qty) ? qty : 0);
+                              const showCantidadInsumoError = showAddInsumoErrors && (!cantidadInsumoInput.trim() || !cantidadInsumo || cantidadInsumo <= 0);
+                              const isStockExceeded = !!selected && sumaDeseada > stockDisp;
+                              const maxAdicional = Math.max(0, stockDisp - existente);
+                              return (
+                                <>
+                                  {showCantidadInsumoError && !isStockExceeded && (
+                                    <p className="text-xs text-red-400">Ingresa una cantidad válida.</p>
+                                  )}
+                                  {isStockExceeded && (
+                                    <p className="text-xs text-red-500 font-bold animate-pulse mt-1">
+                                      ⚠️ Se está excediendo la cantidad máxima actual de stock para entregas.{` `}
+                                      {maxAdicional >= 0 ? `(máximo adicional permitido: ${maxAdicional})` : ''}
+                                    </p>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
 
-                          <div className="space-y-2 col-span-2 mt-2">
+                          <div className="space-y-2">
                             <Label className="text-white-primary">ㅤ</Label>
                             <button
                               type="button"
-                              className="elegante-button-primary w-full h"
+                              className="elegante-button-primary w-full"
                               onClick={agregarInsumo}
                             >
-                              Agregar
+                              Agregar producto
                             </button>
                           </div>
                         </div>
@@ -1268,16 +1544,21 @@ export function EntregaInsumosPage() {
                       <div>
                         <h4 className="text-white-primary font-semibold mb-4">Resumen</h4>
                         <div className="bg-gray-darker p-4 rounded-lg border border-gray-dark">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-gray-lightest">Total productos:</span>
-                            <span className="text-white-primary font-semibold">
-                              {(nuevaEntrega.insumos || []).reduce((sum, insumo) => sum + insumo.cantidad, 0)} unidades
-                            </span>
+                          <div className="mt-1">
+                            {(nuevaEntrega.insumos || []).length === 0 ? (
+                              <p className="text-gray-lightest">No hay productos agregados</p>
+                            ) : (
+                              <p className="text-gray-lightest text-sm leading-relaxed">
+                                {(nuevaEntrega.insumos || [])
+                                  .map((i) => `${i.nombre} (${i.cantidad})`)
+                                  .join(', ')}
+                              </p>
+                            )}
                           </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-lightest">Valor Total:</span>
-                            <span className="text-orange-primary font-bold">
-                              ${formatCurrency(calcularTotalEntrega())}
+                          <div className="pt-3 mt-3 border-t border-gray-medium flex items-center justify-between">
+                            <span className="text-gray-lightest">Total productos</span>
+                            <span className="text-orange-primary font-semibold text-base tracking-wide">
+                              {(nuevaEntrega.insumos || []).reduce((sum, insumo) => sum + insumo.cantidad, 0)} unidades
                             </span>
                           </div>
                         </div>
@@ -1324,7 +1605,7 @@ export function EntregaInsumosPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
                 <Input
-                  placeholder="Buscar por barbero o ID..."
+                  placeholder="Buscar por número, documento, nombre, responsable, insumos, fecha o estado..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="elegante-input pl-11 w-80"
@@ -1344,11 +1625,11 @@ export function EntregaInsumosPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-dark">
+                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Número</th>
                   <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Documento</th>
-                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Barbero</th>
+                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Nombre</th>
+                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Total Insumos</th>
                   <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Fecha</th>
-                  <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Insumos</th>
-                  <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Total</th>
                   <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
                   <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
                 </tr>
@@ -1360,7 +1641,14 @@ export function EntregaInsumosPage() {
                       <div className="flex items-center gap-2">
                         <Hash className="w-4 h-4 text-orange-primary" />
                         <span className="text-gray-lighter">
-                          {(entrega as any).documento || entrega.barberoDocumento || entrega.id}
+                          {String(entrega.id)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-lighter">
+                          {`CC ${String((entrega as any).barberoDocumento || getBarberoDocumentoById((entrega as any).barberoId) || '')}`}
                         </span>
                       </div>
                     </td>
@@ -1375,24 +1663,19 @@ export function EntregaInsumosPage() {
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      <span className="text-sm text-gray-lighter">{entrega.fecha?.split(' ')[0] || entrega.fecha}</span>
-                    </td>
-                    <td className="py-4 px-4">
                       <span className="text-gray-lighter">{entrega.cantidadTotal} unidades</span>
                     </td>
-                    <td className="py-4 px-4 text-right">
-                      <div className="text-gray-lighter">
-                        ${formatCurrency(entrega.valorTotal)}
-                      </div>
+                    <td className="py-4 px-4">
+                      <span className="text-sm text-gray-lighter">{formatDate(entrega.fecha || generateCurrentDate())}</span>
                     </td>
                     <td className="py-4 px-4 text-center">
                       <span className={`px-3 py-1 rounded-full text-xs ${getEstadoColor(entrega.estado || '')}`}>
-                        {entrega.estado}
+                        {getEstadoDisplay(entrega.estado || '')}
                       </span>
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex items-center justify-center gap-2">
-                      {entrega.estado === "Entregado" && (
+                      {isCompletadaEstado(entrega.estado || '') && (
                           <button
                             onClick={() => handleAnularClick(entrega)}
                             className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -1425,155 +1708,240 @@ export function EntregaInsumosPage() {
           </div>
 
           {/* Paginación */}
-          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
-            <div className="text-sm text-gray-lightest">
-              Página {currentPage} de {totalPages}
+            <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-lightest">
+                  Página {currentPage} de {totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-lightest">Filas por página:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(Number(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[110px] h-8 bg-gray-darker border-gray-dark text-gray-lightest">
+                      <SelectValue placeholder={itemsPerPage.toString()} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-darkest border-gray-dark text-gray-lightest">
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Página anterior"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-lightest" />
+                </button>
+
+                {/* Números de página */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded text-sm transition-colors ${currentPage === pageNum
+                          ? 'bg-orange-primary text-black-primary font-medium'
+                          : 'border border-gray-dark hover:bg-gray-darker text-gray-lightest'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Página siguiente"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-lightest" />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4 text-gray-lightest" />
-              </button>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 text-gray-lightest" />
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Modal de detalles de entrega */}
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-          <DialogContent className="bg-gray-darkest border-gray-dark max-w-3xl">
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="text-white-primary">Detalles de Entrega {selectedEntrega?.id}</DialogTitle>
+              <DialogTitle className="text-white-primary">Detalles de Entrega</DialogTitle>
               <DialogDescription className="text-gray-lightest">
-                Información completa de la entrega realizada
+                Información completa de la entrega
               </DialogDescription>
             </DialogHeader>
 
             {selectedEntrega && (
               <div className="space-y-6 py-4">
-                {/* Información general */}
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-gray-lightest">Barbero:</span>
-                      <p className="text-white-primary font-semibold">
-                        {(selectedEntrega as any).barbero
-                          ? (typeof (selectedEntrega as any).barbero === 'object'
-                            ? getFullName((selectedEntrega as any).barbero.nombre, (selectedEntrega as any).barbero.apellido)
-                            : String((selectedEntrega as any).barbero))
-                          : getBarberoNombreById((selectedEntrega as any).barberoId)}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-lightest">Fecha y Hora:</span>
-                      <p className="text-white-primary font-semibold">
-                        {selectedEntrega.fecha?.split(' ')[0] || 'Sin fecha'} - {selectedEntrega.hora || 'Sin hora'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-gray-lightest">Estado:</span>
-                      <p>
-                        <span className={`px-3 py-1 rounded-full text-xs ${getEstadoColor(selectedEntrega.estado || 'Desconocido')}`}>
-                          {selectedEntrega.estado || 'Desconocido'}
-                        </span>
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-lightest">Responsable:</span>
-                      <p className="text-white-primary font-semibold">
-                        {getUsuarioNombreById((selectedEntrega as any).usuarioId) || selectedEntrega.responsable || 'Sin asignar'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Resumen */}
-                <div className="bg-gray-darker p-4 rounded-lg border border-gray-dark">
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-white-primary">{selectedEntrega.cantidadTotal || 0}</div>
-                      <div className="text-gray-lightest">Insumos Entregados</div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Hash className="w-4 h-4 text-orange-primary" />
+                        Número de Entrega (Automático)
+                      </Label>
+                      <Input
+                        value={String((selectedEntrega as any).documento || selectedEntrega.id || '###')}
+                        disabled
+                        readOnly
+                        className="elegante-input bg-gray-medium"
+                      />
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-orange-primary">${formatCurrency(selectedEntrega.valorTotal || 0)}</div>
-                      <div className="text-gray-lightest">Valor Total</div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-orange-primary" />
+                        Fecha de Registro
+                      </Label>
+                      <Input
+                        value={formatDate((selectedEntrega as any).fechaRegistro || selectedEntrega.fecha || generateCurrentDate())}
+                        disabled
+                        readOnly
+                        className="elegante-input bg-gray-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 relative">
+                    <Label className="text-white-primary flex items-center gap-2">
+                      <UserIcon className="w-4 h-4 text-orange-primary" />
+                      Barbero
+                    </Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
+                      <Input
+                        value={getBarberoDisplay(selectedEntrega)}
+                        disabled
+                        readOnly
+                        className="elegante-input pl-11 w-full bg-gray-medium"
+                      />
                     </div>
                   </div>
                 </div>
 
-                {/* Lista de insumos */}
-                <div>
-                  <h4 className="text-white-primary font-semibold mb-3">Insumos Entregados</h4>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {(() => {
-                      const insumos = selectedEntrega.insumosDetalle ||
-                        (selectedEntrega as any).detalleEntregasInsumos ||
-                        (selectedEntrega as any).detalles ||
-                        (selectedEntrega as any).insumos ||
-                        (selectedEntrega as any).productos ||
-                        [];
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-white-primary flex items-center gap-2">
+                      Responsable
+                    </Label>
+                    <Input
+                      value={getResponsableDisplay(selectedEntrega)}
+                      disabled
+                      className="elegante-input bg-gray-medium"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-white-primary flex items-center gap-2">
+                      Estado
+                    </Label>
+                    <div className="h-10 flex items-center">
+                      <span className={`px-2 py-1 rounded-full text-xs ${getEstadoColor((selectedEntrega as any).estado || '')}`}>
+                        {getEstadoDisplay((selectedEntrega as any).estado || '')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-                      console.log('🔍 Insumos a mostrar:', insumos);
+                {(() => {
+                  const detalleInsumos = getDetalleInsumosNormalized(selectedEntrega);
+                  const totalCantidad = detalleInsumos.reduce((sum, i) => sum + (i.cantidad || 0), 0);
 
-                      return insumos && insumos.length > 0 ? (
-                        insumos.map((detalle: any, index: number) => {
-                          const insumo = detalle.producto || detalle;
-                          return (
-                            <div key={detalle.id || index} className="flex justify-between items-center p-3 bg-gray-darker rounded-lg border border-gray-dark">
-                              <div className="flex items-center gap-2 flex-1">
-                                <ImageRenderer
-                                  url={
-                                    insumo.imagen ||
-                                    insumo.imagenProduc ||
-                                    insumo.ImagenProduc ||
-                                    insumo.imagenUrl ||
-                                    detalle.imagen ||
-                                    detalle.imagenProduc ||
-                                    ''
-                                  }
-                                  alt={insumo.nombre}
-                                  className="w-8 h-8 border-0 bg-transparent rounded object-cover"
-                                />
-                                <div>
-                                  <div className="text-white-primary font-medium">
-                                    {insumo.nombre || `Insumo ${index + 1}`}
+                  return (
+                    <div className="space-y-6">
+                      <div>
+                        <h4 className="text-white-primary font-semibold mb-3">Productos agregados</h4>
+                        <div className="space-y-2 max-h-52 overflow-y-auto">
+                          {detalleInsumos.length === 0 ? (
+                            <p className="text-gray-lightest text-center py-4">No hay productos agregados</p>
+                          ) : (
+                            detalleInsumos.map((insumo) => (
+                              <div key={insumo.id} className="bg-gray-darker rounded-lg px-3 py-2.5 border-l-2 border-orange-primary/20">
+                                <div className="flex items-center gap-4 flex-nowrap min-w-0">
+                                  <div className="shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-dark border border-gray-dark flex items-center justify-center">
+                                    <ImageRenderer
+                                      url={insumo.imagen || ''}
+                                      alt={insumo.nombre}
+                                      className="w-full h-full border-0 bg-transparent"
+                                    />
                                   </div>
-                                  <div className="text-sm text-gray-lightest">
-                                    {insumo.categoria?.nombre || 'Sin categoría'}
+
+                                  <div className="min-w-0 flex-1 shrink flex flex-col items-center justify-center">
+                                    <span
+                                      className="text-white-primary font-semibold text-base truncate block text-center w-full"
+                                      title={insumo.nombre}
+                                    >
+                                      {insumo.nombre}
+                                    </span>
+                                    <span className="text-[11px] text-gray-400 truncate block text-center w-full">
+                                      {insumo.categoria}
+                                    </span>
+                                  </div>
+
+                                
+
+                                  <div className="flex flex-col gap-0.5 shrink-0">
+                                    <label className="text-[11px] text-gray-400 font-normal">Cantidad</label>
+                                    <Input
+                                      type="number"
+                                      value={String(insumo.cantidad ?? 0)}
+                                      disabled
+                                      readOnly
+                                      className="w-12 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 bg-gray-medium"
+                                    />
                                   </div>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className="text-orange-primary font-semibold">{detalle.cantidad || 0} unidades</div>
-                                <div className="text-sm text-gray-lightest">${formatCurrency(detalle.precioHistorico || insumo.precioVenta || 0)} c/u</div>
-                              </div>
-                              <div className="ml-4 text-right">
-                                <div className="text-white-primary font-semibold">
-                                  ${formatCurrency((detalle.cantidad || 0) * (detalle.precioHistorico || insumo.precioVenta || 0))}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })
-                      ) : (
-                        <div className="text-center py-8 text-gray-lightest">
-                          No hay detalles de insumos disponibles para esta entrega
+                            ))
+                          )}
                         </div>
-                      );
-                    })()}
-                  </div>
-                </div>
+                      </div>
+
+                      <div>
+                        <h4 className="text-white-primary font-semibold mb-4">Resumen</h4>
+                        <div className="bg-gray-darker p-4 rounded-lg border border-gray-dark">
+                          <div className="mt-1">
+                            {detalleInsumos.length === 0 ? (
+                              <p className="text-gray-lightest">No hay productos agregados</p>
+                            ) : (
+                              <p className="text-gray-lightest text-sm leading-relaxed">
+                                {detalleInsumos
+                                  .map((i) => `${i.nombre} (${i.cantidad})`)
+                                  .join(', ')}
+                              </p>
+                            )}
+                          </div>
+                          <div className="pt-3 mt-3 border-t border-gray-medium flex items-center justify-between">
+                            <span className="text-gray-lightest">Total productos</span>
+                            <span className="text-orange-primary font-semibold text-base tracking-wide">{totalCantidad} unidades</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1582,14 +1950,24 @@ export function EntregaInsumosPage() {
                 onClick={() => setIsDetailDialogOpen(false)}
                 className="elegante-button-secondary"
               >
-                Cerrar
+                Cancelar
               </button>
+              {selectedEntrega && (
+                <button
+                  onClick={() => handleAnularClick(selectedEntrega)}
+                  className={`elegante-button-primary ${isAnuladaEstado(String((selectedEntrega as any).estado || '')) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={isAnuladaEstado(String((selectedEntrega as any).estado || ''))}
+                  title={isAnuladaEstado(String((selectedEntrega as any).estado || '')) ? 'Entrega anulada' : 'Anular entrega'}
+                >
+                  {isAnuladaEstado(String((selectedEntrega as any).estado || '')) ? 'Entrega Anulada' : 'Anular Entrega'}
+                </button>
+              )}
               {selectedEntrega && (
                 <button
                   onClick={() => generateIndividualEntregaPDF(selectedEntrega)}
                   className="elegante-button-primary"
                 >
-                  <Download className="w-4 h-4 mr-2" />
+                  
                   Descargar PDF
                 </button>
               )}
@@ -1599,6 +1977,7 @@ export function EntregaInsumosPage() {
       </main>
 
       <DoubleConfirmationContainer />
+      <AlertContainer />
     </>
   );
 }

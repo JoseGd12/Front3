@@ -2,6 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Package,
   Plus,
   Edit,
@@ -28,6 +35,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "../ui/label";
 import { useCustomAlert } from "../ui/custom-alert";
 import { productoService, ApiProducto } from "../../services/productos";
+import { compraService } from "../../services/compraService";
+import { entregaInsumosService } from "../../services/entregaInsumosService";
 import ImageRenderer from "../ui/ImageRenderer";
 import { apiService } from "../../services/api";
 
@@ -118,7 +127,10 @@ export function ProductosPage() {
 
   const filteredProductos = productos.filter(producto => {
     const matchesSearch = producto.nombre.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategoria = filterCategoria === "all" || producto.categoria?.nombre === filterCategoria;
+    const categoriaNombre = typeof (producto as any).categoria === 'string'
+      ? String((producto as any).categoria)
+      : String((producto as any).categoria?.nombre || '');
+    const matchesCategoria = filterCategoria === "all" || categoriaNombre === filterCategoria;
     return matchesSearch && matchesCategoria;
   });
 
@@ -377,6 +389,38 @@ export function ProductosPage() {
     if (!productoToDelete) return;
 
     try {
+      // Verificar asociaciones antes de eliminar
+      let comprasAsociadas = 0;
+      let entregasAsociadas = 0;
+      try {
+        const compras = await compraService.getCompras();
+        comprasAsociadas = compras.filter(c =>
+          Array.isArray(c.detalles) && c.detalles.some(d => Number(d.productoId) === Number(productoToDelete.id))
+        ).length;
+      } catch {}
+      try {
+        const entregas = await entregaInsumosService.getEntregas();
+        entregasAsociadas = (entregas || []).filter((e: any) => {
+          const detalles =
+            e.insumosDetalle ||
+            e.detalleEntregasInsumos ||
+            e.DetalleEntregasInsumos ||
+            e.detalles ||
+            [];
+          return Array.isArray(detalles) && detalles.some((d: any) => Number(d.productoId ?? d.id) === Number(productoToDelete.id));
+        }).length;
+      } catch {}
+
+      if (comprasAsociadas > 0 || entregasAsociadas > 0) {
+        error(
+          "No se puede eliminar",
+          `El producto "${productoToDelete.nombre}" está asociado a ${comprasAsociadas} compra(s) y ${entregasAsociadas} entrega(s). Debe desvincularse antes de eliminar.`
+        );
+        setIsDeleteDialogOpen(false);
+        setProductoToDelete(null);
+        return;
+      }
+
       await productoService.deleteProducto(productoToDelete.id);
 
       // Refresh products list
@@ -686,7 +730,7 @@ export function ProductosPage() {
                             value={nuevoProducto.nombre}
                             onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
                             placeholder="Ej: Cadena de Rodio"
-                            className={`elegante - input h - 9 text - sm ${showProductoFormErrors && !nuevoProducto.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''} `}
+                            className={`elegante-input h-9 text-sm ${showProductoFormErrors && !nuevoProducto.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''} `}
                           />
                           {showProductoFormErrors && !nuevoProducto.nombre.trim() && (
                             <p className="text-[10px] text-red-400 mt-1">El nombre es obligatorio</p>
@@ -698,7 +742,7 @@ export function ProductosPage() {
                             Categoría *
                           </Label>
                           <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-lighter pointer-events-none z-10" />
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-lighter pointer-events-none" />
                             <Input
                               placeholder="Escribe para buscar una categoría..."
                               value={categoriaSearchTerm}
@@ -957,9 +1001,9 @@ export function ProductosPage() {
                               title={producto.activo ? "Desactivar producto" : "Activar producto"}
                             >
                               {producto.activo ? (
-                                <ToggleRight className="w-4 h-4 text-green-400" />
+                                <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
                               ) : (
-                                <ToggleLeft className="w-4 h-4 text-red-400" />
+                                <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
                               )}
                             </button>
                             <button
@@ -998,23 +1042,76 @@ export function ProductosPage() {
             </div>
 
             {/* Paginación */}
-            {/* Paginación */}
             <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
-              <div className="text-sm text-gray-lightest">
-                Página {currentPage} de {totalPages}
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-lightest">
+                  Página {currentPage} de {totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-lightest">Filas por página:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(Number(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[110px] h-8 bg-gray-darker border-gray-dark text-gray-lightest">
+                      <SelectValue placeholder={itemsPerPage.toString()} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-darkest border-gray-dark text-gray-lightest">
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                   className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Página anterior"
                 >
                   <ChevronLeft className="w-4 h-4 text-gray-lightest" />
                 </button>
+
+                {/* Números de página */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded text-sm transition-colors ${currentPage === pageNum
+                          ? 'bg-orange-primary text-black-primary font-medium'
+                          : 'border border-gray-dark hover:bg-gray-darker text-gray-lightest'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                   className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Página siguiente"
                 >
                   <ChevronRight className="w-4 h-4 text-gray-lightest" />
                 </button>
@@ -1100,121 +1197,218 @@ export function ProductosPage() {
                   Detalles del Producto
                 </DialogTitle>
                 <DialogDescription className="text-gray-lightest">
-                  Información completa del producto seleccionado
+                  Consulta la información del producto
                 </DialogDescription>
               </DialogHeader>
 
               {selectedProducto && (
                 <div className="space-y-4 pt-4">
-                  {/* Fila 1 (arriba): Imagen (izq) | Descripción (der) */}
                   <div className="grid grid-cols-2 gap-4">
-                    {/* Mitad izquierda: Imagen (solo lectura) */}
                     <div className="space-y-2">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <ImageIcon className="w-3.5 h-3.5 text-orange-primary" />
-                        Imagen del Producto
-                      </Label>
-                      <div className="w-full min-h-[200px] rounded-lg border-2 border-gray-dark bg-gray-darker flex items-center justify-center overflow-hidden">
-                        {selectedProducto.imagenProduc ? (
-                          <ImageRenderer
-                            url={selectedProducto.imagenProduc}
-                            alt={selectedProducto.nombre}
-                            className="w-full h-full min-h-[200px] border-0 bg-transparent"
-                          />
+                      <div className="flex items-center justify-between gap-2 h-9 mb-4">
+                        <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                          <ImageIcon className="w-3.5 h-3.5 text-orange-primary" />
+                          Imagen del Producto
+                        </Label>
+                        <button
+                          onClick={triggerFileSelect}
+                          disabled
+                          className="elegante-button-secondary px-4 py-2 gap-2 flex items-center text-xs disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                          type="button"
+                        >
+                          {uploadingImage ? (
+                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Subiendo...</>
+                          ) : (
+                            <><Camera className="w-3.5 h-3.5" /> {selectedProducto.imagenProduc ? 'Cambiar' : 'Subir Imagen'}</>
+                          )}
+                        </button>
+                      </div>
+                      <div className="w-full h-52 rounded-lg border-2 border-dashed border-gray-dark bg-gray-darker flex items-center justify-center overflow-hidden relative">
+                        {uploadingImage ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <Loader2 className="w-10 h-10 text-orange-primary animate-spin" />
+                            <span className="text-xs text-gray-lighter">Subiendo...</span>
+                          </div>
+                        ) : selectedProducto.imagenProduc ? (
+                          <div className="relative w-full h-full group">
+                            <ImageRenderer
+                              url={selectedProducto.imagenProduc}
+                              alt="Vista previa"
+                              className="w-full h-full border-0 bg-transparent"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <button
+                                onClick={removeImage}
+                                className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                type="button"
+                                title="Eliminar imagen"
+                                disabled
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center text-gray-lighter py-8">
-                            <ImageIcon className="w-14 h-14 mb-2 opacity-50" />
-                            <span className="text-sm">Sin imagen</span>
+                            <ImageIcon className="w-14 h-14 mb-2 opacity-30" />
+                            <span className="text-sm font-medium">Sin imagen</span>
+                            <span className="text-xs opacity-50 mt-1">Sube una foto del producto</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 mt-2">
+                        <p className="text-[10px] text-gray-lightest px-1 flex items-center gap-1.5 opacity-80">
+                          <Info className="w-3 h-3 text-orange-primary" />
+                          Tamaño máx: 5MB. Formatos: JPG, PNG, GIF, WEBP.
+                        </p>
+
+                        {imageError && (
+                          <div className="bg-red-500/10 border border-red-500/20 rounded-md p-2 flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                            <p className="text-[10px] text-red-400 font-medium">
+                              {imageError}
+                            </p>
                           </div>
                         )}
                       </div>
                     </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      disabled
+                    />
 
-                    {/* Mitad derecha: Descripción (solo lectura) */}
-                    <div className="space-y-2">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-orange-primary" />
-                        Descripción
-                      </Label>
-                      <div className="elegante-input w-full min-h-[200px] resize-none text-sm p-3 rounded-md border border-gray-dark bg-gray-darker overflow-y-auto">
-                        {selectedProducto.descripcion || 'Sin descripción'}
+                    <div className="flex flex-col">
+                      <div className="flex items-center h-9 mb-4">
+                        <Label className="text-white-primary text-s flex items-center justify-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 mb-3 text-orange-primary" />
+                          Descripción
+                        </Label>
                       </div>
+                      <Textarea
+                        value={selectedProducto.descripcion || ''}
+                        disabled
+                        readOnly
+                        placeholder="Detalles del producto, características, instrucciones de uso..."
+                        className="elegante-input w-full flex-1 resize-none text-sm"
+                      />
                     </div>
                   </div>
 
-                  {/* Fila 2: Nombre | Categoría (50/50) */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <Label className="text-white-primary text-xs flex items-center gap-1.5">
                         <Tags className="w-3.5 h-3.5 text-orange-primary" />
                         Nombre *
                       </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
-                        {selectedProducto.nombre}
-                      </div>
+                      <Input
+                        value={selectedProducto.nombre ?? ''}
+                        disabled
+                        readOnly
+                        className="elegante-input h-9 text-sm"
+                      />
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 relative">
                       <Label className="text-white-primary text-xs flex items-center gap-1.5">
                         <Tags className="w-3.5 h-3.5 text-orange-primary" />
                         Categoría *
                       </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
-                        {typeof selectedProducto.categoria === 'string'
-                          ? selectedProducto.categoria
-                          : (selectedProducto.categoria as any)?.nombre ?? 'Sin categoría'}
+                      <div className="relative">
+                        <Input
+                          placeholder="Escribe para buscar una categoría..."
+                          value={typeof selectedProducto.categoria === 'string'
+                            ? selectedProducto.categoria
+                            : (selectedProducto.categoria as any)?.nombre ?? 'Sin categoría'}
+                          disabled
+                          readOnly
+                          className="elegante-input h-9 text-sm"
+                        />
                       </div>
                     </div>
                   </div>
 
-                  {/* Fila 3: Marca (ancho completo) */}
                   <div className="space-y-1.5">
                     <Label className="text-white-primary text-xs flex items-center gap-1.5">
                       <Tags className="w-3.5 h-3.5 text-orange-primary" />
                       Marca
                     </Label>
-                    <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
-                      {selectedProducto.marca || 'Sin marca'}
-                    </div>
+                    <Input
+                      value={selectedProducto.marca || 'Sin marca'}
+                      disabled
+                      readOnly
+                      placeholder="Nombre de la marca"
+                      className="elegante-input h-9 text-sm"
+                    />
                   </div>
 
-                  {/* Fila 4: Precio unitario | Stock ventas | Stock insumos | Stock Total */}
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <DollarSign className="w-3.5 h-3.5 text-orange-primary" />
-                        Precio unitario
-                      </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
-                        {formatearPrecio(selectedProducto.precioBase ?? 0)}
+                  <div className="w-1/2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                          <DollarSign className="w-3.5 h-3.5 text-orange-primary" />
+                          Precio unitario *
+                        </Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          min={0}
+                          step={0.01}
+                          value={(selectedProducto.precioBase as number | string) === '' ? '' : (selectedProducto.precioBase ?? '')}
+                          disabled
+                          readOnly
+                          className="elegante-input bg-gray-dark/50 h-9 text-sm border-gray-dark/30 opacity-70 cursor-not-allowed"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                          <Boxes className="w-3.5 h-3.5 text-orange-primary" />
+                          Stock Ventas
+                        </Label>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          min={0}
+                          value={(selectedProducto.stockVentas as number | string) === '' ? '' : (selectedProducto.stockVentas ?? '')}
+                          disabled
+                          readOnly
+                          className="elegante-input bg-gray-dark/50 h-9 text-sm border-gray-dark/30 opacity-70 cursor-not-allowed"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                          <Boxes className="w-3.5 h-3.5 text-orange-primary" />
+                          Stock Insumos
+                        </Label>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          min={0}
+                          value={(selectedProducto.stockInsumos as number | string) === '' ? '' : (selectedProducto.stockInsumos ?? '')}
+                          disabled
+                          readOnly
+                          className="elegante-input bg-gray-dark/50 h-9 text-sm border-gray-dark/30 opacity-70 cursor-not-allowed"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-white-primary text-xs flex items-center gap-1.5 opacity-70 font-medium">
+                          <Package className="w-3.5 h-3.5 text-orange-primary" />
+                          Stock Total
+                        </Label>
+                        <Input
+                          value={getStockTotal(selectedProducto)}
+                          disabled
+                          readOnly
+                          className="elegante-input bg-gray-dark/50 h-9 text-sm border-gray-dark/30 opacity-70 cursor-not-allowed"
+                        />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <Boxes className="w-3.5 h-3.5 text-orange-primary" />
-                        Stock Ventas
-                      </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark border-green-500/10">
-                        {(selectedProducto.stockVentas ?? 0)} unidades
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <Boxes className="w-3.5 h-3.5 text-orange-primary" />
-                        Stock Insumos
-                      </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark border-blue-500/10">
-                        {(selectedProducto.stockInsumos ?? 0)} unidades
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <Package className="w-3.5 h-3.5 text-orange-primary" />
-                        Stock Total
-                      </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-orange-primary/20 font-bold text-orange-primary">
-                        {(selectedProducto.stockVentas ?? 0) + (selectedProducto.stockInsumos ?? 0)} unidades
-                      </div>
-                    </div>
+                    <p className="text-[10px] text-gray-lightest mt-2 opacity-70">
+                      El stock se actualiza automáticamente con compras, ventas y entregas de insumos.
+                    </p>
                   </div>
                 </div>
               )}

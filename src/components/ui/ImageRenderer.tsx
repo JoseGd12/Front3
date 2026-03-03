@@ -10,7 +10,7 @@ interface ImageRendererProps {
 
 /**
  * Componente unificado para renderizar imágenes de productos, servicios, clientes, etc.
- * Maneja automáticamente URLs de Cloudinary, Base64, rutas locales y legacy a través del proxy.
+ * Maneja automáticamente URLs externas, Base64, rutas locales y legacy a través del proxy.
  */
 const ImageRenderer = ({ url, alt = "Imagen", className }: ImageRendererProps) => {
     const [loading, setLoading] = useState(true);

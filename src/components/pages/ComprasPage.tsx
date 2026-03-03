@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Input } from "../ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Plus,
   Search,
   Eye,
@@ -30,6 +37,7 @@ import { compraService, Compra, CreateCompraRequest } from "../../services/compr
 import { proveedorService, Proveedor } from "../../services/proveedorService";
 import { insumosService, Insumo } from "../../services/insumosService";
 import { productoService } from "../../services/productos";
+import { apiService, ApiUser } from "../../services/api";
 import ImageRenderer from "../ui/ImageRenderer";
 
 // Función para formatear moneda colombiana con puntos para separar miles
@@ -68,7 +76,10 @@ const CompraRow = React.memo(({
 }) => (
   <tr className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
     <td className="py-4 px-4 text-center">
-      <span className="text-gray-lighter">{compra.id}</span>
+      <div className="flex items-center gap-2 justify-center">
+        <Hash className="w-4 h-4 text-orange-primary" />
+        <span className="text-gray-lighter">{String(compra.id)}</span>
+      </div>
     </td>
     <td className="py-4 px-4 text-center">
       <span className="text-gray-lighter">{compra.proveedorDocumento || 'N/A'}</span>
@@ -83,7 +94,7 @@ const CompraRow = React.memo(({
       <span className="text-gray-lighter font-bold">${compra.totalFormatted}</span>
     </td>
     <td className="py-4 px-4 text-center">
-      <span className="text-gray-lighter">{compra.fechaFormatted}</span>
+      <span className="text-sm text-gray-lighter">{compra.fechaFormatted}</span>
     </td>
     <td className="py-4 px-4 text-center">
       <span className={`px-3 py-1 rounded-full text-xs ${getEstadoColor(compra.estado)}`}>
@@ -92,6 +103,15 @@ const CompraRow = React.memo(({
     </td>
     <td className="py-4 px-4 text-center">
       <div className="flex items-center justify-center gap-2">
+        {compra.estado?.toLowerCase() !== "anulada" && compra.estado?.toLowerCase() !== "anulado" && (
+          <button
+            onClick={() => onAnular(compra.id)}
+            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+            title="Anular"
+          >
+            <Ban className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+          </button>
+        )}
         <button
           onClick={() => onViewDetails(compra)}
           className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -106,15 +126,6 @@ const CompraRow = React.memo(({
         >
           <FileDown className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
         </button>
-        {compra.estado?.toLowerCase() !== "anulada" && compra.estado?.toLowerCase() !== "anulado" && (
-          <button
-            onClick={() => onAnular(compra.id)}
-            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-            title="Anular"
-          >
-            <Ban className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
-          </button>
-        )}
       </div>
     </td>
   </tr>
@@ -125,6 +136,7 @@ export function ComprasPage() {
   const { confirmDeleteAction, DoubleConfirmationContainer } = useDoubleConfirmation();
   const { created, AlertContainer } = useCustomAlert();
   const [compras, setCompras] = useState<Compra[]>([]);
+  const [users, setUsers] = useState<ApiUser[]>([]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [productos, setProductos] = useState<Insumo[]>([]);
 
@@ -133,7 +145,7 @@ export function ComprasPage() {
   const [selectedCompra, setSelectedCompra] = useState<Compra | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
   const [loading, setLoading] = useState(!sessionStorage.getItem('compras_cache'));
 
@@ -166,6 +178,35 @@ export function ComprasPage() {
       month: '2-digit',
       year: 'numeric'
     });
+  };
+
+  const getCompraResponsableDisplay = (compra: any) => {
+    if (!compra) return 'N/A';
+    const c = compra as any;
+    let doc =
+      c.responsableDocumento ??
+      c.ResponsableDocumento ??
+      c.usuarioDocumento ??
+      c.UsuarioDocumento ??
+      c.userDocumento ??
+      c.UserDocumento ??
+      '';
+
+    const nombreDirecto =
+      c.responsableNombre ?? c.ResponsableNombre ?? c.usuarioNombre ?? c.UsuarioNombre ?? c.responsable ?? c.usuario;
+    if (nombreDirecto) return `${String(nombreDirecto)}${doc ? ` — CC ${doc}` : ''}`;
+
+    const respObj = c.responsable ?? c.Responsable ?? c.usuario ?? c.Usuario;
+    if (respObj) {
+      if (typeof respObj === 'string') return `${respObj}${doc ? ` — CC ${doc}` : ''}`;
+      const nombre = respObj.nombre ?? respObj.Nombre ?? respObj.name ?? respObj.Name;
+      const apellido = respObj.apellido ?? respObj.Apellido ?? respObj.lastName ?? respObj.LastName;
+      if (!doc) doc = respObj.documento ?? respObj.Documento ?? '';
+      const fullName = [nombre, apellido].filter(Boolean).join(' ').trim();
+      if (fullName) return `${fullName}${doc ? ` — CC ${doc}` : ''}`;
+    }
+    if (doc) return `CC ${doc}`;
+    return 'N/A';
   };
 
   const inicialNuevaCompra = {
@@ -210,6 +251,7 @@ export function ComprasPage() {
   const [showAddCompraProductoErrors, setShowAddCompraProductoErrors] = useState(false);
   const [compraValidationAttempt, setCompraValidationAttempt] = useState(0);
   const shakeClass = compraValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
+  const [creatingPurchase, setCreatingPurchase] = useState(false);
   const noProductosAgregados = (nuevaCompra.productos?.length || 0) === 0;
   const showProductoSelectorError = (showCompraFormErrors && noProductosAgregados && !productoSeleccionado) || (showAddCompraProductoErrors && !productoSeleccionado);
   const showCantidadProductoError = (showCompraFormErrors && noProductosAgregados && cantidadProducto <= 0) || (showAddCompraProductoErrors && cantidadProducto <= 0);
@@ -219,11 +261,12 @@ export function ComprasPage() {
   const showDistribucionExceso = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0 && distribucionDiff > 0;
   const showDistribucionFalta = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0 && distribucionDiff < 0;
   const showDistribucionError = showDistribucionExceso || showDistribucionFalta;
-  const maxVentasPermitido = Math.max(0, cantidadProducto - stockInsumos);
-  const maxEntregasPermitido = Math.max(0, cantidadProducto - stockVentas);
-  const showExcesoVentas = showDistribucionExceso && stockVentas > maxVentasPermitido;
-  const showExcesoEntregas = showDistribucionExceso && stockInsumos > maxEntregasPermitido;
-
+  const maxVentasPermitido = Math.max(0, cantidadProducto);
+  const maxEntregasPermitido = Math.max(0, cantidadProducto);
+  const baseErrorGate = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0;
+  const showExcesoVentas = baseErrorGate && stockVentas > cantidadProducto;
+  const showExcesoEntregas = baseErrorGate && stockInsumos > cantidadProducto;
+  const numeroCompras = 121 + compras.length; 
   // Cargar datos de forma separada y perezosa con cache SWR
   const loadCompras = async (useCache = false) => {
     if (useCache) {
@@ -286,6 +329,7 @@ export function ComprasPage() {
       // primero si existe, y luego actualizar con datos frescos.
       const comprasPromise = loadCompras(true);
       const proveedoresPromise = loadProveedores();
+      const usuariosPromise = apiService.getUsuarios().then(setUsers).catch(() => setUsers([]));
 
       // Esperamos que loadCompras termine (incluyendo la petición de red)
       // para asegurar que los datos estén actualizados, pero permitimos
@@ -294,6 +338,7 @@ export function ComprasPage() {
 
       // Proveedores es secundario (solo para el diálogo de nueva compra)
       proveedoresPromise.catch(err => console.error("Error background providers:", err));
+      usuariosPromise.catch(err => console.error("Error background usuarios:", err));
     } catch (error) {
       console.error("Error en la carga inicial:", error);
     } finally {
@@ -327,7 +372,15 @@ export function ComprasPage() {
     const query = normalizeSearchText(debouncedSearch);
     if (!query) return compras;
     return compras.filter(compra => {
-      return (compra as any).searchString?.includes(query);
+      // Solo campos visibles en la tabla: Número, Documento/NIT, Proveedor, Total, Fecha, Estado
+      const numero = String((compra as any).numeroCompra || (compra as any).numeroFactura || (compra as any).id || '');
+      const documento = String((compra as any).proveedorDocumento || '');
+      const proveedor = String((compra as any).proveedorNombre || '');
+      const totalTxt = String((compra as any).total ?? '');
+      const fechaTxt = formatDate((compra as any).fecha || '');
+      const estadoTxt = String((compra as any).estado || '');
+      const visible = normalizeSearchText([numero, documento, proveedor, totalTxt, fechaTxt, estadoTxt].join(' '));
+      return visible.includes(query);
     });
   }, [compras, debouncedSearch]);
 
@@ -754,7 +807,21 @@ export function ComprasPage() {
     try {
       // Show dialog immediately or loading state
       const detalles = await compraService.getDetallesPorCompra(compra.id);
-      setSelectedCompra({ ...compra, detalles: detalles });
+      let responsableDocumento = '';
+      try {
+        const uid = (compra as any).usuarioId || (compra as any).UsuarioId || 0;
+        if (uid) {
+          const usuario = await apiService.getUsuarioById(Number(uid));
+          responsableDocumento = String(
+            (usuario as any)?.documento ||
+            (usuario as any)?.Documento ||
+            ''
+          );
+        }
+      } catch {
+        // silently ignore doc fetch errors
+      }
+      setSelectedCompra({ ...compra, detalles: detalles, responsableDocumento });
       setIsDetailDialogOpen(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la compra");
@@ -762,6 +829,8 @@ export function ComprasPage() {
   };
 
   const handleCreateCompra = React.useCallback(async () => {
+    if (creatingPurchase) return;
+    setCreatingPurchase(true);
     setShowCompraFormErrors(true);
     setCompraValidationAttempt((prev) => prev + 1);
 
@@ -816,15 +885,7 @@ export function ComprasPage() {
     try {
       await compraService.createCompra(compraRequest);
 
-      // Incrementar stock para cada producto comprado
-      for (const p of nuevaCompra.productos) {
-        if (p.stockVentas > 0) {
-          await productoService.adjustStock(p.id, p.stockVentas, 'increment', 'ventas');
-        }
-        if (p.stockInsumos > 0) {
-          await productoService.adjustStock(p.id, p.stockInsumos, 'increment', 'insumos');
-        }
-      }
+      // El backend ajusta los stocks según los detalles enviados
 
       created("Compra creada ✔️", `La compra ha sido registrada exitosamente.`);
       setIsDialogOpen(false);
@@ -853,8 +914,10 @@ export function ComprasPage() {
     } catch (error) {
       toast.error("Error al crear compra", { description: "Hubo un problema al guardar la compra o actualizar el stock." });
       console.error(error);
+    } finally {
+      setCreatingPurchase(false);
     }
-  }, [user, nuevaCompra, inicialNuevaCompra, generateCurrentDate, loadCompras, created]);
+  }, [user, nuevaCompra, inicialNuevaCompra, generateCurrentDate, loadCompras, created, creatingPurchase]);
   const handleAnularCompra = (compraId: number) => {
     const compra = compras.find(c => c.id === compraId);
     if (!compra) return;
@@ -863,23 +926,35 @@ export function ComprasPage() {
       String(compraId),
       async () => {
         try {
-          // Anular la compra
-          await compraService.anularCompra(compraId);
-          toast.success("Compra anulada", { description: `La compra ${compra.numeroCompra} ha sido anulada.` });
-
-          // Obtener los detalles de la compra para revertir el stock
+          // 1. Obtener detalles ANTES de anular, para asegurar que tenemos las cantidades originales
           const detallesCompra = await compraService.getDetallesPorCompra(compraId);
 
-          // Revertir el stock de cada producto
-          for (const detalle of detallesCompra) {
-            await productoService.revertirStockProducto(
-              detalle.productoId,
-              detalle.cantidadVentas ?? 0,
-              detalle.cantidadInsumos ?? 0
-            );
+          // 2. Anular la compra en el backend (esto revierte stock de ventas automáticamente)
+          await compraService.anularCompra(compraId);
+
+          // 3. Revertir manualmente el stock de insumos usando los detalles capturados
+          try {
+            for (const detalle of detallesCompra) {
+              const productoId = Number(detalle.productoId);
+              if (!productoId) continue;
+
+              const cantidadTotal = Number(detalle.cantidad || 0);
+              const cantidadVentas = Number(detalle.cantidadVentas || 0);
+              const cantidadInsumosPersistida = Number(detalle.cantidadInsumos || 0);
+
+              // Si el backend no persiste cantidadInsumos, inferimos el resto
+              const insumosARevertir = cantidadInsumosPersistida > 0
+                ? cantidadInsumosPersistida
+                : Math.max(0, cantidadTotal - cantidadVentas);
+
+              if (insumosARevertir > 0) {
+                 await productoService.adjustStock(productoId, insumosARevertir, 'decrement', 'insumos');
+              }
+            }
+          } catch (revertError) {
+             console.error("Error al revertir stock de insumos en el cliente:", revertError);
           }
 
-          // Recargar compras y productos para reflejar los cambios
           await Promise.all([
             loadCompras().catch(() => { }),
             productoService.getProductos()
@@ -890,12 +965,11 @@ export function ComprasPage() {
           const errorMsg = error.message || "";
           if (errorMsg.includes("ya está anulada") || errorMsg.includes("ya esta anulada")) {
             toast.info("Información", { description: "Esta compra ya figuraba como anulada en el sistema." });
-            // Aun así recargamos para sincronizar UI
             await loadCompras().catch(() => { });
             return;
           }
-          toast.error("Error al anular", { description: "No se pudo anular la compra o revertir el stock." });
-          console.error("Error al anular compra o revertir stock:", error);
+          toast.error("Error al anular", { description: "No se pudo anular la compra." });
+          console.error("Error al anular compra:", error);
         }
       },
       {
@@ -1064,6 +1138,17 @@ export function ComprasPage() {
     toast.success("Reporte HTML generado exitosamente");
   };
 
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-auto p-8 bg-black-primary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+          <p className="text-white-primary text-lg">Cargando compras...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       <header className="bg-black-primary border-b border-gray-dark px-8 py-6">
@@ -1128,7 +1213,7 @@ export function ComprasPage() {
                           Número de Compra (Automático)
                         </Label>
                         <Input
-                          value="###"
+                          value={numeroCompras.toString().padStart(3, "0")}
                           disabled
                           className="elegante-input bg-gray-medium"
                         />
@@ -1237,7 +1322,7 @@ export function ComprasPage() {
                                         proveedorId: Number(proveedor.id ?? 0)
                                       });
                                       setProveedorSearchTerm(
-                                        `${proveedor.nombre || ""}${proveedor.nit ? ` — ${proveedor.nit}` : ""}`
+                                        `${proveedor.nombre || ""}${proveedor.nit ? ` — NIT ${proveedor.nit}` : ""}`
                                       );
                                       setShowProveedorResults(false);
                                     }}
@@ -1249,7 +1334,7 @@ export function ComprasPage() {
                                           {proveedor.nombre}
                                         </p>
                                         <p className="text-[10px] text-gray-lightest">
-                                          {proveedor.nit || "Sin NIT"} · {proveedor.correo || "Sin correo"}
+                                          {proveedor.nit ? `NIT ${proveedor.nit}` : "Sin NIT"} · {proveedor.correo || "Sin correo"}
                                         </p>
                                       </div>
                                     </div>
@@ -1320,7 +1405,9 @@ export function ComprasPage() {
                                         p.id,
                                         p.nombre,
                                         p.categoria,
-                                        p.stock,
+                                        (p as any).stock,
+                                        (p as any).stockVentas,
+                                        (p as any).stockInsumos,
                                         p.precio
                                       ].join(" "));
                                       return searchableText.includes(query);
@@ -1352,12 +1439,23 @@ export function ComprasPage() {
                                             {producto.nombre}
                                           </p>
                                           <p className="text-[10px] text-gray-lightest">${formatCurrency((producto as any).precioBase ?? (producto as any).precio ?? 0)}</p>
+                                          <p className="text-[10px] text-gray-400">{String((producto as any).categoria || 'Sin categoría')}</p>
                                         </div>
                                         <div className="text-right">
-                                          <p className="text-[9px] text-gray-lightest uppercase tracking-widest leading-none mb-1">Stock</p>
-                                          <p className={`text-xs font-bold ${producto.stock > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                            {producto.stock}
-                                          </p>
+                                          <div className="flex flex-col items-end gap-1">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[9px] text-gray-lightest leading-none">Stock ventas</span>
+                                              <span className={`text-xs font-bold ${(((producto as any).stockVentas ?? 0) > 0) ? 'text-green-400' : 'text-red-400'}`}>
+                                                {Number((producto as any).stockVentas ?? 0)}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[9px] text-gray-lightest leading-none">Stock insumos</span>
+                                              <span className={`text-xs font-bold ${(((producto as any).stockInsumos ?? (producto as any).stock ?? 0) > 0) ? 'text-blue-400' : 'text-red-400'}`}>
+                                                {Number((producto as any).stockInsumos ?? (producto as any).stock ?? 0)}
+                                              </span>
+                                            </div>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -1397,31 +1495,7 @@ export function ComprasPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-white-primary flex items-center gap-2">
-                            <DollarSign className="w-4 h-4 text-orange-primary" />
-                            Precio Unitario *
-                          </Label>
-                          <Input
-                            type="number"
-                            value={precioUnitarioInput}
-                            onChange={(e) => {
-                              if (e.target.value.length <= 15) {
-                                handlePrecioUnitarioInputChange(e.target.value);
-                              }
-                            }}
-                            className="elegante-input no-spin"
-                            min="0"
-                            step="100"
-                          />
-                          <div className="flex justify-start mt-1">
-                            <span className="text-xs text-gray-500 font-medium">
-                              {precioUnitarioInput.length}/15 caracteres
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      
 
                       <div className="p-4 bg-orange-primary/10 border border-orange-primary/30 rounded-lg space-y-4">
                         <div className="flex items-center gap-2 text-orange-primary text-sm font-medium">
@@ -1673,9 +1747,17 @@ export function ComprasPage() {
                       </button>
                       <button
                         onClick={handleCreateCompra}
-                        className="elegante-button-primary"
+                        className="elegante-button-primary flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                        disabled={creatingPurchase}
                       >
-                        Crear Compra
+                        {creatingPurchase ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-black-primary"></div>
+                            Registrando...
+                          </>
+                        ) : (
+                          'Crear Compra'
+                        )}
                       </button>
                     </div>
                   </div>
@@ -1695,18 +1777,14 @@ export function ComprasPage() {
           </div>
 
           <div className="overflow-x-auto">
-            {loading ? (
-              <div className="text-white-primary text-center py-8">Cargando compras...</div>
-            ) : (
-              <>
-                <table className="w-full">
+            <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-dark">
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">###</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Número</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Documento/NIT Prov.</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Proveedor</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Total</th>
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Fecha de Registro</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Fecha</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
                     </tr>
@@ -1731,28 +1809,80 @@ export function ComprasPage() {
 
                 {/* Paginación */}
                 <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
-                  <div className="text-sm text-gray-lightest">
-                    Página {currentPage} de {totalPages}
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm text-gray-lightest">
+                      Página {currentPage} de {totalPages}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-lightest">Filas por página:</span>
+                      <Select
+                        value={itemsPerPage.toString()}
+                        onValueChange={(value) => {
+                          setItemsPerPage(Number(value));
+                          setCurrentPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="w-[110px] h-8 bg-gray-darker border-gray-dark text-gray-lightest">
+                          <SelectValue placeholder={itemsPerPage.toString()} />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-darkest border-gray-dark text-gray-lightest">
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="20">20</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
                       className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Página anterior"
                     >
                       <ChevronLeft className="w-4 h-4 text-gray-lightest" />
                     </button>
+
+                    {/* Números de página */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`w-8 h-8 rounded text-sm transition-colors ${currentPage === pageNum
+                              ? 'bg-orange-primary text-black-primary font-medium'
+                              : 'border border-gray-dark hover:bg-gray-darker text-gray-lightest'
+                              }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                       disabled={currentPage === totalPages}
                       className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Página siguiente"
                     >
                       <ChevronRight className="w-4 h-4 text-gray-lightest" />
                     </button>
                   </div>
                 </div>
-              </>
-            )}
           </div>
         </div>
 
@@ -1850,15 +1980,15 @@ export function ComprasPage() {
                   </div>
 
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2 col-span-2">
+                    <div className="space-y-2 col-span-3">
                       <Label className="text-white-primary flex items-center gap-2">
                         <User className="w-4 h-4 text-orange-primary" />
                         Responsable
                       </Label>
                       <Input
-                        value={selectedCompra.responsableNombre || 'N/A'}
+                        value={getCompraResponsableDisplay(selectedCompra)}
                         disabled
-                        className="elegante-input bg-gray-medium"
+                        className="elegante-input bg-gray-medium w-full"
                       />
                     </div>
                     <div className="space-y-2">
@@ -1968,6 +2098,15 @@ export function ComprasPage() {
                   >
                     Cerrar
                   </button>
+                  {selectedCompra && (
+                    <button
+                      onClick={() => handleAnularCompra(Number(selectedCompra.id))}
+                      className={`elegante-button-primary ${String(selectedCompra.estado || '').toLowerCase().includes('anulad') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={String(selectedCompra.estado || '').toLowerCase().includes('anulad')}
+                    >
+                      {String(selectedCompra.estado || '').toLowerCase().includes('anulad') ? 'Compra Anulada' : 'Anular Compra'}
+                    </button>
+                  )}
                 </div>
               </>
             )}
