@@ -8,6 +8,8 @@ export interface Insumo {
   nombre: string;
   categoria: string;
   stock: number;
+  stockVentas?: number;
+  stockInsumos?: number;
   minimo: number;
   precio: number;
   imagen: string;
@@ -79,42 +81,59 @@ class InsumosService {
       };
 
       const data: Insumo[] = (Array.isArray(raw) ? raw : []).map((p: any) => {
-        const categoria =
-          typeof p?.categoria === 'string'
-            ? p.categoria
-            : (p?.categoria?.nombre ?? p?.categoria?.name ?? p?.categoria?.descripcion ?? '');
+        const categoria = (() => {
+          if (typeof p?.categoria === 'string') return p.categoria;
+          const candidates = [
+            p?.categoria?.nombre,
+            p?.Categoria?.Nombre,
+            p?.categoria?.name,
+            p?.categoriaNombre,
+            p?.CategoriaNombre,
+            p?.producto?.categoria?.nombre,
+            p?.Producto?.Categoria?.Nombre,
+            p?.producto?.categoriaNombre,
+            p?.Producto?.CategoriaNombre,
+          ];
+          const found = candidates.find((v) => typeof v === 'string' && v);
+          return found ?? '';
+        })();
+
+        const stockVentas = pickNumber(p, ['stockVentas', 'StockVentas', 'stockVenta', 'StockVenta'], Number.NaN);
+        const stockInsumos = pickNumber(p, ['stockInsumos', 'StockInsumos'], Number.NaN);
 
         return {
           id: Number(p?.id ?? p?.productoId ?? 0),
           nombre: String(p?.nombre ?? p?.nombreProducto ?? p?.descripcion ?? ''),
           categoria: String(categoria),
           stock: (() => {
-            const direct = pickNumber(p, ['stockInsumos', 'StockInsumos', 'stock', 'Stock', 'existencia', 'Existencia', 'cantidad', 'Cantidad', 'stockActual', 'StockActual', 'cantidadDisponible', 'CantidadDisponible'], 0);
-            if (direct !== 0) return direct;
+            const direct = pickNumber(p, ['stockInsumos', 'StockInsumos', 'stock', 'Stock', 'existencia', 'Existencia', 'cantidad', 'Cantidad', 'stockActual', 'StockActual', 'cantidadDisponible', 'CantidadDisponible'], Number.NaN);
+            if (!Number.isNaN(direct)) return direct;
 
             const inferred = inferNumberByKeyMatch(
               p,
               (k) => /stock|exist/i.test(k) && !/min|max/i.test(k),
-              0
+              Number.NaN
             );
 
-            if (inferred !== 0) return inferred;
+            if (!Number.isNaN(inferred)) return inferred;
 
             // Nested common shapes
             const nested = pickNumber(p?.inventario, ['stock', 'Stock', 'existencia', 'Existencia'], 0);
             return nested;
           })(),
+          stockVentas: Number.isNaN(stockVentas) ? undefined : stockVentas,
+          stockInsumos: Number.isNaN(stockInsumos) ? undefined : stockInsumos,
           minimo: (() => {
-            const direct = pickNumber(p, ['minimo', 'Minimo', 'stockMinimo', 'StockMinimo', 'minStock', 'MinStock'], 0);
-            if (direct !== 0) return direct;
+            const direct = pickNumber(p, ['minimo', 'Minimo', 'stockMinimo', 'StockMinimo', 'minStock', 'MinStock'], Number.NaN);
+            if (!Number.isNaN(direct)) return direct;
 
             const inferred = inferNumberByKeyMatch(
               p,
               (k) => /(minimo|min)/i.test(k) && /stock/i.test(k),
-              0
+              Number.NaN
             );
 
-            if (inferred !== 0) return inferred;
+            if (!Number.isNaN(inferred)) return inferred;
 
             const nested = pickNumber(p?.inventario, ['minimo', 'Minimo', 'stockMinimo', 'StockMinimo'], 0);
             return nested;
@@ -133,18 +152,18 @@ class InsumosService {
                 'valor',
                 'Valor',
               ],
-              0
+              Number.NaN
             );
 
-            if (direct !== 0) return direct;
+            if (!Number.isNaN(direct)) return direct;
 
             // A veces viene en PascalCase/camelCase distinto o anidado
             const inferred = inferNumberByKeyMatch(
               p,
               (k) => /precio.*venta|venta.*precio/i.test(k),
-              0
+              Number.NaN
             );
-            if (inferred !== 0) return inferred;
+            if (!Number.isNaN(inferred)) return inferred;
 
             const nested = pickNumber(p?.producto ?? p?.detalle, ['PrecioVenta', 'precioVenta', 'precio', 'Precio'], 0);
             return nested;
@@ -177,18 +196,38 @@ class InsumosService {
       if (!text) return null;
 
       const p: any = JSON.parse(text);
-      const categoria =
-        typeof p?.categoria === 'string'
-          ? p.categoria
-          : (p?.categoria?.nombre ?? p?.categoria?.name ?? p?.categoria?.descripcion ?? '');
+      const categoria = (() => {
+        if (typeof p?.categoria === 'string') return p.categoria;
+        const candidates = [
+          p?.categoria?.nombre,
+          p?.Categoria?.Nombre,
+          p?.categoria?.name,
+          p?.categoriaNombre,
+          p?.CategoriaNombre,
+          p?.producto?.categoria?.nombre,
+          p?.Producto?.Categoria?.Nombre,
+          p?.producto?.categoriaNombre,
+          p?.Producto?.CategoriaNombre,
+        ];
+        const found = candidates.find((v) => typeof v === 'string' && v);
+        return found ?? '';
+      })();
+
+      const stockVentas = pickNumber(p, ['stockVentas', 'StockVentas', 'stockVenta', 'StockVenta'], Number.NaN);
+      const stockInsumos = pickNumber(p, ['stockInsumos', 'StockInsumos'], Number.NaN);
+      const stock = pickNumber(p, ['stockInsumos', 'StockInsumos', 'stock', 'Stock', 'existencia', 'Existencia', 'cantidad', 'Cantidad'], 0);
+      const minimo = pickNumber(p, ['minimo', 'Minimo', 'stockMinimo', 'StockMinimo'], 0);
+      const precio = pickNumber(p, ['PrecioVenta', 'precioVenta', 'precio', 'Precio', 'valor', 'Valor'], 0);
 
       const data: Insumo = {
         id: Number(p?.id ?? p?.productoId ?? id),
         nombre: String(p?.nombre ?? p?.nombreProducto ?? p?.descripcion ?? ''),
         categoria: String(categoria),
-        stock: Number(p?.stock ?? p?.cantidad ?? 0),
-        minimo: Number(p?.minimo ?? p?.stockMinimo ?? 0),
-        precio: Number(p?.precio ?? p?.valor ?? 0),
+        stock,
+        stockVentas: Number.isNaN(stockVentas) ? undefined : stockVentas,
+        stockInsumos: Number.isNaN(stockInsumos) ? undefined : stockInsumos,
+        minimo,
+        precio,
         imagen: String(p?.imagen ?? p?.Imagen ?? p?.imagenProduc ?? p?.ImagenProduc ?? p?.imagenUrl ?? p?.ImagenUrl ?? ''),
         activo: Boolean(
           p?.activo === true || p?.Activo === true ||

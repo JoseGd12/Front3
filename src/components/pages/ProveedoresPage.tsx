@@ -2,6 +2,13 @@ import React, { useState, useEffect } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Truck,
   Plus,
   Edit,
@@ -32,6 +39,8 @@ import { Label } from "../ui/label";
 import { useCustomAlert } from "../ui/custom-alert";
 import { useDoubleConfirmation } from "../ui/double-confirmation";
 import { proveedorService, Proveedor } from "../../services/proveedorService";
+import { Switch } from "../ui/switch";
+import { compraService } from "../../services/compraService";
 
 // Tipos de proveedor
 const TIPOS_PROVEEDOR = [
@@ -112,11 +121,11 @@ const proveedoresDataFallback: Proveedor[] = [
 ];
 
 export function ProveedoresPage() {
-  const { created, edited, deleted, AlertContainer } = useCustomAlert();
+  const { error, created, edited, deleted, AlertContainer } = useCustomAlert();
   const { confirmDeleteAction, confirmEditAction, DoubleConfirmationContainer } = useDoubleConfirmation();
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
@@ -133,6 +142,7 @@ export function ProveedoresPage() {
     direccion: "",
     razonSocial: "",
     representanteLegal: "",
+    tipoDocumentoRepresentante: "",
     documentoRepresentante: "",
     telefonoRepresentante: "",
     correoRepresentante: "",
@@ -146,14 +156,68 @@ export function ProveedoresPage() {
     ciudad: "",
     departamento: "",
     numeroIdentificacion: "",
-    numeroIdentificacionRepLegal: ""
+    numeroIdentificacionRepLegal: "",
+    // Contacto adicional (Natural)
+    tipoDocumentoContactoAdicional: "",
+    documentoContactoAdicional: "",
+    telefonoContactoAdicional: "",
+    correoContactoAdicional: "",
+    estado: true
   });
+  const [showProveedorFormErrors, setShowProveedorFormErrors] = useState(false);
+  const [proveedorValidationAttempt, setProveedorValidationAttempt] = useState(0);
+  const shakeClass = proveedorValidationAttempt % 2 === 0 ? "input-required-shake-a" : "input-required-shake-b";
+  const [duplicateErrors, setDuplicateErrors] = useState<{ nombre?: string; nit?: string; numero?: string; correo?: string }>({});
+
+  const normalizeText = (v: unknown) =>
+    String(v ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  const normalizeNit = (v: unknown) => String(v ?? '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+  const normalizePhone = (v: unknown) => String(v ?? '').replace(/\D/g, '');
+  const normalizeEmail = (v: unknown) => String(v ?? '').toLowerCase().trim();
+
+  const validateDuplicateFields = (payload: { nombre: string; nit: string; numero: string; correo: string }, ignoreId?: number) => {
+    const nombreNorm = normalizeText(payload.nombre);
+    const nitNorm = normalizeNit(payload.nit);
+    const numeroNorm = normalizePhone(payload.numero);
+    const correoNorm = normalizeEmail(payload.correo);
+
+    const errs: { nombre?: string; nit?: string; numero?: string; correo?: string } = {};
+
+    for (const p of proveedores) {
+      if (ignoreId && p.id === ignoreId) continue;
+      const pNombre = normalizeText(p.nombre);
+      const pNit = normalizeNit(p.nit || p.numeroIdentificacion || '');
+      const pTelefono = normalizePhone((p as any).numero || p.telefono || '');
+      const pCorreo = normalizeEmail(p.correo || '');
+
+      if (!errs.nombre && nombreNorm && pNombre && pNombre === nombreNorm) {
+        errs.nombre = 'Ya existe un proveedor con este nombre.';
+      }
+      if (!errs.nit && nitNorm && pNit && pNit === nitNorm) {
+        errs.nit = 'Ya existe un proveedor con este NIT.';
+      }
+      if (!errs.numero && numeroNorm && pTelefono && pTelefono === numeroNorm) {
+        errs.numero = 'Ya existe un proveedor con este teléfono.';
+      }
+      if (!errs.correo && correoNorm && pCorreo && pCorreo === correoNorm) {
+        errs.correo = 'Ya existe un proveedor con este correo.';
+      }
+      if (errs.nombre || errs.nit || errs.numero || errs.correo) break;
+    }
+
+    setDuplicateErrors(errs);
+    return { hasError: !!(errs.nombre || errs.nit || errs.numero || errs.correo), errs };
+  };
 
   // Cargar proveedores desde la API
   const cargarProveedores = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      setError(null);
+      setPageError(null);
       console.log('📥 Loading providers...');
       const data = await proveedorService.obtenerProveedores();
       console.log('✅ Providers loaded:', data);
@@ -172,7 +236,7 @@ export function ProveedoresPage() {
       }
     } catch (error) {
       console.error('❌ Error cargando proveedores:', error);
-      setError('No se pudieron cargar los proveedores desde el servidor. Mostrando datos locales.');
+      setPageError('No se pudieron cargar los proveedores desde el servidor. Mostrando datos locales.');
       // Usar datos de fallback en caso de error
       setProveedores(proveedoresDataFallback);
     } finally {
@@ -195,6 +259,7 @@ export function ProveedoresPage() {
       direccion: "",
       razonSocial: "",
       representanteLegal: "",
+      tipoDocumentoRepresentante: "",
       documentoRepresentante: "",
       telefonoRepresentante: "",
       correoRepresentante: "",
@@ -208,12 +273,48 @@ export function ProveedoresPage() {
       ciudad: "",
       departamento: "",
       numeroIdentificacion: "",
-      numeroIdentificacionRepLegal: ""
+      numeroIdentificacionRepLegal: "",
+      // Contacto adicional (Natural)
+      tipoDocumentoContactoAdicional: "",
+      documentoContactoAdicional: "",
+      telefonoContactoAdicional: "",
+      correoContactoAdicional: ""
     });
+    setShowProveedorFormErrors(false);
+    setProveedorValidationAttempt(0);
+    setIsEditDialogOpen(false);
+    setSelectedProveedor(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const missingRequired =
+      !formData.nombre.trim() ||
+      !formData.nit.trim() ||
+      !formData.direccion.trim() ||
+      !formData.numero.trim() ||
+      !formData.correo.trim() ||
+      (formData.tipoProveedor === 'Juridico' && !formData.razonSocial.trim());
+
+    if (missingRequired) {
+      setShowProveedorFormErrors(true);
+      setProveedorValidationAttempt(prev => prev + 1);
+      return;
+    }
+
+    const dupCheck = validateDuplicateFields(
+      {
+        nombre: formData.nombre,
+        nit: formData.nit,
+        numero: formData.numero,
+        correo: formData.correo
+      }
+    );
+    if (dupCheck.hasError) {
+      setProveedorValidationAttempt(prev => prev + 1);
+      return;
+    }
 
     try {
       const nuevoProveedor = await proveedorService.crearProveedor({
@@ -235,28 +336,16 @@ export function ProveedoresPage() {
       resetForm();
     } catch (error) {
       console.error('Error creando proveedor:', error);
-      // En caso de error, agregar localmente
-      const nuevoProveedor: Proveedor = {
-        id: proveedores.length + 1,
-        ...formData,
-        fechaCreacion: new Date().toLocaleDateString('es-ES', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        }),
-        activo: true
-      };
-
-      setProveedores([...proveedores, nuevoProveedor]);
-      created("Proveedor creado", `El proveedor "${formData.nombre}" ha sido agregado localmente.`);
-
-      setIsDialogOpen(false);
-      resetForm();
+      setPageError('No se pudo crear el proveedor en el servidor. Verifique los datos y su conexión.');
+      setProveedorValidationAttempt(prev => prev + 1);
+      // Mantener el diálogo abierto para que el usuario corrija
     }
   };
 
   const handleEdit = (proveedor: Proveedor) => {
     setSelectedProveedor(proveedor);
+    setShowProveedorFormErrors(false);
+    setProveedorValidationAttempt(0);
 
     // Configurar tipo de proveedor, con fallback a 'Juridico' si no está definido
     const tipo = (proveedor.tipoProveedor === 'Natural' || proveedor.tipoProveedor === 'Juridico')
@@ -275,10 +364,15 @@ export function ProveedoresPage() {
 
       // Contacto adicional (Natural)
       personaContacto: proveedor.personaContacto || proveedor.contacto || "",
+      tipoDocumentoContactoAdicional: (proveedor as any).tipoDocumentoContactoAdicional || "",
+      documentoContactoAdicional: (proveedor as any).documentoContactoAdicional || "",
+      telefonoContactoAdicional: (proveedor as any).telefonoContactoAdicional || "",
+      correoContactoAdicional: (proveedor as any).correoContactoAdicional || "",
 
       // Datos Jurídicos
       razonSocial: proveedor.razonSocial || "",
       representanteLegal: proveedor.representanteLegal || "",
+      tipoDocumentoRepresentante: proveedor.tipoDocumentoRepresentante || "",
       numeroIdentificacionRepLegal: proveedor.numeroIdentificacionRepLegal || "",
       cargoRepLegal: proveedor.cargoRepLegal || "",
       documentoRepresentante: proveedor.documentoRepresentante || "",
@@ -290,7 +384,8 @@ export function ProveedoresPage() {
 
       // Campos legacy o adicionales para evitar errores
       apellidos: proveedor.apellidos || "",
-      numeroIdentificacion: proveedor.numeroIdentificacion || ""
+      numeroIdentificacion: proveedor.numeroIdentificacion || "",
+      estado: (proveedor.estado !== undefined ? proveedor.estado : proveedor.activo) ?? true
     });
 
     setIsEditDialogOpen(true);
@@ -302,49 +397,46 @@ export function ProveedoresPage() {
 
     if (!selectedProveedor) return;
 
-    // Cerrar el modal temporalmente para evitar conflictos de z-index
-    const tempFormData = { ...formData };
-    const tempSelectedProveedor = { ...selectedProveedor };
-
-    setIsEditDialogOpen(false);
-
-    confirmEditAction(
-      formData.nombre,
-      async () => {
-        try {
-          if (tempSelectedProveedor.id) {
-            const proveedorActualizado = await proveedorService.actualizarProveedor(
-              tempSelectedProveedor.id,
-              tempFormData
-            );
-
-            // Refrescar datos desde la API para obtener los datos más actualizados
-            await cargarProveedores();
-          }
-        } catch (error) {
-          console.error('Error actualizando proveedor:', error);
-          // Actualizar localmente en caso de error
-          const proveedorActualizado: Proveedor = {
-            ...tempSelectedProveedor,
-            ...tempFormData
-          };
-
-          setProveedores(proveedores.map(p =>
-            p.id === tempSelectedProveedor.id ? proveedorActualizado : p
-          ));
-        }
-
-        setSelectedProveedor(null);
-        resetForm();
-      },
+    const dupCheck = validateDuplicateFields(
       {
-        confirmTitle: 'Confirmar Edición',
-        confirmMessage: `¿Estás seguro de que deseas actualizar la información del proveedor "${formData.nombre}"?`,
-        successTitle: 'Proveedor actualizado ✔️',
-        successMessage: `La información del proveedor "${formData.nombre}" ha sido actualizada exitosamente.`,
-        requireInput: false
-      }
+        nombre: formData.nombre,
+        nit: formData.nit,
+        numero: formData.numero,
+        correo: formData.correo
+      },
+      selectedProveedor.id
     );
+    if (dupCheck.hasError) {
+      setProveedorValidationAttempt(prev => prev + 1);
+      return;
+    }
+
+    try {
+      const tempFormData = { ...formData };
+      const tempSelectedProveedor = { ...selectedProveedor };
+      setIsEditDialogOpen(false);
+      if (tempSelectedProveedor.id) {
+        await proveedorService.actualizarProveedor(tempSelectedProveedor.id, tempFormData);
+        await cargarProveedores();
+      }
+      edited('Proveedor actualizado ✔️', `La información del proveedor "${formData.nombre}" ha sido actualizada exitosamente.`);
+      setSelectedProveedor(null);
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error('Error actualizando proveedor:', error);
+      const proveedorActualizado: Proveedor = {
+        ...selectedProveedor,
+        ...formData
+      };
+      setProveedores(proveedores.map(p =>
+        p.id === selectedProveedor.id ? proveedorActualizado : p
+      ));
+      edited('Proveedor actualizado ✔️', `La información del proveedor "${formData.nombre}" ha sido actualizada exitosamente.`);
+      setSelectedProveedor(null);
+      setIsDialogOpen(false);
+      resetForm();
+    }
   };
 
   const handleDeleteClick = (proveedor: Proveedor) => {
@@ -352,15 +444,32 @@ export function ProveedoresPage() {
       proveedor.nombre,
       async () => {
         try {
+          // Pre‑check: compras asociadas a este proveedor
+          let comprasAsociadas = 0;
+          try {
+            const compras = await compraService.getCompras();
+            const normalize = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+            comprasAsociadas = (compras || []).filter(c =>
+              Number(c.proveedorId) === Number(proveedor.id) ||
+              (normalize(c.proveedorNombre) && normalize(c.proveedorNombre) === normalize(proveedor.nombre))
+            ).length;
+          } catch {}
+
+          if (comprasAsociadas > 0) {
+            error(
+              "No se puede eliminar",
+              `El proveedor "${proveedor.nombre}" no se puede eliminar porque tiene ${comprasAsociadas} compra(s) registradas a su nombre.`
+            );
+            throw new Error('Proveedor asociado a compras');
+          }
+
           if (proveedor.id) {
             await proveedorService.eliminarProveedor(proveedor.id);
           }
-          // Refrescar datos desde la API para sincronizar con el servidor
           await cargarProveedores();
-        } catch (error) {
-          console.error('Error eliminando proveedor:', error);
-          // Eliminar localmente en caso de error
-          setProveedores(proveedores.filter(p => p.id !== proveedor.id));
+        } catch (err: any) {
+          console.error('Error eliminando proveedor:', err);
+          error('Error al eliminar proveedor', err?.message || 'No se pudo eliminar el proveedor.');
         }
       },
       {
@@ -440,6 +549,17 @@ export function ProveedoresPage() {
   const endIndex = startIndex + itemsPerPage;
   const currentProveedores = filteredProveedores.slice(startIndex, endIndex);
 
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-auto p-8 bg-black-primary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+          <p className="text-white-primary text-lg">Cargando proveedores...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       {/* Header */}
@@ -462,7 +582,10 @@ export function ProveedoresPage() {
                 <DialogTrigger asChild>
                   <button
                     className="elegante-button-primary gap-2 flex items-center"
-                    onClick={() => resetForm()}
+                    onClick={() => {
+                      resetForm();
+                      setIsEditDialogOpen(false);
+                    }}
                   >
                     <Plus className="w-4 h-4" />
                     Nuevo Proveedor
@@ -479,20 +602,23 @@ export function ProveedoresPage() {
                     </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={isEditDialogOpen ? handleEditSubmit : handleSubmit} className="space-y-6 pt-4">
+                    <h4 className="text-sm font-medium text-white-primary mb-3 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-orange-primary" />
+                      Información General
+                    </h4>
                     {/* Sección 1: Información Básica e Identificación */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <Building className="w-4 h-4 text-orange-primary" />
-                          Tipo de Proveedor <span className="text-red-500">*</span>
+                          Tipo de Proveedor
                         </Label>
                         <select
                           id="tipoProveedor"
                           value={formData.tipoProveedor}
                           onChange={(e) => setFormData({ ...formData, tipoProveedor: e.target.value as 'Juridico' | 'Natural' })}
                           className="elegante-input w-full"
-                          required
-                          disabled={isEditDialogOpen} // No permitir cambiar tipo al editar
+                          disabled={isEditDialogOpen}
                         >
                           {TIPOS_PROVEEDOR.map(tipo => (
                             <option key={tipo.value} value={tipo.value}>
@@ -502,18 +628,26 @@ export function ProveedoresPage() {
                         </select>
                       </div>
 
+                  
+
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <User className="w-4 h-4 text-orange-primary" />
-                          {formData.tipoProveedor === 'Juridico' ? 'Nombre Comercial' : 'Nombre Completo'} <span className="text-red-500">*</span>
+                          {formData.tipoProveedor === 'Juridico' ? 'Nombre Comercial' : 'Nombre Completo'} <span className="text-white-primary">*</span>
                         </Label>
                         <Input
                           id="nombre"
                           value={formData.nombre}
                           onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                          className="elegante-input"
-                          required
+                          placeholder={formData.tipoProveedor === 'Juridico' ? 'Ej: Suministros Barbería Pro S.A.S' : 'Ej: Carlos Andrés Martínez'}
+                          className={`elegante-input ${((showProveedorFormErrors && !isEditDialogOpen && !formData.nombre.trim()) || !!duplicateErrors.nombre) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
+                        {showProveedorFormErrors && !isEditDialogOpen && !formData.nombre.trim() && (
+                          <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                        )}
+                        {!!duplicateErrors.nombre && (
+                          <p className="text-xs text-red-400">{duplicateErrors.nombre}</p>
+                        )}
                       </div>
                     </div>
 
@@ -521,28 +655,37 @@ export function ProveedoresPage() {
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <IdCard className="w-4 h-4 text-orange-primary" />
-                          NIT / Identificación <span className="text-red-500">*</span>
+                          NIT / Identificación <span className="text-white-primary">*</span>
                         </Label>
                         <Input
                           id="nit"
                           value={formData.nit}
                           onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
-                          className="elegante-input"
-                          required
+                          placeholder="Ej: 900123456-7"
+                          className={`elegante-input ${((showProveedorFormErrors && !isEditDialogOpen && !formData.nit.trim()) || !!duplicateErrors.nit) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
+                        {showProveedorFormErrors && !isEditDialogOpen && !formData.nit.trim() && (
+                          <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                        )}
+                        {!!duplicateErrors.nit && (
+                          <p className="text-xs text-red-400">{duplicateErrors.nit}</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <MapPin className="w-4 h-4 text-orange-primary" />
-                          Dirección <span className="text-red-500">*</span>
+                          Dirección <span className="text-white-primary">*</span>
                         </Label>
                         <Input
                           id="direccion"
                           value={formData.direccion}
                           onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-                          className="elegante-input"
-                          required
+                          placeholder="Ej: Calle 72 #10-34, Bogotá"
+                          className={`elegante-input ${showProveedorFormErrors && !isEditDialogOpen && !formData.direccion.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
+                        {showProveedorFormErrors && !isEditDialogOpen && !formData.direccion.trim() && (
+                          <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                        )}
                       </div>
                     </div>
 
@@ -551,29 +694,41 @@ export function ProveedoresPage() {
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <Phone className="w-4 h-4 text-orange-primary" />
-                          Teléfono Principal <span className="text-red-500">*</span>
+                          Teléfono Principal <span className="text-white-primary">*</span>
                         </Label>
                         <Input
                           id="numero"
                           value={formData.numero}
                           onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
-                          className="elegante-input"
-                          required
+                          placeholder="Ej: +57 301 234 5678"
+                          className={`elegante-input ${((showProveedorFormErrors && !isEditDialogOpen && !formData.numero.trim()) || !!duplicateErrors.numero) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
+                        {showProveedorFormErrors && !isEditDialogOpen && !formData.numero.trim() && (
+                          <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                        )}
+                        {!!duplicateErrors.numero && (
+                          <p className="text-xs text-red-400">{duplicateErrors.numero}</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <Mail className="w-4 h-4 text-orange-primary" />
-                          Correo <span className="text-red-500">*</span>
+                          Correo <span className="text-white-primary">*</span>
                         </Label>
                         <Input
                           id="correo"
                           type="email"
                           value={formData.correo}
                           onChange={(e) => setFormData({ ...formData, correo: e.target.value })}
-                          className="elegante-input"
-                          required
+                          placeholder="Ej: proveedor@correo.com"
+                          className={`elegante-input ${((showProveedorFormErrors && !isEditDialogOpen && !formData.correo.trim()) || !!duplicateErrors.correo) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
+                        {showProveedorFormErrors && !isEditDialogOpen && !formData.correo.trim() && (
+                          <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                        )}
+                        {!!duplicateErrors.correo && (
+                          <p className="text-xs text-red-400">{duplicateErrors.correo}</p>
+                        )}
                       </div>
                     </div>
 
@@ -588,7 +743,7 @@ export function ProveedoresPage() {
                           value={formData.departamento}
                           onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
                           className="elegante-input"
-                          placeholder="Departamento"
+                          placeholder="Ej: Cundinamarca"
                         />
                       </div>
                       <div className="space-y-2">
@@ -601,7 +756,7 @@ export function ProveedoresPage() {
                           value={formData.ciudad}
                           onChange={(e) => setFormData({ ...formData, ciudad: e.target.value })}
                           className="elegante-input"
-                          placeholder="Ciudad"
+                          placeholder="Ej: Bogotá"
                         />
                       </div>
                     </div>
@@ -609,39 +764,48 @@ export function ProveedoresPage() {
                     {/* Sección 3: Datos Específicos */}
                     {formData.tipoProveedor === 'Juridico' && (
                       <div className="border-t border-gray-700 pt-4 mt-4">
-                        <h4 className="text-orange-primary font-medium mb-4 flex items-center gap-2">
-                          <Briefcase className="w-4 h-4" /> Información Legal y Representante
+                        <h4 className="text-sm font-medium text-white-primary mb-3 flex items-center gap-2">
+                          <Briefcase className="w-4 h-4" /> Información Representante
                         </h4>
 
-                        <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="grid grid-cols-1 gap-4 mb-4">
                           <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
                               <FileText className="w-4 h-4 text-gray-400" />
-                              Razón Social
+                              Razón Social <span className="text-white-primary">*</span>
                             </Label>
                             <Input
                               id="razonSocial"
                               value={formData.razonSocial}
                               onChange={(e) => setFormData({ ...formData, razonSocial: e.target.value })}
-                              className="elegante-input"
+                              className={`elegante-input ${showProveedorFormErrors && !isEditDialogOpen && !formData.razonSocial.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                              placeholder="Ej: Razón social registrada"
                             />
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-white-primary flex items-center gap-2">
-                              <Globe className="w-4 h-4 text-gray-400" />
-                              Página Web
-                            </Label>
-                            <Input
-                              id="paginaWeb"
-                              value={formData.paginaWeb}
-                              onChange={(e) => setFormData({ ...formData, paginaWeb: e.target.value })}
-                              className="elegante-input"
-                              placeholder="www.ejemplo.com"
-                            />
+                            {showProveedorFormErrors && !isEditDialogOpen && !formData.razonSocial.trim() && (
+                              <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                            )}
                           </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <IdCard className="w-4 h-4 text-gray-400" />
+                              Tipo documento representante
+                            </Label>
+                            <select
+                              id="tipoDocumentoRepresentante"
+                              value={formData.tipoDocumentoRepresentante}
+                              onChange={(e) => setFormData({ ...formData, tipoDocumentoRepresentante: e.target.value })}
+                              className="elegante-input w-full"
+                            >
+                              <option value="">Seleccione</option>
+                              <option value="CC">Cédula de Ciudadanía</option>
+                              <option value="CE">Cédula de Extranjería</option>
+                              <option value="NIT">NIT</option>
+                              <option value="PAS">Pasaporte</option>
+                            </select>
+                          </div>
                           <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
                               <UserCheck className="w-4 h-4 text-gray-400" />
@@ -652,12 +816,16 @@ export function ProveedoresPage() {
                               value={formData.representanteLegal}
                               onChange={(e) => setFormData({ ...formData, representanteLegal: e.target.value })}
                               className="elegante-input"
+                              placeholder="Ej: Nombre completo del representante"
                             />
                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
                           <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
                               <IdCard className="w-4 h-4 text-gray-400" />
-                              Documento Rep. Legal
+                              Documento representante
                             </Label>
                             <Input
                               id="numeroIdentificacionRepLegal"
@@ -667,51 +835,143 @@ export function ProveedoresPage() {
                               placeholder="Cédula del representante"
                             />
                           </div>
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <Phone className="w-4 h-4 text-gray-400" />
+                              Teléfono representante
+                            </Label>
+                            <Input
+                              id="telefonoRepresentante"
+                              value={formData.telefonoRepresentante}
+                              onChange={(e) => setFormData({ ...formData, telefonoRepresentante: e.target.value })}
+                              className="elegante-input"
+                              placeholder="Ej: +57 300 000 0000"
+                            />
+                          </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-4 mb-4">
                           <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
-                              <Briefcase className="w-4 h-4 text-gray-400" />
-                              Cargo Rep. Legal
+                              <Mail className="w-4 h-4 text-gray-400" />
+                              Correo representante
                             </Label>
                             <Input
-                              id="cargoRepLegal"
-                              value={formData.cargoRepLegal}
-                              onChange={(e) => setFormData({ ...formData, cargoRepLegal: e.target.value })}
+                              id="correoRepresentante"
+                              type="email"
+                              value={formData.correoRepresentante}
+                              onChange={(e) => setFormData({ ...formData, correoRepresentante: e.target.value })}
                               className="elegante-input"
+                              placeholder="representante@empresa.com"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <Label className="text-white-primary flex items-center gap-2">
-                              <Briefcase className="w-4 h-4 text-gray-400" />
-                              Sector Económico
-                            </Label>
-                            <Input
-                              id="sectorEconomico"
-                              value={formData.sectorEconomico}
-                              onChange={(e) => setFormData({ ...formData, sectorEconomico: e.target.value })}
-                              className="elegante-input"
-                            />
-                          </div>
+                          <div />
                         </div>
+
+                        
                       </div>
                     )}
 
                     {formData.tipoProveedor === 'Natural' && (
                       <div className="border-t border-gray-700 pt-4 mt-4">
-                        <div className="space-y-2">
-                          <Label className="text-white-primary flex items-center gap-2">
-                            <UserCheck className="w-4 h-4 text-orange-primary" />
-                            Persona de Contacto (Opcional)
-                          </Label>
-                          <Input
-                            id="personaContacto"
-                            value={formData.personaContacto || ''}
-                            onChange={(e) => setFormData({ ...formData, personaContacto: e.target.value })}
-                            className="elegante-input"
-                            placeholder="Nombre de contacto alternativo"
+                        <h4 className="text-sm font-medium text-white-primary mb-3 flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-orange-primary" />
+                          Información de Contacto Adicional
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <User className="w-4 h-4 text-gray-400" />
+                              Persona de Contacto (Opcional)
+                            </Label>
+                            <Input
+                              id="personaContacto"
+                              value={formData.personaContacto || ''}
+                              onChange={(e) => setFormData({ ...formData, personaContacto: e.target.value })}
+                              className="elegante-input"
+                              placeholder="Nombre de contacto alternativo"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <IdCard className="w-4 h-4 text-gray-400" />
+                              Tipo documento contacto adicional
+                            </Label>
+                            <select
+                              id="tipoDocumentoContactoAdicional"
+                              value={formData.tipoDocumentoContactoAdicional}
+                              onChange={(e) => setFormData({ ...formData, tipoDocumentoContactoAdicional: e.target.value })}
+                              className="elegante-input w-full"
+                            >
+                              <option value="">Seleccione</option>
+                              <option value="CC">Cédula de Ciudadanía</option>
+                              <option value="CE">Cédula de Extranjería</option>
+                              <option value="PAS">Pasaporte</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <IdCard className="w-4 h-4 text-gray-400" />
+                              Documento contacto adicional
+                            </Label>
+                            <Input
+                              id="documentoContactoAdicional"
+                              value={formData.documentoContactoAdicional}
+                              onChange={(e) => setFormData({ ...formData, documentoContactoAdicional: e.target.value })}
+                              className="elegante-input"
+                              placeholder="Número de documento del contacto"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <Phone className="w-4 h-4 text-gray-400" />
+                              Teléfono contacto adicional
+                            </Label>
+                            <Input
+                              id="telefonoContactoAdicional"
+                              value={formData.telefonoContactoAdicional}
+                              onChange={(e) => setFormData({ ...formData, telefonoContactoAdicional: e.target.value })}
+                              className="elegante-input"
+                              placeholder="Ej: +57 300 000 0000"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                          <div className="space-y-2">
+                            <Label className="text-white-primary flex items-center gap-2">
+                              <Mail className="w-4 h-4 text-gray-400" />
+                              Correo contacto adicional
+                            </Label>
+                            <Input
+                              id="correoContactoAdicional"
+                              type="email"
+                              value={formData.correoContactoAdicional}
+                              onChange={(e) => setFormData({ ...formData, correoContactoAdicional: e.target.value })}
+                              className="elegante-input"
+                              placeholder="contacto@correo.com"
+                            />
+                          </div>
+                          <div />
+                        </div>
+                      </div>
+                    )}
+
+                    {isEditDialogOpen && (
+                      <div className="space-y-2 border-t border-gray-dark pt-4 mt-4">
+                        <Label className="text-white-primary flex items-center gap-2">
+                          Estado
+                        </Label>
+                        <div className="flex items-center space-x-3">
+                          <Switch
+                            checked={!!formData.estado}
+                            onCheckedChange={(checked) => setFormData({ ...formData, estado: checked })}
+                            className="data-[state=checked]:bg-orange-primary"
                           />
+                          <span className={`text-sm font-medium ${formData.estado ? 'text-orange-primary' : 'text-gray-lightest'}`}>
+                            {formData.estado ? 'Activo' : 'Inactivo'}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -753,7 +1013,7 @@ export function ProveedoresPage() {
 
             <div className="flex items-center gap-4">
               <div className="text-sm text-gray-lightest">
-                {loading ? 'Cargando...' : `Mostrando ${currentProveedores.length} de ${filteredProveedores.length} proveedores`}
+                Mostrando {currentProveedores.length} de {filteredProveedores.length} proveedores
               </div>
             </div>
           </div>
@@ -768,7 +1028,7 @@ export function ProveedoresPage() {
                   <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Contacto</th>
                   <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Fecha</th>
                   <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
-                  <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
+                  <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -782,12 +1042,12 @@ export function ProveedoresPage() {
                       </div>
                     </td>
                   </tr>
-                ) : error ? (
+                ) : pageError ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center">
                       <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
                       <h3 className="text-lg font-medium text-white-primary mb-2">Error de conexión</h3>
-                      <p className="text-gray-lightest mb-4">{error}</p>
+                      <p className="text-gray-lightest mb-4">{pageError}</p>
                       <button
                         onClick={cargarProveedores}
                         className="elegante-button-primary text-sm"
@@ -835,15 +1095,14 @@ export function ProveedoresPage() {
                       </td>
                       <td className="py-4 px-4 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <span className={`elegante-tag text-xs ${(proveedor.estado !== undefined ? proveedor.estado : proveedor.activo) ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                            }`}>
+                          <span className={`px-3 py-1 rounded-full text-xs ${(proveedor.estado !== undefined ? proveedor.estado : proveedor.activo) ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                             {(proveedor.estado !== undefined ? proveedor.estado : proveedor.activo) ? 'Activo' : 'Inactivo'}
                           </span>
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
+                        <div className="flex items-center justify-center gap-2">
+                        <button
                             onClick={() => handleToggleStatus(proveedor)}
                             className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
                             title={(proveedor.estado !== undefined ? proveedor.estado : proveedor.activo) ? "Desactivar" : "Activar"}
@@ -868,6 +1127,7 @@ export function ProveedoresPage() {
                           >
                             <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
                           </button>
+                          
                           <button
                             onClick={() => handleDeleteClick(proveedor)}
                             className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -885,25 +1145,32 @@ export function ProveedoresPage() {
           </div>
 
           {/* Paginación */}
-          {!loading && !error && filteredProveedores.length > 0 && (
+          {!pageError && filteredProveedores.length > 0 && (
             <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
               <div className="flex items-center gap-4">
                 <div className="text-sm text-gray-lightest">
                   Página {currentPage} de {totalPages}
                 </div>
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="elegante-input text-sm w-auto"
-                >
-                  <option value={5}>5 por página</option>
-                  <option value={10}>10 por página</option>
-                  <option value={20}>20 por página</option>
-                  <option value={50}>50 por página</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-lightest">Filas por página:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(Number(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[110px] h-8 bg-gray-darker border-gray-dark text-gray-lightest">
+                      <SelectValue placeholder={itemsPerPage.toString()} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-darkest border-gray-dark text-gray-lightest">
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1021,8 +1288,7 @@ export function ProveedoresPage() {
 
                     {/* Estado */}
                     <div className="flex items-center gap-2">
-                      <span className={`elegante-tag text-xs ${proveedor.activo ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                        }`}>
+                      <span className={`px-3 py-1 rounded-full text-xs ${proveedor.activo ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                         {proveedor.activo ? 'Activo' : 'Inactivo'}
                       </span>
                       <button
@@ -1098,136 +1364,258 @@ export function ProveedoresPage() {
       {/* Modal de Detalle */}
       {selectedProveedor && (
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-          <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Eye className="w-5 h-5 text-primary-orange" />
+              <DialogTitle className="text-white-primary flex items-center gap-2">
+                <Eye className="w-5 h-5 text-orange-primary" />
                 Detalle del Proveedor
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-gray-lightest">
                 Información completa del proveedor seleccionado
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-6">
-              {/* Información básica */}
-              <div className="elegante-card bg-gray-darker">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-orange-primary rounded-lg flex items-center justify-center">
-                    {selectedProveedor.tipoProveedor === 'Juridico' ? (
-                      <Building className="w-5 h-5 text-black-primary" />
-                    ) : (
-                      <User className="w-5 h-5 text-black-primary" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-medium text-white-primary">{selectedProveedor.nombre}</h3>
-                    <p className="text-sm text-gray-lightest">{getTipoProveedorLabel(selectedProveedor.tipoProveedor || "Juridico")}</p>
-                  </div>
-                  
-                <div className="flex items-center gap-2">
-                  <span className={`elegante-tag ${(selectedProveedor.estado !== undefined ? selectedProveedor.estado : selectedProveedor.activo) ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                    }`}>
-                    {(selectedProveedor.estado !== undefined ? selectedProveedor.estado : selectedProveedor.activo) ? 'Activo' : 'Inactivo'}
-                  </span>
+            <div className="space-y-6 pt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Building className="w-4 h-4 text-orange-primary" />
+                    Tipo de Proveedor
+                  </Label>
+                  <Input
+                    value={getTipoProveedorLabel(selectedProveedor.tipoProveedor || 'Juridico')}
+                    disabled
+                    className="elegante-input"
+                  />
                 </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <IdCard className="w-4 h-4 text-gray-lightest" />
-                    <span className="text-sm text-gray-lightest">
-                      {selectedProveedor.tipoProveedor === 'Natural' ? 'Identificación:' : 'NIT:'}
-                    </span>
-                    <span className="text-sm text-white-primary">{selectedProveedor.nit}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-gray-lightest" />
-                    <span className="text-sm text-gray-lightest">Fecha registro:</span>
-                    <span className="text-sm text-white-primary">{selectedProveedor.fechaCreacion}</span>
-                  </div>
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <User className="w-4 h-4 text-orange-primary" />
+                    {selectedProveedor.tipoProveedor === 'Juridico' ? 'Nombre Comercial' : 'Nombre Completo'}
+                  </Label>
+                  <Input
+                    value={selectedProveedor.nombre || ''}
+                    disabled
+                    className="elegante-input"
+                  />
                 </div>
               </div>
 
-              {/* Información de contacto */}
-              <div className="elegante-card bg-gray-darker">
-                <h4 className="text-sm font-medium text-white-primary mb-3 flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-primary-orange" />
-                  Información de Contacto
-                </h4>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-gray-lightest" />
-                    <span className="text-sm text-gray-lightest">Correo:</span>
-                    <span className="text-sm text-white-primary">{selectedProveedor.correo}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-gray-lightest" />
-                    <span className="text-sm text-gray-lightest">Teléfono:</span>
-                    <span className="text-sm text-white-primary">{selectedProveedor.numero}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-gray-lightest" />
-                    <span className="text-sm text-gray-lightest">Dirección:</span>
-                    <span className="text-sm text-white-primary">{selectedProveedor.direccion}</span>
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <IdCard className="w-4 h-4 text-orange-primary" />
+                    NIT / Identificación
+                  </Label>
+                  <Input
+                    value={selectedProveedor.nit || (selectedProveedor as any).numeroIdentificacion || ''}
+                    disabled
+                    className="elegante-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-orange-primary" />
+                    Dirección
+                  </Label>
+                  <Input
+                    value={selectedProveedor.direccion || ''}
+                    disabled
+                    className="elegante-input"
+                  />
                 </div>
               </div>
 
-              {/* Información específica para proveedores jurídicos */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-orange-primary" />
+                    Teléfono Principal
+                  </Label>
+                  <Input
+                    value={selectedProveedor.numero || (selectedProveedor as any).telefono || ''}
+                    disabled
+                    className="elegante-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white-primary flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-orange-primary" />
+                    Correo
+                  </Label>
+                  <Input
+                    value={selectedProveedor.correo || ''}
+                    disabled
+                    className="elegante-input"
+                  />
+                </div>
+              </div>
+
               {selectedProveedor.tipoProveedor === 'Juridico' && (
-                <div className="elegante-card bg-gray-darker">
+                <>
                   <h4 className="text-sm font-medium text-white-primary mb-3 flex items-center gap-2">
-                    <Building className="w-4 h-4 text-primary-orange" />
-                    Información Empresarial
+                    <UserCheck className="w-4 h-4 text-orange-primary" />
+                    Información Representante
                   </h4>
-                  <div className="space-y-3">
-                    {selectedProveedor.razonSocial && (
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-gray-lightest" />
-                        <span className="text-sm text-gray-lightest">Razón Social:</span>
-                        <span className="text-sm text-white-primary">{selectedProveedor.razonSocial}</span>
-                      </div>
-                    )}
-                    {selectedProveedor.representanteLegal && (
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="w-4 h-4 text-gray-lightest" />
-                        <span className="text-sm text-gray-lightest">Representante Legal:</span>
-                        <span className="text-sm text-white-primary">{selectedProveedor.representanteLegal}</span>
-                      </div>
-                    )}
-                    {selectedProveedor.sectorEconomico && (
-                      <div className="flex items-center gap-2">
-                        <Briefcase className="w-4 h-4 text-gray-lightest" />
-                        <span className="text-sm text-gray-lightest">Sector Económico:</span>
-                        <span className="text-sm text-white-primary">{selectedProveedor.sectorEconomico}</span>
-                      </div>
-                    )}
-                    {selectedProveedor.anosOperacion && (
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-lightest" />
-                        <span className="text-sm text-gray-lightest">Años de Operación:</span>
-                        <span className="text-sm text-white-primary">{selectedProveedor.anosOperacion} años</span>
-                      </div>
-                    )}
-                    {selectedProveedor.paginaWeb && (
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-gray-lightest" />
-                        <span className="text-sm text-gray-lightest">Página Web:</span>
-                        <span className="text-sm text-primary-orange">{selectedProveedor.paginaWeb}</span>
-                      </div>
-                    )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <IdCard className="w-4 h-4 text-orange-primary" />
+                        Tipo documento representante
+                      </Label>
+                      <Input value={(selectedProveedor as any).tipoDocumentoRepresentante || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-orange-primary" />
+                        Representante Legal
+                      </Label>
+                      <Input value={selectedProveedor.representanteLegal || ''} disabled className="elegante-input" />
+                    </div>
                   </div>
-                </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-orange-primary" />
+                        Razón Social
+                      </Label>
+                      <Input value={selectedProveedor.razonSocial || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-orange-primary" />
+                        Representante Legal
+                      </Label>
+                      <Input value={selectedProveedor.representanteLegal || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <IdCard className="w-4 h-4 text-orange-primary" />
+                        Documento representante
+                      </Label>
+                      <Input value={selectedProveedor.documentoRepresentante || selectedProveedor.numeroIdentificacionRepLegal || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-orange-primary" />
+                        Teléfono Representante
+                      </Label>
+                      <Input value={selectedProveedor.telefonoRepresentante || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-orange-primary" />
+                        Correo Representante
+                      </Label>
+                      <Input value={selectedProveedor.correoRepresentante || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Briefcase className="w-4 h-4 text-orange-primary" />
+                        Sector Económico
+                      </Label>
+                      <Input value={selectedProveedor.sectorEconomico || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-orange-primary" />
+                        Departamento
+                      </Label>
+                      <Input value={selectedProveedor.departamento || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-orange-primary" />
+                        Ciudad
+                      </Label>
+                      <Input value={selectedProveedor.ciudad || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-orange-primary" />
+                        Años de Operación
+                      </Label>
+                      <Input value={String(selectedProveedor.anosOperacion || '')} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-orange-primary" />
+                        Página Web
+                      </Label>
+                      <Input value={selectedProveedor.paginaWeb || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                </>
               )}
 
+              {selectedProveedor.tipoProveedor === 'Natural' && (
+                <>
+                  <h4 className="text-sm font-medium text-white-primary mb-3 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-orange-primary" />
+                    Información Representante
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <User className="w-4 h-4 text-orange-primary" />
+                        Persona de Contacto
+                      </Label>
+                      <Input value={(selectedProveedor as any).personaContacto || (selectedProveedor as any).contacto || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <IdCard className="w-4 h-4 text-orange-primary" />
+                        Tipo documento contacto adicional
+                      </Label>
+                      <Input value={(selectedProveedor as any).tipoDocumentoContactoAdicional || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <IdCard className="w-4 h-4 text-orange-primary" />
+                        Documento contacto adicional
+                      </Label>
+                      <Input value={(selectedProveedor as any).documentoContactoAdicional || ''} disabled className="elegante-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-orange-primary" />
+                        Teléfono contacto adicional
+                      </Label>
+                      <Input value={(selectedProveedor as any).telefonoContactoAdicional || ''} disabled className="elegante-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-orange-primary" />
+                        Correo contacto adicional
+                      </Label>
+                      <Input value={(selectedProveedor as any).correoContactoAdicional || ''} disabled className="elegante-input" />
+                    </div>
+                    <div />
+                  </div>
+                </>
+              )}
             </div>
-            <div className="flex justify-end pt-4">
+
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
               <Button
+                type="button"
+                variant="outline"
                 onClick={() => setIsDetailDialogOpen(false)}
-                className="elegante-button-primary"
+                className="elegante-button-secondary"
               >
-                Cerrar
+                Cancelar
               </Button>
             </div>
           </DialogContent>

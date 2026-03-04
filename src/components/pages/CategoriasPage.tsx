@@ -2,6 +2,13 @@ import React, { useState, useEffect } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Tags,
   Plus,
   Edit,
@@ -39,7 +46,7 @@ export function CategoriasPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(5);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("all");
   const [productos, setProductos] = useState<ApiProducto[]>([]);
@@ -55,6 +62,10 @@ export function CategoriasPage() {
     descripcion: '',
     estado: true
   });
+
+  const [showCategoriaFormErrors, setShowCategoriaFormErrors] = useState(false);
+  const [categoriaValidationAttempt, setCategoriaValidationAttempt] = useState(0);
+  const shakeClass = categoriaValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
 
   // Cargar categorías desde la API
   const loadCategorias = async () => {
@@ -131,6 +142,8 @@ export function CategoriasPage() {
 
   const handleCreateCategoria = async () => {
     if (!validateForm(nuevaCategoria)) {
+      setShowCategoriaFormErrors(true);
+      setCategoriaValidationAttempt(prev => prev + 1);
       return;
     }
 
@@ -150,6 +163,8 @@ export function CategoriasPage() {
         estado: true
       });
       setError('');
+      setShowCategoriaFormErrors(false);
+      setCategoriaValidationAttempt(0);
 
       created(nuevaCategoria.nombre, 'Categoría creada exitosamente');
     } catch (error) {
@@ -166,11 +181,15 @@ export function CategoriasPage() {
       estado: categoria.estado
     });
     setError('');
+    setShowCategoriaFormErrors(false);
+    setCategoriaValidationAttempt(0);
     setIsEditDialogOpen(true);
   };
 
   const handleUpdateCategoria = async () => {
     if (!selectedCategoria || !validateForm(editCategoria, true)) {
+      setShowCategoriaFormErrors(true);
+      setCategoriaValidationAttempt(prev => prev + 1);
       return;
     }
 
@@ -187,6 +206,8 @@ export function CategoriasPage() {
       setIsEditDialogOpen(false);
       setSelectedCategoria(null);
       setError('');
+      setShowCategoriaFormErrors(false);
+      setCategoriaValidationAttempt(0);
 
       edited(editCategoria.nombre, 'Categoría actualizada exitosamente');
     } catch (error) {
@@ -241,6 +262,17 @@ export function CategoriasPage() {
     }
   };
 
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-auto p-8 bg-black-primary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+          <p className="text-white-primary text-lg">Cargando categorías...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       {/* Header */}
@@ -270,6 +302,8 @@ export function CategoriasPage() {
                         estado: true
                       });
                       setError('');
+                      setShowCategoriaFormErrors(false);
+                      setCategoriaValidationAttempt(0);
                     }}
                   >
                     <Plus className="w-4 h-4" />
@@ -295,13 +329,20 @@ export function CategoriasPage() {
                     )}
 
                     <div className="space-y-2">
-                      <Label className="text-white-primary">Nombre de la Categoría *</Label>
-                      <Input
-                        value={nuevaCategoria.nombre}
-                        onChange={(e) => setNuevaCategoria({ ...nuevaCategoria, nombre: e.target.value })}
+                    <Label className="text-white-primary">Nombre de la Categoría *</Label>
+                    <Input
+                      value={nuevaCategoria.nombre}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setNuevaCategoria({ ...nuevaCategoria, nombre: v });
+                        if (showCategoriaFormErrors && v.trim()) setShowCategoriaFormErrors(false);
+                      }}
                         placeholder="Ej: Cuidado Capilar"
-                        className="elegante-input"
-                      />
+                      className={`elegante-input ${showCategoriaFormErrors && !nuevaCategoria.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                    />
+                    {showCategoriaFormErrors && !nuevaCategoria.nombre.trim() && (
+                      <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                    )}
                     </div>
                     <div className="space-y-2">
                       <Label className="text-white-primary">Descripción</Label>
@@ -334,14 +375,15 @@ export function CategoriasPage() {
                   <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
                     <button onClick={() => {
                       setIsDialogOpen(false);
-                      setError('');
+                    setError('');
+                    setShowCategoriaFormErrors(false);
+                    setCategoriaValidationAttempt(0);
                     }} className="elegante-button-secondary">
                       Cancelar
                     </button>
                     <button
                       onClick={handleCreateCategoria}
                       className="elegante-button-primary"
-                      disabled={!nuevaCategoria.nombre}
                     >
                       Crear Categoría
                     </button>
@@ -395,11 +437,10 @@ export function CategoriasPage() {
                     <td colSpan={4} className="py-12 text-center">
                       <Tags className="w-12 h-12 text-gray-medium mx-auto mb-4" />
                       <h3 className="text-lg font-medium text-white-primary mb-2">
-                        {loading ? 'Cargando categorías...' : 'No hay categorías'}
+                        No hay categorías
                       </h3>
                       <p className="text-gray-lightest">
-                        {loading ? 'Por favor espera un momento.' :
-                          searchTerm ? 'No se encontraron categorías con ese criterio de búsqueda.' :
+                        {searchTerm ? 'No se encontraron categorías con ese criterio de búsqueda.' :
                             'Comience agregando una nueva categoría.'}
                       </p>
                     </td>
@@ -432,15 +473,15 @@ export function CategoriasPage() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
-                          <button
+                        <button
                             onClick={() => handleToggleStatus(categoria)}
                             className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
                             title={categoria.estado ? "Desactivar" : "Activar"}
                           >
                             {categoria.estado ? (
-                              <ToggleRight className="w-4 h-4 text-green-400" />
+                              <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
                             ) : (
-                              <ToggleLeft className="w-4 h-4 text-red-400" />
+                              <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
                             )}
                           </button>
                           <button
@@ -460,6 +501,7 @@ export function CategoriasPage() {
                           >
                             <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
                           </button>
+                          
                           <button
                             onClick={() => handleDeleteClick(categoria)}
                             className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -476,21 +518,75 @@ export function CategoriasPage() {
             </table>
             {/* Paginación */}
             <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
-              <div className="text-sm text-gray-lightest">
-                Página {currentPage} de {totalPages}
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-lightest">
+                  Página {currentPage} de {totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-lightest">Filas por página:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(Number(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[110px] h-8 bg-gray-darker border-gray-dark text-gray-lightest">
+                      <SelectValue placeholder={itemsPerPage.toString()} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-darkest border-gray-dark text-gray-lightest">
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                   className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Página anterior"
                 >
                   <ChevronLeft className="w-4 h-4 text-gray-lightest" />
                 </button>
+
+                {/* Números de página */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded text-sm transition-colors ${currentPage === pageNum
+                          ? 'bg-orange-primary text-black-primary font-medium'
+                          : 'border border-gray-dark hover:bg-gray-darker text-gray-lightest'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                   className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Página siguiente"
                 >
                   <ChevronRight className="w-4 h-4 text-gray-lightest" />
                 </button>
@@ -539,10 +635,17 @@ export function CategoriasPage() {
                 <Label className="text-white-primary">Nombre de la Categoría *</Label>
                 <Input
                   value={editCategoria.nombre}
-                  onChange={(e) => setEditCategoria({ ...editCategoria, nombre: e.target.value })}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEditCategoria({ ...editCategoria, nombre: v });
+                    if (showCategoriaFormErrors && v.trim()) setShowCategoriaFormErrors(false);
+                  }}
                   placeholder="Ej: Cuidado Capilar"
-                  className="elegante-input"
+                  className={`elegante-input ${showCategoriaFormErrors && !editCategoria.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                 />
+                {showCategoriaFormErrors && !editCategoria.nombre.trim() && (
+                  <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label className="text-white-primary">Descripción</Label>
@@ -577,13 +680,14 @@ export function CategoriasPage() {
                 setIsEditDialogOpen(false);
                 setError('');
                 setSelectedCategoria(null);
+                setShowCategoriaFormErrors(false);
+                setCategoriaValidationAttempt(0);
               }} className="elegante-button-secondary">
                 Cancelar
               </button>
               <button
                 onClick={handleUpdateCategoria}
                 className="elegante-button-primary"
-                disabled={!editCategoria.nombre}
               >
                 Guardar Cambios
               </button>

@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Input } from "../ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Plus,
   Search,
   Eye,
@@ -30,6 +37,7 @@ import { compraService, Compra, CreateCompraRequest } from "../../services/compr
 import { proveedorService, Proveedor } from "../../services/proveedorService";
 import { insumosService, Insumo } from "../../services/insumosService";
 import { productoService } from "../../services/productos";
+import { apiService, ApiUser } from "../../services/api";
 import ImageRenderer from "../ui/ImageRenderer";
 
 // Función para formatear moneda colombiana con puntos para separar miles
@@ -68,7 +76,10 @@ const CompraRow = React.memo(({
 }) => (
   <tr className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
     <td className="py-4 px-4 text-center">
-      <span className="text-gray-lighter">{compra.id}</span>
+      <div className="flex items-center gap-2 justify-center">
+        <Hash className="w-4 h-4 text-orange-primary" />
+        <span className="text-gray-lighter">{String(compra.id)}</span>
+      </div>
     </td>
     <td className="py-4 px-4 text-center">
       <span className="text-gray-lighter">{compra.proveedorDocumento || 'N/A'}</span>
@@ -83,7 +94,7 @@ const CompraRow = React.memo(({
       <span className="text-gray-lighter font-bold">${compra.totalFormatted}</span>
     </td>
     <td className="py-4 px-4 text-center">
-      <span className="text-gray-lighter">{compra.fechaFormatted}</span>
+      <span className="text-sm text-gray-lighter">{compra.fechaFormatted}</span>
     </td>
     <td className="py-4 px-4 text-center">
       <span className={`px-3 py-1 rounded-full text-xs ${getEstadoColor(compra.estado)}`}>
@@ -125,6 +136,7 @@ export function ComprasPage() {
   const { confirmDeleteAction, DoubleConfirmationContainer } = useDoubleConfirmation();
   const { created, AlertContainer } = useCustomAlert();
   const [compras, setCompras] = useState<Compra[]>([]);
+  const [users, setUsers] = useState<ApiUser[]>([]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [productos, setProductos] = useState<Insumo[]>([]);
 
@@ -133,7 +145,7 @@ export function ComprasPage() {
   const [selectedCompra, setSelectedCompra] = useState<Compra | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
   const [loading, setLoading] = useState(!sessionStorage.getItem('compras_cache'));
 
@@ -168,6 +180,35 @@ export function ComprasPage() {
     });
   };
 
+  const getCompraResponsableDisplay = (compra: any) => {
+    if (!compra) return 'N/A';
+    const c = compra as any;
+    let doc =
+      c.responsableDocumento ??
+      c.ResponsableDocumento ??
+      c.usuarioDocumento ??
+      c.UsuarioDocumento ??
+      c.userDocumento ??
+      c.UserDocumento ??
+      '';
+
+    const nombreDirecto =
+      c.responsableNombre ?? c.ResponsableNombre ?? c.usuarioNombre ?? c.UsuarioNombre ?? c.responsable ?? c.usuario;
+    if (nombreDirecto) return `${String(nombreDirecto)}${doc ? ` — CC ${doc}` : ''}`;
+
+    const respObj = c.responsable ?? c.Responsable ?? c.usuario ?? c.Usuario;
+    if (respObj) {
+      if (typeof respObj === 'string') return `${respObj}${doc ? ` — CC ${doc}` : ''}`;
+      const nombre = respObj.nombre ?? respObj.Nombre ?? respObj.name ?? respObj.Name;
+      const apellido = respObj.apellido ?? respObj.Apellido ?? respObj.lastName ?? respObj.LastName;
+      if (!doc) doc = respObj.documento ?? respObj.Documento ?? '';
+      const fullName = [nombre, apellido].filter(Boolean).join(' ').trim();
+      if (fullName) return `${fullName}${doc ? ` — CC ${doc}` : ''}`;
+    }
+    if (doc) return `CC ${doc}`;
+    return 'N/A';
+  };
+
   const inicialNuevaCompra = {
     proveedorId: 0,
     metodoPago: '',
@@ -193,8 +234,8 @@ export function ComprasPage() {
     precio?: string;
   }>>({});
   const [productoSeleccionado, setProductoSeleccionado] = useState('');
-  const [providerSearchTerm, setProviderSearchTerm] = useState('');
-  const [showProviderResults, setShowProviderResults] = useState(false);
+  const [proveedorSearchTerm, setProveedorSearchTerm] = useState('');
+  const [showProveedorResults, setShowProveedorResults] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [showProductResults, setShowProductResults] = useState(false);
   const [cantidadProducto, setCantidadProducto] = useState(0);
@@ -210,13 +251,22 @@ export function ComprasPage() {
   const [showAddCompraProductoErrors, setShowAddCompraProductoErrors] = useState(false);
   const [compraValidationAttempt, setCompraValidationAttempt] = useState(0);
   const shakeClass = compraValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
+  const [creatingPurchase, setCreatingPurchase] = useState(false);
   const noProductosAgregados = (nuevaCompra.productos?.length || 0) === 0;
   const showProductoSelectorError = (showCompraFormErrors && noProductosAgregados && !productoSeleccionado) || (showAddCompraProductoErrors && !productoSeleccionado);
   const showCantidadProductoError = (showCompraFormErrors && noProductosAgregados && cantidadProducto <= 0) || (showAddCompraProductoErrors && cantidadProducto <= 0);
-  const showStockVentasError = (showCompraFormErrors && noProductosAgregados && stockVentasInput.trim() === '') || (showAddCompraProductoErrors && stockVentasInput.trim() === '');
-  const showStockInsumosError = (showCompraFormErrors && noProductosAgregados && stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto) || (showAddCompraProductoErrors && stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto);
-  const showDistribucionError = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0 && (stockVentas + stockInsumos) !== cantidadProducto;
-
+  const showStockVentasError = ((showCompraFormErrors && noProductosAgregados) || showAddCompraProductoErrors) && stockVentasInput.trim() === '' && stockInsumos !== cantidadProducto;
+  const showStockInsumosError = ((showCompraFormErrors && noProductosAgregados) || showAddCompraProductoErrors) && stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto;
+  const distribucionDiff = (stockVentas + stockInsumos) - cantidadProducto;
+  const showDistribucionExceso = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0 && distribucionDiff > 0;
+  const showDistribucionFalta = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0 && distribucionDiff < 0;
+  const showDistribucionError = showDistribucionExceso || showDistribucionFalta;
+  const maxVentasPermitido = Math.max(0, cantidadProducto);
+  const maxEntregasPermitido = Math.max(0, cantidadProducto);
+  const baseErrorGate = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0;
+  const showExcesoVentas = baseErrorGate && stockVentas > cantidadProducto;
+  const showExcesoEntregas = baseErrorGate && stockInsumos > cantidadProducto;
+  const numeroCompras = 121 + compras.length; 
   // Cargar datos de forma separada y perezosa con cache SWR
   const loadCompras = async (useCache = false) => {
     if (useCache) {
@@ -279,6 +329,7 @@ export function ComprasPage() {
       // primero si existe, y luego actualizar con datos frescos.
       const comprasPromise = loadCompras(true);
       const proveedoresPromise = loadProveedores();
+      const usuariosPromise = apiService.getUsuarios().then(setUsers).catch(() => setUsers([]));
 
       // Esperamos que loadCompras termine (incluyendo la petición de red)
       // para asegurar que los datos estén actualizados, pero permitimos
@@ -287,6 +338,7 @@ export function ComprasPage() {
 
       // Proveedores es secundario (solo para el diálogo de nueva compra)
       proveedoresPromise.catch(err => console.error("Error background providers:", err));
+      usuariosPromise.catch(err => console.error("Error background usuarios:", err));
     } catch (error) {
       console.error("Error en la carga inicial:", error);
     } finally {
@@ -320,7 +372,15 @@ export function ComprasPage() {
     const query = normalizeSearchText(debouncedSearch);
     if (!query) return compras;
     return compras.filter(compra => {
-      return (compra as any).searchString?.includes(query);
+      // Solo campos visibles en la tabla: Número, Documento/NIT, Proveedor, Total, Fecha, Estado
+      const numero = String((compra as any).numeroCompra || (compra as any).numeroFactura || (compra as any).id || '');
+      const documento = String((compra as any).proveedorDocumento || '');
+      const proveedor = String((compra as any).proveedorNombre || '');
+      const totalTxt = String((compra as any).total ?? '');
+      const fechaTxt = formatDate((compra as any).fecha || '');
+      const estadoTxt = String((compra as any).estado || '');
+      const visible = normalizeSearchText([numero, documento, proveedor, totalTxt, fechaTxt, estadoTxt].join(' '));
+      return visible.includes(query);
     });
   }, [compras, debouncedSearch]);
 
@@ -387,7 +447,12 @@ export function ComprasPage() {
   }, [productoSeleccionado, productos]);
 
   const agregarProducto = () => {
-    if (!productoSeleccionado || cantidadProducto <= 0 || stockVentasInput.trim() === '' || (stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto)) {
+    if (
+      !productoSeleccionado ||
+      cantidadProducto <= 0 ||
+      (stockVentasInput.trim() === '' && stockInsumos !== cantidadProducto) ||
+      (stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto)
+    ) {
       setShowAddCompraProductoErrors(true);
       setCompraValidationAttempt((prev) => prev + 1);
       return;
@@ -400,11 +465,26 @@ export function ComprasPage() {
       return;
     }
 
-    // Validación de stock es opcional en compras o requerida según lógica de negocio.
-    if (stockVentas + stockInsumos !== cantidadProducto) {
+    const sumaDistribucion = stockVentas + stockInsumos;
+    if (sumaDistribucion > cantidadProducto) {
       setShowAddCompraProductoErrors(true);
       setCompraValidationAttempt((prev) => prev + 1);
-      toast.error("Error en distribución", { description: "La suma de Stock Ventas y Entregas debe ser igual a la Cantidad Total" });
+      const maxVentas = Math.max(0, cantidadProducto - stockInsumos);
+      const maxInsumos = Math.max(0, cantidadProducto - stockVentas);
+      const partes: string[] = [];
+      if (stockVentas > maxVentas) partes.push(`Stock Ventas excede el máximo permitido (${maxVentas}).`);
+      if (stockInsumos > maxInsumos) partes.push(`Stock Entregas excede el máximo permitido (${maxInsumos}).`);
+      const description = partes.length > 0
+        ? partes.join(' ')
+        : `Ventas + Entregas (${sumaDistribucion}) no puede superar la Cantidad Total (${cantidadProducto}).`;
+      toast.error("Error en distribución", { description });
+      return;
+    }
+
+    if (sumaDistribucion !== cantidadProducto) {
+      setShowAddCompraProductoErrors(true);
+      setCompraValidationAttempt((prev) => prev + 1);
+      toast.error("Distribución incompleta", { description: `Faltan ${cantidadProducto - sumaDistribucion} unidades por asignar.` });
       return;
     }
 
@@ -451,7 +531,8 @@ export function ComprasPage() {
           precio: precioUnitario,
           stockVentas: stockVentasNuevo,
           stockInsumos: stockInsumosNuevo,
-          imagen: (producto as Insumo).imagen ?? (producto as { imagenProduc?: string }).imagenProduc ?? ''
+          imagen: (producto as Insumo).imagen ?? (producto as { imagenProduc?: string }).imagenProduc ?? '',
+          categoria: (producto as Insumo).categoria
         }]
       });
       setTarjetaInputs((prev) => ({
@@ -726,7 +807,21 @@ export function ComprasPage() {
     try {
       // Show dialog immediately or loading state
       const detalles = await compraService.getDetallesPorCompra(compra.id);
-      setSelectedCompra({ ...compra, detalles: detalles });
+      let responsableDocumento = '';
+      try {
+        const uid = (compra as any).usuarioId || (compra as any).UsuarioId || 0;
+        if (uid) {
+          const usuario = await apiService.getUsuarioById(Number(uid));
+          responsableDocumento = String(
+            (usuario as any)?.documento ||
+            (usuario as any)?.Documento ||
+            ''
+          );
+        }
+      } catch {
+        // silently ignore doc fetch errors
+      }
+      setSelectedCompra({ ...compra, detalles: detalles, responsableDocumento });
       setIsDetailDialogOpen(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la compra");
@@ -734,6 +829,8 @@ export function ComprasPage() {
   };
 
   const handleCreateCompra = React.useCallback(async () => {
+    if (creatingPurchase) return;
+    setCreatingPurchase(true);
     setShowCompraFormErrors(true);
     setCompraValidationAttempt((prev) => prev + 1);
 
@@ -788,15 +885,7 @@ export function ComprasPage() {
     try {
       await compraService.createCompra(compraRequest);
 
-      // Incrementar stock para cada producto comprado
-      for (const p of nuevaCompra.productos) {
-        if (p.stockVentas > 0) {
-          await productoService.adjustStock(p.id, p.stockVentas, 'increment', 'ventas');
-        }
-        if (p.stockInsumos > 0) {
-          await productoService.adjustStock(p.id, p.stockInsumos, 'increment', 'insumos');
-        }
-      }
+      // El backend ajusta los stocks según los detalles enviados
 
       created("Compra creada ✔️", `La compra ha sido registrada exitosamente.`);
       setIsDialogOpen(false);
@@ -825,8 +914,10 @@ export function ComprasPage() {
     } catch (error) {
       toast.error("Error al crear compra", { description: "Hubo un problema al guardar la compra o actualizar el stock." });
       console.error(error);
+    } finally {
+      setCreatingPurchase(false);
     }
-  }, [user, nuevaCompra, inicialNuevaCompra, generateCurrentDate, loadCompras, created]);
+  }, [user, nuevaCompra, inicialNuevaCompra, generateCurrentDate, loadCompras, created, creatingPurchase]);
   const handleAnularCompra = (compraId: number) => {
     const compra = compras.find(c => c.id === compraId);
     if (!compra) return;
@@ -835,23 +926,35 @@ export function ComprasPage() {
       String(compraId),
       async () => {
         try {
-          // Anular la compra
-          await compraService.anularCompra(compraId);
-          toast.success("Compra anulada", { description: `La compra ${compra.numeroCompra} ha sido anulada.` });
-
-          // Obtener los detalles de la compra para revertir el stock
+          // 1. Obtener detalles ANTES de anular, para asegurar que tenemos las cantidades originales
           const detallesCompra = await compraService.getDetallesPorCompra(compraId);
 
-          // Revertir el stock de cada producto
-          for (const detalle of detallesCompra) {
-            await productoService.revertirStockProducto(
-              detalle.productoId,
-              detalle.cantidadVentas ?? 0,
-              detalle.cantidadInsumos ?? 0
-            );
+          // 2. Anular la compra en el backend (esto revierte stock de ventas automáticamente)
+          await compraService.anularCompra(compraId);
+
+          // 3. Revertir manualmente el stock de insumos usando los detalles capturados
+          try {
+            for (const detalle of detallesCompra) {
+              const productoId = Number(detalle.productoId);
+              if (!productoId) continue;
+
+              const cantidadTotal = Number(detalle.cantidad || 0);
+              const cantidadVentas = Number(detalle.cantidadVentas || 0);
+              const cantidadInsumosPersistida = Number(detalle.cantidadInsumos || 0);
+
+              // Si el backend no persiste cantidadInsumos, inferimos el resto
+              const insumosARevertir = cantidadInsumosPersistida > 0
+                ? cantidadInsumosPersistida
+                : Math.max(0, cantidadTotal - cantidadVentas);
+
+              if (insumosARevertir > 0) {
+                 await productoService.adjustStock(productoId, insumosARevertir, 'decrement', 'insumos');
+              }
+            }
+          } catch (revertError) {
+             console.error("Error al revertir stock de insumos en el cliente:", revertError);
           }
 
-          // Recargar compras y productos para reflejar los cambios
           await Promise.all([
             loadCompras().catch(() => { }),
             productoService.getProductos()
@@ -862,12 +965,11 @@ export function ComprasPage() {
           const errorMsg = error.message || "";
           if (errorMsg.includes("ya está anulada") || errorMsg.includes("ya esta anulada")) {
             toast.info("Información", { description: "Esta compra ya figuraba como anulada en el sistema." });
-            // Aun así recargamos para sincronizar UI
             await loadCompras().catch(() => { });
             return;
           }
-          toast.error("Error al anular", { description: "No se pudo anular la compra o revertir el stock." });
-          console.error("Error al anular compra o revertir stock:", error);
+          toast.error("Error al anular", { description: "No se pudo anular la compra." });
+          console.error("Error al anular compra:", error);
         }
       },
       {
@@ -1036,6 +1138,17 @@ export function ComprasPage() {
     toast.success("Reporte HTML generado exitosamente");
   };
 
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-auto p-8 bg-black-primary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+          <p className="text-white-primary text-lg">Cargando compras...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       <header className="bg-black-primary border-b border-gray-dark px-8 py-6">
@@ -1076,10 +1189,6 @@ export function ComprasPage() {
                       setStockVentasInput('');
                       setStockInsumosInput('');
                       setPorcentajeDescuentoInput('');
-                      setProviderSearchTerm('');
-                      setShowProviderResults(false);
-                      setProductSearchTerm('');
-                      setShowProductResults(false);
                     }}
                   >
                     <Plus className="w-4 h-4" />
@@ -1104,7 +1213,7 @@ export function ComprasPage() {
                           Número de Compra (Automático)
                         </Label>
                         <Input
-                          value="###"
+                          value={numeroCompras.toString().padStart(3, "0")}
                           disabled
                           className="elegante-input bg-gray-medium"
                         />
@@ -1161,7 +1270,7 @@ export function ComprasPage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
+                      <div className="space-y-2 relative">
                         <Label className="text-white-primary flex items-center gap-2">
                           <Building className="w-4 h-4 text-orange-primary" />
                           Proveedor *
@@ -1169,53 +1278,66 @@ export function ComprasPage() {
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
                           <Input
-                            placeholder="Escribe para buscar proveedor por nombre, NIT o correo..."
-                            value={providerSearchTerm}
+                            placeholder="Escribe para buscar un proveedor..."
+                            value={proveedorSearchTerm}
                             onChange={(e) => {
-                              setProviderSearchTerm(e.target.value);
-                              setShowProviderResults(true);
+                              setProveedorSearchTerm(e.target.value);
+                              setShowProveedorResults(true);
                             }}
-                            onFocus={() => setShowProviderResults(true)}
+                            onFocus={() => setShowProveedorResults(true)}
                             className={`elegante-input pl-11 w-full ${showCompraFormErrors && !nuevaCompra.proveedorId ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                           />
-                          {showProviderResults && providerSearchTerm.trim() !== '' && (
-                            <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-80 overflow-y-auto custom-scrollbar">
+                          {showProveedorResults && proveedorSearchTerm.trim() !== "" && (
+                            <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-80 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                               {(() => {
-                                const query = normalizeSearchText(providerSearchTerm);
-                                const filtered = proveedores.filter(p => {
-                                  const searchable = normalizeSearchText([
-                                    p.id,
-                                    p.nombre,
-                                    p.nit,
-                                    p.correo
-                                  ].join(' '));
-                                  return searchable.includes(query);
-                                }).slice(0, 50);
-                                if (filtered.length === 0) {
+                                const query = normalizeSearchText(proveedorSearchTerm);
+                                const filteredResults = proveedores
+                                  .filter(p => {
+                                    const searchableText = normalizeSearchText([
+                                      p.id,
+                                      p.nombre,
+                                      p.nit,
+                                      p.correo,
+                                      p.numero,
+                                      p.direccion
+                                    ].join(" "));
+                                    return searchableText.includes(query);
+                                  })
+                                  .slice(0, 50);
+
+                                if (filteredResults.length === 0) {
                                   return (
                                     <div className="p-4 text-center text-gray-lightest italic">
                                       No se encontraron proveedores que coincidan.
                                     </div>
                                   );
                                 }
-                                return filtered.map(p => (
+
+                                return filteredResults.map((proveedor) => (
                                   <div
-                                    key={p.id}
+                                    key={proveedor.id}
                                     onClick={() => {
-                                      setNuevaCompra({ ...nuevaCompra, proveedorId: Number(p.id) });
-                                      setProviderSearchTerm(`${p.nombre}${p.nit ? ` — ${p.nit}` : ''}`);
-                                      setShowProviderResults(false);
+                                      setNuevaCompra({
+                                        ...nuevaCompra,
+                                        proveedorId: Number(proveedor.id ?? 0)
+                                      });
+                                      setProveedorSearchTerm(
+                                        `${proveedor.nombre || ""}${proveedor.nit ? ` — NIT ${proveedor.nit}` : ""}`
+                                      );
+                                      setShowProveedorResults(false);
                                     }}
-                                    className="p-3 border-b border-gray-dark hover:bg-gray-dark transition-colors cursor-pointer"
+                                    className="p-3 border-b border-gray-dark hover:bg-gray-dark transition-colors cursor-pointer group"
                                   >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <Building className="w-4 h-4 text-orange-primary" />
-                                        <span className="text-white-primary font-medium">{p.nombre}</span>
+                                    <div className="flex justify-between items-center">
+                                      <div>
+                                        <p className="text-white-primary font-medium text-sm group-hover:text-orange-secondary transition-colors">
+                                          {proveedor.nombre}
+                                        </p>
+                                        <p className="text-[10px] text-gray-lightest">
+                                          {proveedor.nit ? `NIT ${proveedor.nit}` : "Sin NIT"} · {proveedor.correo || "Sin correo"}
+                                        </p>
                                       </div>
-                                      <span className="text-xs text-gray-lightest">{p.nit || 'NIT no disponible'}</span>
                                     </div>
-                                    <div className="text-xs text-gray-lightest mt-1">{p.correo || 'Sin correo'}</div>
                                   </div>
                                 ));
                               })()}
@@ -1223,7 +1345,7 @@ export function ComprasPage() {
                           )}
                         </div>
                         {showCompraFormErrors && !nuevaCompra.proveedorId && (
-                          <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                          <p className="text-xs text-red-400 mt-1">Debes seleccionar un proveedor del buscador.</p>
                         )}
                       </div>
                       <div className="space-y-2">
@@ -1256,7 +1378,7 @@ export function ComprasPage() {
                       <h3 className="text-lg font-semibold text-white-primary">Agregar Productos</h3>
 
                       <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2 col-span-2">
+                        <div className="space-y-2 col-span-2 relative">
                           <Label className="text-white-primary flex items-center gap-2">
                             <ShoppingBag className="w-4 h-4 text-orange-primary" />
                             Producto *
@@ -1264,59 +1386,76 @@ export function ComprasPage() {
                           <div className="relative">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
                             <Input
-                              placeholder="Escribe para buscar producto por nombre o categoría..."
+                              placeholder="Escribe para buscar un producto..."
                               value={productSearchTerm}
                               onChange={(e) => {
                                 setProductSearchTerm(e.target.value);
                                 setShowProductResults(true);
-                                if (showAddCompraProductoErrors) setShowAddCompraProductoErrors(false);
                               }}
                               onFocus={() => setShowProductResults(true)}
                               className={`elegante-input pl-11 w-full ${showProductoSelectorError ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                             />
-                            {showProductResults && productSearchTerm.trim() !== '' && (
-                              <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-80 overflow-y-auto custom-scrollbar">
+                            {showProductResults && productSearchTerm.trim() !== "" && (
+                              <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                                 {(() => {
                                   const query = normalizeSearchText(productSearchTerm);
-                                  const filtered = productos.filter(prod => {
-                                    const searchable = normalizeSearchText([
-                                      prod.id,
-                                      prod.nombre,
-                                      prod.categoria
-                                    ].join(' '));
-                                    return searchable.includes(query);
-                                  }).slice(0, 50);
-                                  if (filtered.length === 0) {
+                                  const filteredResults = productos
+                                    .filter(p => {
+                                      const searchableText = normalizeSearchText([
+                                        p.id,
+                                        p.nombre,
+                                        p.categoria,
+                                        (p as any).stock,
+                                        (p as any).stockVentas,
+                                        (p as any).stockInsumos,
+                                        p.precio
+                                      ].join(" "));
+                                      return searchableText.includes(query);
+                                    })
+                                    .slice(0, 20);
+
+                                  if (filteredResults.length === 0) {
                                     return (
                                       <div className="p-4 text-center text-gray-lightest italic">
-                                        No se encontraron productos que coincidan.
+                                        Sin resultados.
                                       </div>
                                     );
                                   }
-                                  return filtered.map(prod => (
+
+                                  return filteredResults.map((producto) => (
                                     <div
-                                      key={prod.id}
+                                      key={producto.id}
                                       onClick={() => {
-                                        setProductoSeleccionado(String(prod.id));
-                                        setProductSearchTerm(prod.nombre);
+                                        setProductoSeleccionado(producto.id.toString());
+                                        setProductSearchTerm(producto.nombre);
                                         setShowProductResults(false);
+                                        if (showAddCompraProductoErrors) setShowAddCompraProductoErrors(false);
                                       }}
-                                      className="p-3 border-b border-gray-dark hover:bg-gray-dark transition-colors cursor-pointer"
+                                      className="p-3 border-b border-gray-dark hover:bg-gray-dark transition-colors cursor-pointer group"
                                     >
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-md overflow-hidden bg-gray-dark border border-gray-dark flex items-center justify-center">
-                                          <ImageRenderer
-                                            url={prod.imagen}
-                                            alt={prod.nombre}
-                                            className="w-full h-full border-0 bg-transparent"
-                                          />
+                                      <div className="flex justify-between items-center">
+                                        <div>
+                                          <p className="text-white-primary font-medium text-sm group-hover:text-orange-secondary transition-colors">
+                                            {producto.nombre}
+                                          </p>
+                                          <p className="text-[10px] text-gray-lightest">${formatCurrency((producto as any).precioBase ?? (producto as any).precio ?? 0)}</p>
+                                          <p className="text-[10px] text-gray-400">{String((producto as any).categoria || 'Sin categoría')}</p>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex justify-between items-center">
-                                            <span className="text-white-primary font-medium truncate">{prod.nombre}</span>
-                                            <span className="text-xs text-orange-primary font-semibold">${formatCurrency(prod.precio)}</span>
+                                        <div className="text-right">
+                                          <div className="flex flex-col items-end gap-1">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[9px] text-gray-lightest leading-none">Stock ventas</span>
+                                              <span className={`text-xs font-bold ${(((producto as any).stockVentas ?? 0) > 0) ? 'text-green-400' : 'text-red-400'}`}>
+                                                {Number((producto as any).stockVentas ?? 0)}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[9px] text-gray-lightest leading-none">Stock insumos</span>
+                                              <span className={`text-xs font-bold ${(((producto as any).stockInsumos ?? (producto as any).stock ?? 0) > 0) ? 'text-blue-400' : 'text-red-400'}`}>
+                                                {Number((producto as any).stockInsumos ?? (producto as any).stock ?? 0)}
+                                              </span>
+                                            </div>
                                           </div>
-                                          <div className="text-xs text-gray-lightest truncate">{prod.categoria}</div>
                                         </div>
                                       </div>
                                     </div>
@@ -1326,7 +1465,7 @@ export function ComprasPage() {
                             )}
                           </div>
                           {showProductoSelectorError && (
-                            <p className="text-xs text-red-400">Este campo es obligatorio.</p>
+                            <p className="text-xs text-red-400">Debes seleccionar un producto del buscador.</p>
                           )}
                         </div>
                         <div className="space-y-2">
@@ -1356,31 +1495,7 @@ export function ComprasPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-white-primary flex items-center gap-2">
-                            <DollarSign className="w-4 h-4 text-orange-primary" />
-                            Precio Unitario *
-                          </Label>
-                          <Input
-                            type="number"
-                            value={precioUnitarioInput}
-                            onChange={(e) => {
-                              if (e.target.value.length <= 15) {
-                                handlePrecioUnitarioInputChange(e.target.value);
-                              }
-                            }}
-                            className="elegante-input no-spin"
-                            min="0"
-                            step="100"
-                          />
-                          <div className="flex justify-start mt-1">
-                            <span className="text-xs text-gray-500 font-medium">
-                              {precioUnitarioInput.length}/15 caracteres
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      
 
                       <div className="p-4 bg-orange-primary/10 border border-orange-primary/30 rounded-lg space-y-4">
                         <div className="flex items-center gap-2 text-orange-primary text-sm font-medium">
@@ -1391,7 +1506,7 @@ export function ComprasPage() {
                           <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
                               <Boxes className="w-4 h-4 text-orange-primary" />
-                              Stock para Ventas *
+                              Stock para Ventas
                             </Label>
                             <Input
                               type="number"
@@ -1413,11 +1528,14 @@ export function ComprasPage() {
                             {showStockVentasError && (
                               <p className="text-xs text-red-400">Este campo es obligatorio.</p>
                             )}
+                            {showExcesoVentas && (
+                              <p className="text-xs text-red-400">Máximo permitido: {maxVentasPermitido}.</p>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label className="text-white-primary flex items-center gap-2">
                               <Boxes className="w-4 h-4 text-orange-primary" />
-                              Stock para Entregas *
+                              Stock para Entregas
                             </Label>
                             <Input
                               type="number"
@@ -1439,6 +1557,9 @@ export function ComprasPage() {
                             {showStockInsumosError && (
                               <p className="text-xs text-red-400">Este campo es obligatorio.</p>
                             )}
+                            {showExcesoEntregas && (
+                              <p className="text-xs text-red-400">Máximo permitido: {maxEntregasPermitido}.</p>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label className="text-white-primary">ㅤ</Label>
@@ -1450,9 +1571,14 @@ export function ComprasPage() {
                             </button>
                           </div>
                         </div>
-                        {showDistribucionError && (
+                        {showDistribucionExceso && (
                           <p className="text-red-400 text-sm">
-                            ⚠️ La suma ({stockVentas + stockInsumos}) debe ser igual a la cantidad total ({cantidadProducto})
+                            ⚠️ Estás sobrepasando la cantidad total ({cantidadProducto}).
+                          </p>
+                        )}
+                        {showDistribucionFalta && (
+                          <p className="text-red-400 text-sm">
+                            ⚠️ Faltan {cantidadProducto - (stockVentas + stockInsumos)} unidades por asignar (Ventas + Entregas debe sumar {cantidadProducto}).
                           </p>
                         )}
                       </div>
@@ -1481,11 +1607,19 @@ export function ComprasPage() {
                                       className="w-full h-full border-0 bg-transparent"
                                     />
                                   </div>
-                                  {/* Nombre del producto — centrado en la tarjeta */}
-                                  <div className="min-w-0 flex-1 shrink flex items-center justify-center">
-                                    <span className="text-white-primary font-semibold text-base truncate block text-center w-full" title={producto.nombre}>
+                                  {/* Nombre y categoría del producto — centrado en la tarjeta */}
+                                  <div className="min-w-0 flex-1 shrink flex flex-col items-center justify-center">
+                                    <span
+                                      className="text-white-primary font-semibold text-base truncate block text-center w-full"
+                                      title={producto.nombre}
+                                    >
                                       {producto.nombre}
                                     </span>
+                                    {('categoria' in producto) && (
+                                      <span className="text-[11px] text-gray-400 truncate block text-center w-full">
+                                        {(producto as any).categoria || 'Sin categoría'}
+                                      </span>
+                                    )}
                                   </div>
 
                                   {/* Total — label arriba, input abajo */}
@@ -1606,10 +1740,6 @@ export function ComprasPage() {
                           setStockVentasInput('');
                           setStockInsumosInput('');
                           setPorcentajeDescuentoInput('');
-                          setProviderSearchTerm('');
-                          setShowProviderResults(false);
-                          setProductSearchTerm('');
-                          setShowProductResults(false);
                         }}
                         className="elegante-button-secondary"
                       >
@@ -1617,9 +1747,17 @@ export function ComprasPage() {
                       </button>
                       <button
                         onClick={handleCreateCompra}
-                        className="elegante-button-primary"
+                        className="elegante-button-primary flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                        disabled={creatingPurchase}
                       >
-                        Crear Compra
+                        {creatingPurchase ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-black-primary"></div>
+                            Registrando...
+                          </>
+                        ) : (
+                          'Crear Compra'
+                        )}
                       </button>
                     </div>
                   </div>
@@ -1639,18 +1777,14 @@ export function ComprasPage() {
           </div>
 
           <div className="overflow-x-auto">
-            {loading ? (
-              <div className="text-white-primary text-center py-8">Cargando compras...</div>
-            ) : (
-              <>
-                <table className="w-full">
+            <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-dark">
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">###</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Número</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Documento/NIT Prov.</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Proveedor</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Total</th>
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Fecha de Registro</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Fecha</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
                     </tr>
@@ -1660,9 +1794,9 @@ export function ComprasPage() {
                       <CompraRow
                         key={compra.id}
                         compra={compra as any}
+                        onAnular={handleAnularCompra}
                         onViewDetails={handleViewDetails}
                         onGenerateReport={generatePurchaseReport}
-                        onAnular={handleAnularCompra}
                         getEstadoColor={getEstadoColor}
                       />
                     )) : (
@@ -1675,28 +1809,80 @@ export function ComprasPage() {
 
                 {/* Paginación */}
                 <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
-                  <div className="text-sm text-gray-lightest">
-                    Página {currentPage} de {totalPages}
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm text-gray-lightest">
+                      Página {currentPage} de {totalPages}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-lightest">Filas por página:</span>
+                      <Select
+                        value={itemsPerPage.toString()}
+                        onValueChange={(value) => {
+                          setItemsPerPage(Number(value));
+                          setCurrentPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="w-[110px] h-8 bg-gray-darker border-gray-dark text-gray-lightest">
+                          <SelectValue placeholder={itemsPerPage.toString()} />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-darkest border-gray-dark text-gray-lightest">
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="20">20</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
                       className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Página anterior"
                     >
                       <ChevronLeft className="w-4 h-4 text-gray-lightest" />
                     </button>
+
+                    {/* Números de página */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`w-8 h-8 rounded text-sm transition-colors ${currentPage === pageNum
+                              ? 'bg-orange-primary text-black-primary font-medium'
+                              : 'border border-gray-dark hover:bg-gray-darker text-gray-lightest'
+                              }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                       disabled={currentPage === totalPages}
                       className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Página siguiente"
                     >
                       <ChevronRight className="w-4 h-4 text-gray-lightest" />
                     </button>
                   </div>
                 </div>
-              </>
-            )}
           </div>
         </div>
 
@@ -1794,15 +1980,15 @@ export function ComprasPage() {
                   </div>
 
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2 col-span-2">
+                    <div className="space-y-2 col-span-3">
                       <Label className="text-white-primary flex items-center gap-2">
                         <User className="w-4 h-4 text-orange-primary" />
                         Responsable
                       </Label>
                       <Input
-                        value={selectedCompra.responsableNombre || 'N/A'}
+                        value={getCompraResponsableDisplay(selectedCompra)}
                         disabled
-                        className="elegante-input bg-gray-medium"
+                        className="elegante-input bg-gray-medium w-full"
                       />
                     </div>
                     <div className="space-y-2">
@@ -1912,6 +2098,15 @@ export function ComprasPage() {
                   >
                     Cerrar
                   </button>
+                  {selectedCompra && (
+                    <button
+                      onClick={() => handleAnularCompra(Number(selectedCompra.id))}
+                      className={`elegante-button-primary ${String(selectedCompra.estado || '').toLowerCase().includes('anulad') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={String(selectedCompra.estado || '').toLowerCase().includes('anulad')}
+                    >
+                      {String(selectedCompra.estado || '').toLowerCase().includes('anulad') ? 'Compra Anulada' : 'Anular Compra'}
+                    </button>
+                  )}
                 </div>
               </>
             )}
