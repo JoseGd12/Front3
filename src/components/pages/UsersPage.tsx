@@ -282,10 +282,19 @@ export function UsersPage() {
   };
 
   const removeUserProfileImage = () => {
-    setNewUser((prev) => ({ ...prev, imagenUrl: '' }));
-    setUserPreviewUrl('');
-    if (userFileInputRef.current) {
-      userFileInputRef.current.value = '';
+    const doClear = () => {
+      setNewUser((prev) => ({ ...prev, imagenUrl: '' }));
+      setUserPreviewUrl('');
+      if (userFileInputRef.current) {
+        userFileInputRef.current.value = '';
+      }
+    };
+    try {
+      if (editingUser?.id) {
+        apiService.deleteUsuarioFoto(editingUser.id).catch(() => {});
+      }
+    } finally {
+      doClear();
     }
   };
 

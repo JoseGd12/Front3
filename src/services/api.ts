@@ -66,13 +66,16 @@ export interface DetallePaquete {
 }
 
 class ApiService {
-  async uploadImage(file: File): Promise<string> {
+  async uploadImage(file: File, opts?: { productoId?: number; usuarioId?: number }): Promise<string> {
     const formData = new FormData();
-    formData.append('file', file);
+    // Campo requerido por el backend: "imagen"
+    formData.append('imagen', file);
+    if (opts?.productoId != null) formData.append('productoId', String(opts.productoId));
+    if (opts?.usuarioId != null) formData.append('usuarioId', String(opts.usuarioId));
 
     try {
-      const url = `${API_BASE_URL}/Images/upload`;
-      console.log(`API [POST]: ${url} (Cloudinary Upload)`);
+      const url = `${API_BASE_URL}/images/subir`;
+      console.log(`API [POST]: ${url} (multipart/form-data)`);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -86,15 +89,57 @@ class ApiService {
       }
 
       const result = await response.json();
-      console.log('📤 Respuesta de Cloudinary:', result);
-      // El servidor devuelve un objeto { url: "...", publicId: "..." }
       const imageUrl = result.url || result;
-      console.log('📤 URL de Cloudinary recibida:', imageUrl);
+      console.log('📤 URL recibida:', imageUrl);
       return imageUrl;
     } catch (error) {
-      console.error('Error uploading image to Cloudinary:', error);
+      console.error('Error uploading image:', error);
       throw error;
     }
+  }
+
+  async uploadProductoImagen(productoId: number, file: File): Promise<{ url: string; publicId?: string }> {
+    const formData = new FormData();
+    formData.append('imagen', file);
+    const url = `${API_BASE_URL}/productos/${productoId}/imagen`;
+    const resp = await fetch(url, { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Error subiendo imagen de producto (${resp.status}): ${text || resp.statusText}`);
+    }
+    return await resp.json();
+  }
+
+  async uploadUsuarioFoto(usuarioId: number, file: File): Promise<{ url: string; publicId?: string }> {
+    const formData = new FormData();
+    formData.append('imagen', file);
+    const url = `${API_BASE_URL}/usuarios/${usuarioId}/foto`;
+    const resp = await fetch(url, { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Error subiendo foto de usuario (${resp.status}): ${text || resp.statusText}`);
+    }
+    return await resp.json();
+  }
+
+  async deleteProductoImagen(productoId: number, borrarCloud = true): Promise<{ eliminado: boolean; publicId?: string }> {
+    const url = `${API_BASE_URL}/images/producto/${productoId}?borrarCloud=${borrarCloud ? 'true' : 'false'}`;
+    const resp = await fetch(url, { method: 'DELETE' });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Error eliminando imagen de producto (${resp.status}): ${text || resp.statusText}`);
+    }
+    return await resp.json();
+  }
+
+  async deleteUsuarioFoto(usuarioId: number, borrarCloud = true): Promise<{ eliminado: boolean; publicId?: string }> {
+    const url = `${API_BASE_URL}/images/usuario/${usuarioId}?borrarCloud=${borrarCloud ? 'true' : 'false'}`;
+    const resp = await fetch(url, { method: 'DELETE' });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Error eliminando foto de usuario (${resp.status}): ${text || resp.statusText}`);
+    }
+    return await resp.json();
   }
 
   private async request(endpoint: string, options: RequestInit = {}): Promise<Response> {

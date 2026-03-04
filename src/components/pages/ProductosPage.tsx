@@ -544,11 +544,20 @@ export function ProductosPage() {
   };
 
   const removeImage = () => {
-    setNuevoProducto(prev => ({ ...prev, imagenProduc: '' }));
-    setImagenPreview(null);
-    setImageError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    const doClear = () => {
+      setNuevoProducto(prev => ({ ...prev, imagenProduc: '' }));
+      setImagenPreview(null);
+      setImageError(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    };
+    try {
+      if (isEditDialogOpen && editingProducto?.id) {
+        apiService.deleteProductoImagen(editingProducto.id).catch(() => {});
+      }
+    } finally {
+      doClear();
     }
   };
 
