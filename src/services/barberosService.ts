@@ -1,5 +1,6 @@
 const BARBEROS_URL = '/api/Barberos';
 const USUARIOS_URL = '/api/Usuarios';
+import { apiService, type ApiUser } from './api';
 
 export interface Barbero {
   id: number;
@@ -108,9 +109,25 @@ class BarberosService {
   }
 
   async getBarberos(): Promise<Barbero[]> {
-    const response = await this.request(BARBEROS_URL);
-    const data = await response.json();
-    return Array.isArray(data) ? data.map(item => this.mapApiToComponent(item)) : [];
+    try {
+      const response = await this.request(BARBEROS_URL);
+      const data = await response.json();
+      return Array.isArray(data) ? data.map(item => this.mapApiToComponent(item)) : [];
+    } catch (e: any) {
+      const msg = String(e?.message || '').toLowerCase();
+      const is404 = msg.includes('404') || msg.includes('not found');
+      if (!is404) throw e;
+      try {
+        const usuarios: ApiUser[] = await apiService.getUsuarios();
+        const soloBarberos = usuarios.filter(u => {
+          const rolNombre = (u.rol?.nombre || '').toLowerCase();
+          return u.rolId === 2 || rolNombre === 'barbero';
+        });
+        return soloBarberos.map(u => this.mapApiToComponent(u as any));
+      } catch (fallbackErr) {
+        throw e;
+      }
+    }
   }
 
   // Creación vía Usuarios para sincronizar cuenta y perfil
@@ -162,8 +179,47 @@ class BarberosService {
     return response.status === 204 ? data : await response.json();
   }
 
-  async deleteBarbero(id: number): Promise<void> {
-    await this.request(`${BARBEROS_URL}/${id}`, { method: 'DELETE' });
+  async deleteBarbero(id: number, info?: { correo?: string; documento?: string; tipoDocumento?: string }): Promise<void> {
+    // 1) Intentar eliminación directa del perfil Barbero
+    try {
+      const res = await this.request(`${BARBEROS_URL}/${id}`, { method: 'DELETE' });
+      if (res.ok) return;
+    } catch (e: any) {
+      const msg = String(e?.message || '').toLowerCase();
+      const is404 = msg.includes('404') || msg.includes('not found');
+      if (!is404) throw e;
+    }
+
+    // 2) Fallback: intentar eliminar por /Usuarios/{id}
+    try {
+      await apiService.deleteUsuario(id);
+      return;
+    } catch {
+      // continuar
+    }
+
+    // 3) Buscar usuario por correo o documento y eliminarlo
+    try {
+      const usuarios: ApiUser[] = await apiService.getUsuarios();
+      const correo = info?.correo?.toLowerCase();
+      const documento = (info?.documento || '').trim();
+      const tipoDoc = (info?.tipoDocumento || '').trim().toUpperCase();
+      const docFull = tipoDoc && documento ? `${tipoDoc} ${documento}` : documento;
+      const match = usuarios.find(u => {
+        const uCorreo = (u.correo || '').toLowerCase();
+        const uDoc = (u.documento || '').trim();
+        const rolNombre = (u.rol?.nombre || '').toLowerCase();
+        const esBarbero = u.rolId === 2 || rolNombre === 'barbero';
+        return esBarbero && ((correo && uCorreo === correo) || (documento && (uDoc === documento || uDoc === docFull)));
+      });
+      if (match?.id) {
+        await apiService.deleteUsuario(match.id);
+        return;
+      }
+      throw new Error('Usuario asociado no encontrado para eliminación');
+    } catch (err) {
+      throw new Error('No se pudo eliminar el barbero ni el usuario asociado');
+    }
   }
 
   async updateBarberoStatus(id: number, estado: boolean): Promise<void> {

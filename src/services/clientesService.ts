@@ -52,6 +52,7 @@ export interface CreateClienteData {
 
 const API_BASE_URL = '/api/Clientes';
 const USUARIOS_API_URL = '/api/Usuarios';
+import { apiService, type ApiUser } from './api';
 
 class ClientesService {
   // Mapear datos de la API al formato del componente (usando campos aplanados)
@@ -185,9 +186,50 @@ class ClientesService {
     return response.status === 204 ? clienteData : await response.json();
   }
 
-  async deleteCliente(id: number): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/${id}`, { method: 'DELETE' });
-    if (!response.ok) throw new Error(`Error: ${response.status}`);
+  async deleteCliente(id: number, info?: { correo?: string; documento?: string; tipoDocumento?: string }): Promise<void> {
+    // 1) Intentar eliminar perfil Cliente directamente
+    try {
+      const response = await fetch(`${API_BASE_URL}/${id}`, { method: 'DELETE' });
+      if (response.ok) return;
+      const errText = await response.text();
+      throw new Error(`Error ${response.status}: ${errText}`);
+    } catch (e: any) {
+      const msg = String(e?.message || '').toLowerCase();
+      const is404 = msg.includes('404') || msg.includes('not found');
+      if (!is404) throw e;
+    }
+
+    // 2) Fallback: El backend no tiene /Clientes o el ID es de Usuario.
+    //    Probar eliminar en /Usuarios/{id}
+    try {
+      await apiService.deleteUsuario(id);
+      return;
+    } catch (_) {
+      // Continuar con búsqueda por correo/documento
+    }
+
+    // 3) Buscar usuario por correo o documento y eliminarlo
+    try {
+      const usuarios: ApiUser[] = await apiService.getUsuarios();
+      const correo = info?.correo?.toLowerCase();
+      const documento = (info?.documento || '').trim();
+      const tipoDoc = (info?.tipoDocumento || '').trim().toUpperCase();
+      const docFull = tipoDoc && documento ? `${tipoDoc} ${documento}` : documento;
+
+      const match = usuarios.find(u => {
+        const uCorreo = (u.correo || '').toLowerCase();
+        const uDoc = (u.documento || '').trim();
+        return (correo && uCorreo === correo) || (documento && (uDoc === documento || uDoc === docFull));
+      });
+
+      if (match?.id) {
+        await apiService.deleteUsuario(match.id);
+        return;
+      }
+      throw new Error('Usuario asociado no encontrado para eliminación');
+    } catch (err) {
+      throw new Error('No se pudo eliminar el cliente ni el usuario asociado');
+    }
   }
 
   async toggleClienteEstado(id: number, estado: boolean): Promise<void> {

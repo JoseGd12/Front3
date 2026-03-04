@@ -17,7 +17,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onRequestRegister, onBackToLanding, initialResetData, onResetComplete }: LoginPageProps) {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, resendEmailVerification } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -29,6 +29,8 @@ export function LoginPage({ onRequestRegister, onBackToLanding, initialResetData
   const [resetToken, setResetToken] = useState<string>('');
   const [resetEmail, setResetEmail] = useState<string>('');
   const [captchaValidated, setCaptchaValidated] = useState<boolean>(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
 
   // Efecto para manejar redirección desde email de recuperación
   useEffect(() => {
@@ -65,6 +67,21 @@ export function LoginPage({ onRequestRegister, onBackToLanding, initialResetData
       setCaptchaValidated(false); // Resetear captcha en error
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResendLoading(true);
+    setResendSent(false);
+    try {
+      const res = await resendEmailVerification();
+      if (res.success) {
+        setResendSent(true);
+      } else {
+        setError(res.error || 'No se pudo enviar el correo de verificación');
+      }
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -155,6 +172,19 @@ export function LoginPage({ onRequestRegister, onBackToLanding, initialResetData
               <div className="flex items-center space-x-2 p-3 rounded-lg bg-red-900/20 border border-red-600/30">
                 <AlertCircle className="w-5 h-5 text-red-400" />
                 <span className="text-red-400 text-sm">{error}</span>
+              </div>
+            )}
+            {error.toLowerCase().includes('verifica tu email') && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-lightest">¿No recibiste el correo?</span>
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendLoading}
+                  className="text-xs text-orange-primary hover:text-orange-secondary underline"
+                >
+                  {resendLoading ? 'Enviando...' : (resendSent ? 'Enviado' : 'Reenviar verificación')}
+                </button>
               </div>
             )}
 

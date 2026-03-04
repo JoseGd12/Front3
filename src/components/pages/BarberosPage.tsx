@@ -5,19 +5,29 @@ import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../ui/alert-dialog";
 import {
-  Users, Plus, Edit, Trash2, Mail, Phone, Calendar,
-  Search, Filter, UserCheck, UserX, Eye, ChevronLeft,
-  ChevronRight, Lock, EyeOff, Scissors, Star,
+  Users, Plus, Edit, Trash2, Mail, Phone, Calendar, User as UserIcon,
+  Search, Filter, UserCheck, UserX, Eye, ChevronLeft, FileText, Hash,
+  ChevronRight, Scissors, Star, 
   TrendingUp, TrendingDown, Target, Award, Crown, Medal,
-  MapPin, CreditCard, Home, Camera,
+  MapPin, Home, Camera,
   Upload, ToggleRight, ToggleLeft, X, Loader2, KeyRound
 } from "lucide-react";
 import { useCustomAlert } from "../ui/custom-alert";
 import { barberosService, Barbero, CreateBarberoData } from "../../services/barberosService";
+import { notifyEntityCreated } from "../../services/notificationService";
 import ImageRenderer from "../ui/ImageRenderer";
 import { apiService } from "../../services/api";
+import { useAuth } from "../AuthContext";
+import { firebaseAuthService } from "../../services/firebase";
 
-const tiposDocumento = ["Cédula", "Cédula de Extranjería", "Pasaporte"];
+const TIPOS_DOCUMENTO = [
+  { value: 'CC', label: 'Cédula de Ciudadanía' },
+  { value: 'TI', label: 'Tarjeta de Identidad' },
+  { value: 'CE', label: 'Cédula de Extranjería' },
+  { value: 'PP', label: 'Pasaporte' },
+  { value: 'RC', label: 'Registro Civil' },
+  { value: 'NIT', label: 'NIT' }
+];
 const BARBERO_LIMITS = {
   nombre: 100,
   apellido: 100,
@@ -29,6 +39,7 @@ const BARBERO_LIMITS = {
 
 export function BarberosPage() {
   const { success: successAlert, error: errorAlert, AlertContainer } = useCustomAlert();
+  const { resetPassword } = useAuth();
   const [barberos, setBarberos] = useState<Barbero[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -45,7 +56,7 @@ export function BarberosPage() {
   const [newBarbero, setNewBarbero] = useState<CreateBarberoData>({
     nombre: '',
     apellido: '',
-    tipoDocumento: '',
+    tipoDocumento: 'CC',
     documento: '',
     correo: '',
     telefono: '',
@@ -59,8 +70,9 @@ export function BarberosPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [showBarberoFormErrors, setShowBarberoFormErrors] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState('');
+  const [isCreateConfirmOpen, setIsCreateConfirmOpen] = useState(false);
+  const [createInFirebase, setCreateInFirebase] = useState(true);
 
   const generatePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -157,20 +169,65 @@ export function BarberosPage() {
     }
   };
 
+  const validateBarberoForm = () => {
+    if (!newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.correo || !newBarbero.fechaNacimiento) {
+      return false;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newBarbero.correo)) {
+      return false;
+    }
+    return true;
+  };
+
+  const handleCreateClick = () => {
+    setShowBarberoFormErrors(true);
+    if (!validateBarberoForm()) return;
+    setIsCreateConfirmOpen(true);
+  };
+
   const handleCreateBarbero = async () => {
     setShowBarberoFormErrors(true);
-    if (!newBarbero.nombre || !newBarbero.apellido || !newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.correo || !newBarbero.telefono) {
-      errorAlert("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombre, apellido, documento, correo y teléfono.");
-      return;
-    }
-
+    if (!validateBarberoForm()) return;
     try {
       const createdBarbero = await barberosService.createBarbero({ ...newBarbero, contrasena: generatedPassword } as any);
       const mappedBarbero = barberosService.mapApiToComponent(createdBarbero);
+      await notifyEntityCreated('barbero', {
+        id: mappedBarbero.id,
+        nombre: mappedBarbero.nombre,
+        apellido: mappedBarbero.apellido,
+        correo: mappedBarbero.correo,
+        telefono: mappedBarbero.telefono
+      });
       setBarberos([mappedBarbero, ...barberos]);
       resetForm();
       setIsDialogOpen(false);
+      setIsCreateConfirmOpen(false);
       successAlert("¡Barbero creado exitosamente!", `El barbero "${mappedBarbero.nombre} ${mappedBarbero.apellido}" ha sido registrado en el sistema.`);
+
+      if (createInFirebase) {
+        try {
+          const tempPass = generatedPassword && generatedPassword.length >= 6 ? generatedPassword : Math.random().toString(36).slice(-8) + "A1";
+          await firebaseAuthService.createUserWithoutAffectingSession(
+            newBarbero.correo,
+            tempPass,
+            { sendVerification: false, sendPasswordReset: true }
+          );
+          successAlert("Cuenta Firebase creada", "Se envió enlace para configurar contraseña.");
+        } catch (err: any) {
+          const msg = String(err?.message || '').toLowerCase();
+          if (msg.includes('ya está en uso') || msg.includes('already')) {
+            const res = await resetPassword(newBarbero.correo);
+            if (res?.success) {
+              successAlert("Correo existente en Firebase", "Se envió enlace para configurar contraseña.");
+            } else {
+              errorAlert("No se pudo enviar enlace de contraseña", "");
+            }
+          } else {
+            errorAlert("No se pudo crear la cuenta en Firebase", "");
+          }
+        }
+      }
     } catch (err: unknown) {
       console.error('Error creando barbero:', err);
       const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
@@ -242,14 +299,58 @@ export function BarberosPage() {
     if (!barberoToDelete) return;
 
     try {
-      await barberosService.deleteBarbero(barberoToDelete.id);
+      await barberosService.deleteBarbero(barberoToDelete.id, {
+        correo: barberoToDelete.correo,
+        documento: barberoToDelete.documento,
+        tipoDocumento: barberoToDelete.tipoDocumento
+      });
+      // Verificar si realmente fue eliminado
+      let exists = false;
+      try {
+        const all = await barberosService.getBarberos();
+        exists = !!all.find(b => b.id === barberoToDelete.id);
+      } catch { exists = false; }
+      if (exists) {
+        try {
+          await barberosService.updateBarberoStatus(barberoToDelete.id, false);
+          setBarberos(prev => prev.map(b => b.id === barberoToDelete.id ? { ...b, status: 'inactive', estado: false } : b));
+          successAlert("Barbero desactivado", "Este barbero tiene registros asociados. Se desactivó para conservar el historial.");
+        } catch {
+          errorAlert("No se puede eliminar", "Este barbero tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.");
+        }
+        // Evitar éxito de eliminación del confirmador
+        throw new Error('DEACTIVATED_INSTEAD');
+      }
       setBarberos(barberos.filter(b => b.id !== barberoToDelete.id));
       setIsDeleteDialogOpen(false);
       setBarberoToDelete(null);
       successAlert("Barbero eliminado", `El barbero ${barberoToDelete.nombre} ${barberoToDelete.apellido} ha sido eliminado del sistema.`);
     } catch (err: unknown) {
       console.error('Error eliminando barbero:', err);
-      errorAlert("Error", "No se pudo eliminar el barbero. Por favor intenta nuevamente.");
+      const errorMessage = err instanceof Error ? (err.message || '') : String(err || '');
+      const msg = errorMessage.toLowerCase();
+      const related =
+        msg.includes('409') ||
+        msg.includes('foreign') ||
+        msg.includes('constraint') ||
+        msg.includes('referenc') ||
+        msg.includes('venta') ||
+        msg.includes('compra') ||
+        msg.includes('agend') ||
+        msg.includes('cita') ||
+        msg.includes('insumo') ||
+        msg.includes('entrega');
+      if (related) {
+        try {
+          await barberosService.updateBarberoStatus(barberoToDelete.id, false);
+          setBarberos(prev => prev.map(b => b.id === barberoToDelete.id ? { ...b, status: 'inactive', estado: false } : b));
+          successAlert("Barbero desactivado", "Este barbero tiene registros asociados. Se desactivó para conservar el historial.");
+        } catch {
+          errorAlert("No se puede eliminar", "Este barbero tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.");
+        }
+      } else {
+        errorAlert("Error", "No se pudo eliminar el barbero. Por favor intenta nuevamente.");
+      }
     }
   };
 
@@ -268,6 +369,19 @@ export function BarberosPage() {
     } catch (err: unknown) {
       console.error('Error cambiando estado:', err);
       errorAlert("Error", "No se pudo cambiar el estado del barbero.");
+    }
+  };
+
+  const handleSendPasswordSetup = async (email: string) => {
+    try {
+      const res = await resetPassword(email);
+      if (res.success) {
+        successAlert("Enlace enviado", "Se envió un enlace para configurar la contraseña.");
+      } else {
+        errorAlert("No se pudo enviar", res.error || "Intenta nuevamente.");
+      }
+    } catch (e: any) {
+      errorAlert("No se pudo enviar", e?.message || "Intenta nuevamente.");
     }
   };
 
@@ -312,15 +426,38 @@ export function BarberosPage() {
             </div>
             <div className="flex items-center gap-3">
               <Filter className="w-4 h-4 text-gray-lightest" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="elegante-input py-2"
-              >
-                <option value="all">Todos los estados</option>
-                <option value="active">Activos</option>
-                <option value="inactive">Inactivos</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("all")}
+                  className={`${filterStatus === "all"
+                    ? "px-4 py-2 rounded-lg bg-orange-primary text-black-primary font-medium"
+                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("active")}
+                  className={`${filterStatus === "active"
+                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
+                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
+                  }`}
+                >
+                  Activos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("inactive")}
+                  className={`${filterStatus === "inactive"
+                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
+                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
+                  }`}
+                >
+                  Inactivos
+                </button>
+              </div>
             </div>
           </div>
 
@@ -421,6 +558,13 @@ export function BarberosPage() {
                             <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
                           </button>
                           <button
+                            onClick={() => handleSendPasswordSetup(barbero.correo)}
+                            className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                            title="Enviar enlace de contraseña"
+                          >
+                            <KeyRound className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
+                          </button>
+                          <button
                             onClick={() => handleDeleteBarbero(barbero.id)}
                             className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
                             title="Eliminar"
@@ -465,38 +609,54 @@ export function BarberosPage() {
 
       {/* Dialogo de Creación/Edición */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl text-white-primary">
+        <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto text-white-primary">
           <DialogHeader>
-            <DialogTitle>
-              {editingBarbero ? 'Editar Barbero' : 'Nuevo Barbero'}
+            <DialogTitle className="text-white-primary">
+              {editingBarbero ? 'Editar Barbero' : 'Añadir Nuevo Barbero'}
             </DialogTitle>
             <DialogDescription className="text-gray-lightest">
-              {editingBarbero ? 'Actualiza la información del barbero' : 'Ingresa los datos del nuevo barbero para el sistema'}
+              {editingBarbero
+                ? 'Modifica los datos del barbero seleccionado'
+                : 'Completa la información del nuevo barbero. Los campos marcados con * son obligatorios.'}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-4 py-4">
-            <div className="col-span-2 space-y-2">
-              <Label>Foto de Perfil</Label>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <ImageRenderer url={previewUrl} className="h-20 w-20 rounded-full" />
-                  {previewUrl && (
-                    <button
-                      onClick={removeProfileImage}
-                      className="absolute -top-1 -right-1 bg-red-500 rounded-full p-1"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
+          <div className="space-y-6 pt-4">
+            {/* Foto de Perfil y Tipo de Documento */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-orange-primary" />
+                  Foto de Perfil
+                </Label>
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    {previewUrl ? (
+                      <div className="relative w-16 h-16 rounded-full object-cover border-2 border-orange-primary overflow-hidden">
+                        <ImageRenderer url={previewUrl} className="w-full h-full rounded-2xl" />
+                        <button
+                          onClick={removeProfileImage}
+                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center hover:bg-red-700 transition-colors"
+                          type="button"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-gray-dark border-2 border-gray-medium flex items-center justify-center">
+                        <UserIcon className="w-6 h-6 text-gray-lightest" />
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={triggerFileSelect}
+                    className="elegante-button-secondary text-xs px-3 py-1.5 gap-1.5 flex items-center"
+                    type="button"
+                  >
+                    <Camera className="w-3 h-3" />
+                    {previewUrl ? 'Cambiar' : 'Subir'}
+                  </button>
                 </div>
-                <button
-                  onClick={triggerFileSelect}
-                  className="elegante-button-secondary text-xs"
-                >
-                  <Camera className="w-4 h-4 mr-2" />
-                  Cambiar Foto
-                </button>
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -505,117 +665,162 @@ export function BarberosPage() {
                   accept="image/*"
                 />
               </div>
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-orange-primary" />
+                  Tipo de Documento *
+                </Label>
+                <select
+                  value={newBarbero.tipoDocumento}
+                  onChange={(e) => setNewBarbero({ ...newBarbero, tipoDocumento: e.target.value })}
+                  className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.tipoDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                >
+                  <option value="">Seleccionar...</option>
+                  {TIPOS_DOCUMENTO.map(td => (
+                    <option key={td.value} value={td.value}>{td.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Nombre</Label>
+            {/* Información Personal y Documento */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Hash className="w-4 h-4 text-orange-primary" />
+                  Número de Documento *
+                </Label>
+                <Input
+                  value={newBarbero.documento}
+                  onChange={(e) => setNewBarbero({ ...newBarbero, documento: e.target.value })}
+                  maxLength={BARBERO_LIMITS.documento}
+                  className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.documento.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                  placeholder="Número de documento"
+                />
+                {showBarberoFormErrors && !newBarbero.documento.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <UserIcon className="w-4 h-4 text-orange-primary" />
+                  Nombres *
+                </Label>
               <Input
                 value={newBarbero.nombre}
                 onChange={(e) => setNewBarbero({ ...newBarbero, nombre: e.target.value })}
                 maxLength={BARBERO_LIMITS.nombre}
-                className={`elegante-input ${showBarberoFormErrors && !newBarbero.nombre.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.nombre.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                placeholder="Ingresa los nombres"
               />
               {showBarberoFormErrors && !newBarbero.nombre.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
             </div>
-            <div className="space-y-2">
-              <Label>Apellido</Label>
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <UserIcon className="w-4 h-4 text-orange-primary" />
+                  Apellidos *
+                </Label>
               <Input
                 value={newBarbero.apellido}
                 onChange={(e) => setNewBarbero({ ...newBarbero, apellido: e.target.value })}
                 maxLength={BARBERO_LIMITS.apellido}
-                className={`elegante-input ${showBarberoFormErrors && !newBarbero.apellido.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.apellido.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                placeholder="Ingresa los apellidos"
               />
               {showBarberoFormErrors && !newBarbero.apellido.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
             </div>
-            <div className="space-y-2">
-              <Label>Tipo de Documento</Label>
-              <select
-                value={newBarbero.tipoDocumento}
-                onChange={(e) => setNewBarbero({ ...newBarbero, tipoDocumento: e.target.value })}
-                className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.tipoDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-              >
-                <option value="">Seleccionar...</option>
-                {tiposDocumento.map(tipo => (
-                  <option key={tipo} value={tipo}>{tipo}</option>
-                ))}
-              </select>
-              {showBarberoFormErrors && !newBarbero.tipoDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-orange-primary" />
+                  Fecha de Nacimiento
+                </Label>
+                <Input
+                  type="date"
+                  value={newBarbero.fechaNacimiento}
+                  onChange={(e) => setNewBarbero({ ...newBarbero, fechaNacimiento: e.target.value })}
+                  className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                />
+                {showBarberoFormErrors && !newBarbero.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Documento</Label>
-              <Input
-                value={newBarbero.documento}
-                onChange={(e) => setNewBarbero({ ...newBarbero, documento: e.target.value })}
-                maxLength={BARBERO_LIMITS.documento}
-                className={`elegante-input ${showBarberoFormErrors && !newBarbero.documento.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-              />
-              {showBarberoFormErrors && !newBarbero.documento.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label>Correo Electrónico</Label>
+
+            {/* Información de Contacto + Especialidad */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-orange-primary" />
+                  Correo Electrónico *
+                </Label>
               <Input
                 type="email"
                 value={newBarbero.correo}
                 onChange={(e) => setNewBarbero({ ...newBarbero, correo: e.target.value })}
                 maxLength={BARBERO_LIMITS.correo}
-                className={`elegante-input ${showBarberoFormErrors && !newBarbero.correo.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                className={`elegante-input w-full ${
+                  showBarberoFormErrors && (!newBarbero.correo.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newBarbero.correo))
+                    ? 'border-red-500 ring-1 ring-red-500'
+                    : ''
+                }`}
+                placeholder="correo@ejemplo.com"
               />
               {showBarberoFormErrors && !newBarbero.correo.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+              {showBarberoFormErrors && newBarbero.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newBarbero.correo) && <p className="text-xs text-red-400">Formato de correo inválido.</p>}
             </div>
-            <div className="space-y-2">
-              <Label>Teléfono</Label>
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-orange-primary" />
+                  Número de Celular
+                </Label>
               <Input
                 value={newBarbero.telefono}
                 onChange={(e) => setNewBarbero({ ...newBarbero, telefono: e.target.value })}
                 maxLength={BARBERO_LIMITS.telefono}
-                className={`elegante-input ${showBarberoFormErrors && !newBarbero.telefono.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.telefono.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                placeholder="+57 300 123 4567"
               />
               {showBarberoFormErrors && !newBarbero.telefono.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
             </div>
-            <div className="space-y-2">
-              <Label>Especialidad</Label>
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Scissors className="w-4 h-4 text-orange-primary" />
+                  Especialidad
+                </Label>
               <Input
                 value={newBarbero.especialidad}
                 onChange={(e) => setNewBarbero({ ...newBarbero, especialidad: e.target.value })}
                 maxLength={BARBERO_LIMITS.especialidad}
-                className="elegante-input"
+                className="elegante-input w-full"
               />
             </div>
-
-            {/* Contraseña Temporal */}
-            <div className="col-span-2 space-y-2">
-              <Label className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-orange-primary" />
-                Contraseña Temporal
-              </Label>
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1">
-                  <Input
-                    type={showPassword ? 'text' : 'password'}
-                    value={generatedPassword}
-                    onChange={(e) => setGeneratedPassword(e.target.value)}
-                    className="elegante-input pr-10"
-                    placeholder="Contraseña temporal del barbero"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-lighter hover:text-white-primary"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={generatePassword}
-                  className="elegante-button-secondary text-xs whitespace-nowrap"
-                >
-                  <KeyRound className="w-4 h-4 mr-1 inline" />
-                  Generar Contraseña Temporal
-                </button>
-              </div>
-              <p className="text-xs text-gray-lightest">Se genera automáticamente al crear un nuevo barbero. El barbero podrá cambiarla después.</p>
             </div>
+
+            {/* Dirección */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-orange-primary" />
+                  Dirección
+                </Label>
+                <Input
+                  value={newBarbero.direccion}
+                  onChange={(e) => setNewBarbero({ ...newBarbero, direccion: e.target.value })}
+                  className="elegante-input w-full"
+                  placeholder="Dirección completa"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-orange-primary" />
+                  Barrio
+                </Label>
+                <Input
+                  value={newBarbero.barrio}
+                  onChange={(e) => setNewBarbero({ ...newBarbero, barrio: e.target.value })}
+                  className="elegante-input w-full"
+                  placeholder="Nombre del barrio"
+                />
+              </div>
+            </div>
+
+            {/* Contraseña temporal generada automáticamente al crear (no visible en el formulario) */}
           </div>
 
           <div className="flex justify-end gap-3 mt-4">
@@ -625,15 +830,48 @@ export function BarberosPage() {
             }} className="elegante-button-secondary">
               Cancelar
             </button>
+            <div className="flex items-center space-x-2 mr-auto">
+              <input
+                type="checkbox"
+                checked={createInFirebase}
+                onChange={(e) => setCreateInFirebase(e.target.checked)}
+              />
+              <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
+            </div>
             <button
-              onClick={editingBarbero ? handleUpdateBarbero : handleCreateBarbero}
+              onClick={editingBarbero ? handleUpdateBarbero : handleCreateClick}
               className="elegante-button-primary"
             >
-              {editingBarbero ? 'Actualizar' : 'Guardar'}
+              {editingBarbero ? 'Actualizar' : 'Crear Barbero'}
             </button>
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={isCreateConfirmOpen} onOpenChange={setIsCreateConfirmOpen}>
+        <AlertDialogContent className="bg-gray-darkest border-gray-dark">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white-primary">Confirmar Creación</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-lightest">
+              ¿Deseas crear este barbero con la información ingresada?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setIsCreateConfirmOpen(false)}
+              className="bg-transparent border-gray-dark text-white-primary hover:bg-gray-darker"
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCreateBarbero}
+              className="elegante-button-primary"
+            >
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dialogo de Detalles */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>

@@ -1,6 +1,7 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
+  type Auth,
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -48,6 +49,19 @@ export interface UserProfile {
 // Servicio de Autenticación Firebase
 export class FirebaseAuthService {
   private auth = auth;
+  private secondaryApp?: FirebaseApp;
+  private secondaryAuth?: Auth;
+
+  private ensureSecondaryAuth(): Auth {
+    if (this.secondaryAuth) return this.secondaryAuth;
+    const apps = getApps();
+    const existing = apps.find(a => a.name === 'secondary');
+    const app2 = existing || initializeApp(firebaseConfig, 'secondary');
+    const auth2 = getAuth(app2);
+    this.secondaryApp = app2;
+    this.secondaryAuth = auth2;
+    return auth2;
+  }
 
   private getEmailVerificationActionCodeSettings(): ActionCodeSettings {
     return {
@@ -78,15 +92,10 @@ export class FirebaseAuthService {
     try {
       const result = await signInWithEmailAndPassword(this.auth, email, password);
 
-      // Temporalmente desactivada la verificación de email para pruebas
-      // TODO: Reactivar cuando el sistema esté en producción
-      /*
       if (!result.user.emailVerified) {
-        console.warn('⚠️ Email no verificado. Se ha enviado un email de verificación.');
         await this.sendEmailVerification();
         throw new Error('Por favor, verifica tu email antes de iniciar sesión. Hemos enviado un email de verificación a ' + email);
       }
-      */
 
       return result;
     } catch (error: any) {
@@ -112,6 +121,24 @@ export class FirebaseAuthService {
     } catch (error: any) {
       throw this.handleAuthError(error);
     }
+  }
+
+  // Crear usuario sin afectar la sesión actual (usa app secundaria)
+  async createUserWithoutAffectingSession(
+    email: string,
+    password: string,
+    options?: { sendVerification?: boolean; sendPasswordReset?: boolean }
+  ): Promise<void> {
+    const auth2 = this.ensureSecondaryAuth();
+    const result = await createUserWithEmailAndPassword(auth2, email, password);
+    const sendReset = options?.sendPasswordReset !== false; // por defecto enviar reset
+    const sendVerify = options?.sendVerification === true;   // solo si se pide explícitamente
+    if (sendReset) {
+      await this.resetPassword(email);
+    } else if (sendVerify) {
+      await sendEmailVerification(result.user, this.getEmailVerificationActionCodeSettings());
+    }
+    await firebaseSignOut(auth2);
   }
 
   // Login con Google

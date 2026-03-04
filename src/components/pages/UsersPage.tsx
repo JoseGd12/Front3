@@ -6,8 +6,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   Users, Plus, Edit, Trash2, Mail, Phone, Calendar,
   Search, UserCheck, UserX, Eye, User as UserIcon, ChevronLeft,
-  ChevronRight, Lock, EyeOff, MapPin, CreditCard, Home, Camera,
-  ToggleRight, ToggleLeft, X, Loader2, IdCard,
+  ChevronRight, MapPin, CreditCard, Home, Camera,
+  ToggleRight, ToggleLeft, X, Loader2, IdCard, KeyRound,
   Users2
 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,8 +17,10 @@ import ImageRenderer from "../ui/ImageRenderer";
 import { clientesService } from "../../services/clientesService";
 import { barberosService } from "../../services/barberosService";
 import { rolesApiService, RoleWithModules } from "../../services/rolesApiService";
+import { notifyEntityCreated } from "../../services/notificationService";
 
 import { useAuth } from "../AuthContext";
+import { firebaseAuthService } from "../../services/firebase";
 // ... imports ...
 
 // DTOs para la comunicación con la API
@@ -49,7 +51,7 @@ interface UploadResponse {
 const tiposDocumento = ["Cédula", "Cédula de Extranjería", "Pasaporte"];
 
 export function UsersPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, resetPassword } = useAuth();
   const { success: showSuccess, error: showError, AlertContainer } = useCustomAlert();
   const [users, setUsers] = useState<any[]>([]); // Estado principal - única fuente de verdad
   const [availableRoles, setAvailableRoles] = useState<RoleWithModules[]>([]);
@@ -117,7 +119,6 @@ export function UsersPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
-  const [showPassword, setShowPassword] = useState(false);
   const [newUser, setNewUser] = useState({
     nombres: '',
     apellidos: '',
@@ -136,6 +137,10 @@ export function UsersPage() {
   const userFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [userPreviewUrl, setUserPreviewUrl] = useState<string>('');
+  const [createInFirebase, setCreateInFirebase] = useState(true);
+  const [showUserFormErrors, setShowUserFormErrors] = useState(false);
+
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   // Cargar usuarios y roles desde la API
   const loadInitialData = async () => {
@@ -203,15 +208,6 @@ export function UsersPage() {
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const displayedUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
-
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let password = '';
-    for (let i = 0; i < 8; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setNewUser({ ...newUser, password });
-  };
 
   const resetForm = () => {
     setNewUser({
@@ -293,14 +289,32 @@ export function UsersPage() {
     }
   };
 
+  const handleSendPasswordSetup = async (email: string) => {
+    try {
+      const res = await resetPassword(email);
+      if (res.success) {
+        showSuccess("Enlace enviado", "Se envió un enlace para configurar la contraseña.");
+      } else {
+        showError("No se pudo enviar", res.error || "Intenta nuevamente.");
+      }
+    } catch (e: any) {
+      showError("No se pudo enviar", e?.message || "Intenta nuevamente.");
+    }
+  };
+
   const handleCreateUser = async () => {
+    setShowUserFormErrors(true);
     if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol) {
-      showError("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombres, apellidos, documento, correo, celular y rol.");
+      return;
+    }
+    if (!isValidEmail(newUser.correo)) {
       return;
     }
 
     try {
-      const apiUserData = mapComponentToApiUser(newUser);
+      const tempPassword = Math.random().toString(36).slice(-8) + "A1";
+      const apiUserData: any = mapComponentToApiUser(newUser);
+      apiUserData.contrasena = tempPassword;
 
       // 1. Crear el Usuario base
       const createdUser = await apiService.createUsuario(apiUserData);
@@ -360,9 +374,41 @@ export function UsersPage() {
         toast.warning("Usuario creado, pero hubo un error creando el perfil asociado (Cliente/Barbero).");
       }
 
+      await notifyEntityCreated('usuario', {
+        id: createdUser.id,
+        nombre: createdUser.nombre,
+        apellido: createdUser.apellido,
+        correo: createdUser.correo,
+        rolId: roleId
+      });
       setUsers([mappedUser, ...users]);
       setIsCreateDialogOpen(false);
       showSuccess("¡Usuario creado exitosamente!", `El usuario "${mappedUser.nombres} ${mappedUser.apellidos}" ha sido registrado en el sistema.`);
+
+      if (createInFirebase) {
+        try {
+          await firebaseAuthService.createUserWithoutAffectingSession(
+            createdUser.correo,
+            tempPassword,
+            { sendVerification: false, sendPasswordReset: true }
+          );
+          toast.success('Cuenta creada en Firebase y enlace de contraseña enviado', {
+            style: { background: 'var(--color-gray-darkest)', border: '1px solid var(--color-orange-primary)', color: 'var(--color-white-primary)' },
+          });
+        } catch (firebaseErr: any) {
+          const msg = String(firebaseErr?.message || '').toLowerCase();
+          if (msg.includes('ya está en uso') || msg.includes('already')) {
+            const res = await resetPassword(createdUser.correo);
+            if (res.success) {
+              toast.success('El email ya existe en Firebase. Se envió enlace para configurar contraseña.');
+            } else {
+              toast.error('No se pudo enviar el enlace de contraseña en Firebase.');
+            }
+          } else {
+            toast.error('No se pudo crear la cuenta en Firebase.');
+          }
+        }
+      }
     } catch (error: any) {
       console.error('Error creating user:', error);
       if (typeof error === 'function') {
@@ -409,8 +455,11 @@ export function UsersPage() {
   };
 
   const handleUpdateUser = async () => {
+    setShowUserFormErrors(true);
     if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol) {
-      showError("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombres, apellidos, documento, correo, celular y rol.");
+      return;
+    }
+    if (!isValidEmail(newUser.correo)) {
       return;
     }
 
@@ -449,13 +498,89 @@ export function UsersPage() {
 
     try {
       await apiService.deleteUsuario(userToDelete.id);
+      // Verificar borrado real
+      let stillExists = false;
+      try {
+        const check = await apiService.getUsuarioById(userToDelete.id);
+        if (check && (check.id || (check as any)?.Id)) stillExists = true;
+      } catch { stillExists = false; }
+      if (stillExists) {
+        try {
+          await apiService.updateUsuarioStatus(userToDelete.id, false);
+          setUsers(prev => prev.map(u => u.id === userToDelete.id ? { ...u, status: false } : u));
+          showSuccess('Usuario desactivado', 'Este usuario tiene registros asociados. Se desactivó para conservar el historial.');
+          setUserToDelete(null);
+          setIsDeleteDialogOpen(false);
+        } catch {
+          showError('No se puede eliminar', 'Este usuario tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.');
+        }
+        return;
+      }
+      // Intentar eliminar el perfil asociado según el rol
+      try {
+        const rol = (userToDelete.rol || '').toLowerCase();
+        const correo = userToDelete.correo;
+        const documento = userToDelete.documento;
+        const tipoDocumento = userToDelete.tipoDocumento;
+
+        if (rol.includes('cliente') || rol.includes('cajero')) {
+          const clientes = await clientesService.getClientes();
+          const match = clientes.find((c: any) => {
+            const cCorreo = (c.correo || c.Correo || '').toLowerCase();
+            const cDoc = (c.documento || c.Documento || '').trim();
+            const docFull = tipoDocumento && documento ? `${tipoDocumento} ${documento}` : documento;
+            return (correo && cCorreo === (correo || '').toLowerCase()) || (documento && (cDoc === documento || cDoc === docFull));
+          });
+          if (match?.id) {
+            await clientesService.deleteCliente(Number(match.id), { correo, documento, tipoDocumento });
+          }
+        } else if (rol.includes('barbero')) {
+          const barberos = await barberosService.getBarberos();
+          const mb = barberos.find((b: any) => {
+            const bCorreo = (b.correo || '').toLowerCase();
+            const bDoc = (b.documento || '').trim();
+            const docFull = tipoDocumento && documento ? `${tipoDocumento} ${documento}` : documento;
+            return (correo && bCorreo === (correo || '').toLowerCase()) || (documento && (bDoc === documento || bDoc === docFull));
+          });
+          if (mb?.id) {
+            await barberosService.deleteBarbero(Number(mb.id), { correo, documento, tipoDocumento });
+          }
+        }
+      } catch {
+        // Ignorar errores de limpieza de perfil para no bloquear la eliminación del usuario
+      }
       setUsers(users.filter(u => u.id !== userToDelete.id));
       showSuccess("Usuario eliminado", `El usuario ${userToDelete.nombres} ${userToDelete.apellidos} ha sido eliminado del sistema.`);
       setUserToDelete(null);
       setIsDeleteDialogOpen(false);
     } catch (error: any) {
       console.error('Error deleting user:', error);
-      showError('Error al eliminar usuario', 'No se pudo eliminar el usuario. Por favor, intenta nuevamente.');
+      const errorMessage = error instanceof Error ? (error.message || '') : String(error || '');
+      const msg = errorMessage.toLowerCase();
+      const related =
+        msg.includes('409') ||
+        msg.includes('foreign') ||
+        msg.includes('constraint') ||
+        msg.includes('referenc') ||
+        msg.includes('venta') ||
+        msg.includes('compra') ||
+        msg.includes('agend') ||
+        msg.includes('cita') ||
+        msg.includes('insumo') ||
+        msg.includes('entrega');
+      if (related) {
+        try {
+          await apiService.updateUsuarioStatus(userToDelete.id, false);
+          setUsers(prev => prev.map(u => u.id === userToDelete.id ? { ...u, status: false } : u));
+          showSuccess('Usuario desactivado', 'Este usuario tiene registros asociados. Se desactivó para conservar el historial.');
+          setUserToDelete(null);
+          setIsDeleteDialogOpen(false);
+        } catch {
+          showError('No se puede eliminar', 'Este usuario tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.');
+        }
+      } else {
+        showError('Error al eliminar usuario', 'No se pudo eliminar el usuario. Por favor, intenta nuevamente.');
+      }
     }
   };
 
@@ -651,9 +776,10 @@ export function UsersPage() {
                         <Input
                           value={newUser.documento}
                           onChange={(e) => setNewUser({ ...newUser, documento: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.documento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="Número de documento"
                         />
+                        {showUserFormErrors && !newUser.documento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -663,9 +789,10 @@ export function UsersPage() {
                         <Input
                           value={newUser.nombres}
                           onChange={(e) => setNewUser({ ...newUser, nombres: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.nombres ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="Ingresa los nombres"
                         />
+                        {showUserFormErrors && !newUser.nombres && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -675,9 +802,10 @@ export function UsersPage() {
                         <Input
                           value={newUser.apellidos}
                           onChange={(e) => setNewUser({ ...newUser, apellidos: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.apellidos ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="Ingresa los apellidos"
                         />
+                        {showUserFormErrors && !newUser.apellidos && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -688,8 +816,9 @@ export function UsersPage() {
                           type="date"
                           value={newUser.fechaNacimiento}
                           onChange={(e) => setNewUser({ ...newUser, fechaNacimiento: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                         />
+                        {showUserFormErrors && !newUser.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -699,13 +828,14 @@ export function UsersPage() {
                         <select
                           value={newUser.rol}
                           onChange={(e) => setNewUser({ ...newUser, rol: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.rol ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                         >
                           <option value="">Selecciona un rol</option>
                           {availableRoles.filter(r => r.estado).map(rol => (
                             <option key={rol.id} value={rol.nombre}>{rol.nombre}</option>
                           ))}
                         </select>
+                        {showUserFormErrors && !newUser.rol && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -716,9 +846,11 @@ export function UsersPage() {
                           type="email"
                           value={newUser.correo}
                           onChange={(e) => setNewUser({ ...newUser, correo: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && (!newUser.correo || !isValidEmail(newUser.correo)) ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="correo@ejemplo.com"
                         />
+                        {showUserFormErrors && !newUser.correo && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+                        {showUserFormErrors && newUser.correo && !isValidEmail(newUser.correo) && <p className="text-xs text-red-400">Formato de correo inválido.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -728,9 +860,10 @@ export function UsersPage() {
                         <Input
                           value={newUser.celular}
                           onChange={(e) => setNewUser({ ...newUser, celular: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.celular ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="+57 300 123 4567"
                         />
+                        {showUserFormErrors && !newUser.celular && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -756,40 +889,16 @@ export function UsersPage() {
                           placeholder="Nombre del barrio"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-white-primary flex items-center gap-2">
-                          <Lock className="w-4 h-4 text-orange-primary" />
-                          Contraseña
-                        </Label>
-                        <div className="relative">
-                          <Input
-                            type={showPassword ? "text" : "password"}
-                            value={newUser.password}
-                            onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                            className="elegante-input w-full pr-10"
-                            placeholder="Contraseña del usuario"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-lighter hover:text-white-primary"
-                          >
-                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
                     </div>
 
-                    {/* Botón Generar Contraseña */}
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={generatePassword}
-                        className="elegante-button-secondary"
-                      >
-                        Generar Contraseña Temporal
-                      </button>
-                    </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={createInFirebase}
+                          onChange={(e) => setCreateInFirebase(e.target.checked)}
+                        />
+                        <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
+                      </div>
 
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
                       <button
@@ -822,15 +931,38 @@ export function UsersPage() {
                   className="elegante-input pl-11 w-80"
                 />
               </div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="elegante-input w-48"
-              >
-                <option value="all">Todos los estados</option>
-                <option value="true">Activos</option>
-                <option value="false">Inactivos</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("all")}
+                  className={`${filterStatus === "all"
+                    ? "px-4 py-2 rounded-lg bg-orange-primary text-black-primary font-medium"
+                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("true")}
+                  className={`${filterStatus === "true"
+                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
+                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
+                  }`}
+                >
+                  Activos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("false")}
+                  className={`${filterStatus === "false"
+                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
+                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
+                  }`}
+                >
+                  Inactivos
+                </button>
+              </div>
             </div>
           </div>
 
@@ -930,6 +1062,13 @@ export function UsersPage() {
                               title="Editar usuario"
                             >
                               <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
+                            </button>
+                            <button
+                              onClick={() => handleSendPasswordSetup(user.correo)}
+                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                              title="Enviar enlace de contraseña"
+                            >
+                              <KeyRound className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
                             </button>
                             <button
                               onClick={() => handleDeleteUser(user.id)}

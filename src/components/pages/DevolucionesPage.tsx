@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Input } from "../ui/input";
 import {
   Plus,
@@ -68,25 +68,21 @@ const MOTIVOS_DEVOLUCION = [
   { value: 'otros', label: 'Otros' }
 ];
 
-// Función para calcular días restantes de garantía
-const getRemainingWarrantyDays = (fechaISO: string, garantiaMeses: number): number | null => {
-  if (!fechaISO || !garantiaMeses) return null;
+// Función para calcular días restantes de garantía (fija 15 días)
+const getRemainingWarrantyDays = (fechaISO: string, _garantiaMeses: number): number | null => {
+  if (!fechaISO) return null;
   try {
     const fechaVenta = new Date(fechaISO);
     if (isNaN(fechaVenta.getTime())) return null;
-
     const fechaExp = new Date(fechaVenta);
-    fechaExp.setMonth(fechaExp.getMonth() + garantiaMeses);
-
+    fechaExp.setDate(fechaExp.getDate() + 15);
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
-
     const expCopy = new Date(fechaExp);
     expCopy.setHours(0, 0, 0, 0);
-
     const diffTime = expCopy.getTime() - hoy.getTime();
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  } catch (e) {
+  } catch {
     return null;
   }
 };
@@ -107,7 +103,7 @@ interface Devolucion {
   fecha: string;
   hora: string;
   monto: number;
-  estado: 'Completada' | 'Anulada' | 'Pendiente' | 'Procesado';
+  estado: 'Completada' | 'Anulada';
   responsable: string;
   numeroVenta: string;
   saldoAFavor: number;
@@ -379,24 +375,22 @@ export function DevolucionesPage() {
   });
 
   const [ventaSeleccionada, setVentaSeleccionada] = useState<any>(null);
-  const [productoSeleccionadoId, setProductoSeleccionadoId] = useState<number | null>(null);
+  const [productosSeleccionados, setProductosSeleccionados] = useState<Record<number, boolean>>({});
   const [cantidadesDevolucion, setCantidadesDevolucion] = useState<Record<number, string>>({});
   const [imagenesProductosCatalogo, setImagenesProductosCatalogo] = useState<Record<number, string>>({});
   const shakeClass = devolucionValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
+  const isSubmittingRef = useRef(false);
   const showVentaError = showDevolucionFormErrors && !nuevaDevolucion.ventaId;
-  const showProductoError = showDevolucionFormErrors && !productoSeleccionadoId;
+  const showProductoError = showDevolucionFormErrors && Object.values(productosSeleccionados).filter(Boolean).length === 0;
   const showMotivoError = showDevolucionFormErrors && !nuevaDevolucion.motivoCategoria;
-  const selectedProductoVenta = ventaSeleccionada?.productos?.find((p: any) => Number(p.id) === Number(productoSeleccionadoId));
-  const selectedCantidadInput = productoSeleccionadoId ? (cantidadesDevolucion[productoSeleccionadoId] ?? '') : '';
-  const maxCantidadSeleccionada = Number(selectedProductoVenta?.cantidad || 0);
-  const showCantidadError = showDevolucionFormErrors && !!productoSeleccionadoId && (
-    selectedCantidadInput.trim() === '' ||
-    Number(selectedCantidadInput) <= 0 ||
-    (maxCantidadSeleccionada > 0 && Number(selectedCantidadInput) > maxCantidadSeleccionada)
-  );
+  const showCantidadError = false;
 
   // Filtros y paginación - Actualizado para eliminar búsqueda por producto
-  const filteredDevoluciones = devoluciones.filter(devolucion => {
+  const filteredDevoluciones = useMemo(() => devoluciones.filter(devolucion => {
+    const motivoDet = String((devolucion as any).motivoDetalle || '').toLowerCase();
+    const motivoCat = String((devolucion as any).motivo || '').toLowerCase();
+    const esConsumoSaldo = (motivoDet.includes('consumo') && motivoDet.includes('saldo')) || (motivoCat.includes('consumo') && motivoCat.includes('saldo')) || (Number((devolucion as any).saldoAFavor || 0) < 0 && Number((devolucion as any).monto || 0) === 0);
+    if (esConsumoSaldo) return false;
     const query = normalizeSearchText(searchTerm);
     const searchableText = normalizeSearchText([
       devolucion.id,
@@ -417,7 +411,7 @@ export function DevolucionesPage() {
     const matchesSearch = query.length === 0 || searchableText.includes(query);
     const matchesEstado = filtroEstado === "Todos" || devolucion.estado === filtroEstado;
     return matchesSearch && matchesEstado;
-  });
+  }), [devoluciones, searchTerm, filtroEstado]);
 
   const totalPages = Math.ceil(filteredDevoluciones.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -538,7 +532,7 @@ export function DevolucionesPage() {
         }
       });
       setCantidadesDevolucion(cantidadesIniciales);
-      setProductoSeleccionadoId(null);
+      setProductosSeleccionados({});
       setNuevaDevolucion(prev => ({
         ...prev,
         numeroVenta: venta!.numeroVenta,
@@ -546,15 +540,13 @@ export function DevolucionesPage() {
         clienteId: venta!.clienteId,
         cliente: venta!.cliente,
         clienteDocumento: venta!.clienteDocumento || '',
-        producto: '',
-        productoId: 0,
         cantidad: 1,
         precioUnitario: 0,
         monto: 0
       }));
     } else {
       setVentaSeleccionada(null);
-      setProductoSeleccionadoId(null);
+      setProductosSeleccionados({});
       setCantidadesDevolucion({});
       setNuevaDevolucion(prev => ({
         ...prev,
@@ -563,8 +555,6 @@ export function DevolucionesPage() {
         clienteId: null,
         cliente: '',
         clienteDocumento: '',
-        producto: '',
-        productoId: 0,
         cantidad: 1,
         precioUnitario: 0,
         monto: 0
@@ -577,16 +567,9 @@ export function DevolucionesPage() {
     const productoId = Number(producto?.id || 0);
     if (!productoId || Number.isNaN(productoId)) return;
 
+    setProductosSeleccionados(prev => ({ ...prev, [productoId]: checked }));
+
     if (!checked) {
-      setProductoSeleccionadoId(null);
-      setNuevaDevolucion(prev => ({
-        ...prev,
-        producto: '',
-        productoId: 0,
-        cantidad: 1,
-        precioUnitario: 0,
-        monto: 0
-      }));
       return;
     }
 
@@ -601,17 +584,6 @@ export function DevolucionesPage() {
       ...prev,
       [productoId]: String(cantidadValida)
     }));
-    setProductoSeleccionadoId(productoId);
-
-    const precio = Number(producto?.precio || 0);
-    setNuevaDevolucion(prev => ({
-      ...prev,
-      producto: String(producto?.nombre || 'Producto'),
-      productoId,
-      cantidad: cantidadValida,
-      precioUnitario: precio,
-      monto: precio * cantidadValida
-    }));
   };
 
   const handleCantidadProductoSeleccionChange = (producto: any, valor: string) => {
@@ -624,15 +596,8 @@ export function DevolucionesPage() {
       [productoId]: valor
     }));
 
-    if (productoSeleccionadoId !== productoId) return;
-
     const maxCantidad = Math.max(1, Number(producto?.cantidad || 1));
     if (valor.trim() === '') {
-      setNuevaDevolucion(prev => ({
-        ...prev,
-        cantidad: 0,
-        monto: 0
-      }));
       return;
     }
 
@@ -640,12 +605,9 @@ export function DevolucionesPage() {
     if (Number.isNaN(parsedCantidad)) return;
 
     const cantidadValida = Math.min(maxCantidad, Math.max(1, Math.floor(parsedCantidad)));
-    const precio = Number(producto?.precio || 0);
-    setNuevaDevolucion(prev => ({
+    setCantidadesDevolucion(prev => ({
       ...prev,
-      cantidad: cantidadValida,
-      precioUnitario: precio,
-      monto: precio * cantidadValida
+      [productoId]: String(cantidadValida)
     }));
   };
 
@@ -660,23 +622,15 @@ export function DevolucionesPage() {
       const fechaVenta = new Date(ventaSeleccionada.fechaISO);
       const mesesGarantia = Number(ventaSeleccionada.garantiaMeses || 0);
 
-      if (mesesGarantia > 0) {
-        const fechaExpiracion = new Date(fechaVenta);
-        fechaExpiracion.setMonth(fechaExpiracion.getMonth() + mesesGarantia);
-        const hoy = new Date();
-
-        if (hoy > fechaExpiracion) {
-          const opciones: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'long', year: 'numeric' };
-          toast.error("Garantía Expirada", {
-            description: `La garantía de esta venta expiró el ${fechaExpiracion.toLocaleDateString('es-CO', opciones)}. No es posible realizar devoluciones fuera de este periodo.`,
-            duration: 6000
-          });
-          return;
-        }
-      } else if (mesesGarantia === 0) {
-        toast.error("Sin Garantía", {
-          description: "Esta venta fue registrada sin periodo de garantía.",
-          duration: 4000
+      // Política: garantía fija de 15 días
+      const fechaExpiracion = new Date(fechaVenta);
+      fechaExpiracion.setDate(fechaExpiracion.getDate() + 15);
+      const hoy = new Date();
+      if (hoy > fechaExpiracion) {
+        const opciones: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'long', year: 'numeric' };
+        toast.error("Garantía Expirada", {
+          description: `La garantía de esta venta expiró el ${fechaExpiracion.toLocaleDateString('es-CO', opciones)}. No es posible realizar devoluciones fuera de este periodo.`,
+          duration: 6000
         });
         return;
       }
@@ -695,31 +649,22 @@ export function DevolucionesPage() {
       return;
     }
 
-    if (!nuevaDevolucion.productoId || Number(nuevaDevolucion.productoId) <= 0) {
-      toast.error("Producto inválido: El ID del producto debe ser mayor a 0");
+    const idsSeleccionados = Object.entries(productosSeleccionados).filter(([_, v]) => v).map(([k]) => Number(k));
+    if (idsSeleccionados.length === 0) {
+      toast.error("Selecciona al menos un producto para la devolución");
       return;
     }
 
-    const cantidadIngresada = Number(selectedCantidadInput);
-    const cantidadInvalida = !!productoSeleccionadoId && (
-      selectedCantidadInput.trim() === '' ||
-      Number.isNaN(cantidadIngresada) ||
-      cantidadIngresada <= 0 ||
-      (maxCantidadSeleccionada > 0 && cantidadIngresada > maxCantidadSeleccionada)
-    );
-    if (cantidadInvalida) {
-      toast.error("Cantidad inválida", { description: "Ingresa una cantidad válida para el producto seleccionado." });
-      return;
-    }
-
-    if (!nuevaDevolucion.cantidad || Number(nuevaDevolucion.cantidad) <= 0) {
-      toast.error("Cantidad inválida: Debe ser mayor a 0");
-      return;
-    }
-
-    if (maxCantidadSeleccionada > 0 && Number(nuevaDevolucion.cantidad) > maxCantidadSeleccionada) {
-      toast.error("Cantidad inválida", { description: "La cantidad a devolver no puede superar la cantidad vendida." });
-      return;
+    // Validar cantidades por cada producto seleccionado
+    for (const pid of idsSeleccionados) {
+      const prod = ventaSeleccionada?.productos?.find((p: any) => Number(p.id) === Number(pid));
+      const maxCant = Number(prod?.cantidad || 0);
+      const raw = (cantidadesDevolucion[pid] ?? '').trim();
+      const cant = Number(raw);
+      if (raw === '' || Number.isNaN(cant) || cant <= 0 || (maxCant > 0 && cant > maxCant)) {
+        toast.error("Cantidad inválida", { description: `Cantidad inválida para el producto seleccionado (ID ${pid}).` });
+        return;
+      }
     }
 
     if (!nuevaDevolucion.motivoCategoria) {
@@ -728,13 +673,13 @@ export function DevolucionesPage() {
     }
     // ---------------------------------------------------------
 
-    // Cerrar el modal temporalmente para evitar conflictos de z-index
-    setIsDialogOpen(false);
-
+    if (isSubmittingRef.current) return;
     confirmCreateAction(
-      `${nuevaDevolucion.producto} - ${nuevaDevolucion.cliente}`,
+      `${Object.entries(productosSeleccionados).filter(([_,v])=>v).length} producto(s) - ${nuevaDevolucion.cliente}`,
       async () => {
         try {
+          if (isSubmittingRef.current) return;
+          isSubmittingRef.current = true;
           // Validar sesión de usuario
           const stringUserId = user?.id ? String(user.id) : null;
           const currentUserId = stringUserId ? parseInt(stringUserId) : 0;
@@ -744,52 +689,52 @@ export function DevolucionesPage() {
             return;
           }
 
-          const payload = {
+          const idsSel = Object.entries(productosSeleccionados).filter(([_,v])=>v).map(([k])=>Number(k));
+          const items = idsSel.map(pid => {
+            const prod = ventaSeleccionada?.productos?.find((p: any) => Number(p.id) === Number(pid));
+            const precio = Number(prod?.precio || 0);
+            const cant = Number(cantidadesDevolucion[pid] || 1);
+            const monto = precio * cant;
+            return { productoId: pid, cantidad: cant, montoDevuelto: monto };
+          });
+
+          const batchPayload = {
             ventaId: Number(nuevaDevolucion.ventaId),
-            productoId: Number(nuevaDevolucion.productoId),
             clienteId: Number(nuevaDevolucion.clienteId),
-            cantidad: Number(nuevaDevolucion.cantidad),
-            motivoCategoria: nuevaDevolucion.motivoCategoria,
-            motivoDetalle: getMotivoLabel(nuevaDevolucion.motivoCategoria),
-            montoDevuelto: Number(nuevaDevolucion.monto),
-            saldoAFavor: Number(nuevaDevolucion.monto),
             usuarioId: currentUserId,
-            observaciones: nuevaDevolucion.observaciones || ''
+            motivoCategoria: nuevaDevolucion.motivoCategoria,
+            observaciones: nuevaDevolucion.observaciones || '',
+            items
           };
 
-          console.log("🚀 Payload real antes del service:", payload);
-
-          // Verificar si hay algún valor sospechoso
-          const hasInvalidIds = [payload.ventaId, payload.productoId, payload.clienteId, payload.usuarioId].some(id => isNaN(id) || id <= 0);
-          if (hasInvalidIds) {
-            console.error("❌ Se detectaron IDs inválidos en el payload:", payload);
-            toast.error("Error crítico: Se detectaron IDs inválidos (0 o NaN)");
+          const hasInvalid = [
+            batchPayload.ventaId,
+            batchPayload.clienteId,
+            batchPayload.usuarioId
+          ].some(v => isNaN(Number(v)) || Number(v) <= 0);
+          if (hasInvalid || items.length === 0) {
+            toast.error("Datos inválidos para registrar la devolución");
             return;
           }
 
-          await devolucionService.createDevolucion(payload);
-
-          // Ajustar stock si el motivo no es 'Defectuoso' o 'Vencido'
-          // Si el motivo es 'Defectuoso' o 'Vencido', el producto no regresa al stock vendible.
-          // En su lugar, se registra como insumo defectuoso/vencido.
-          if (payload.motivoCategoria === 'Defectuoso' || payload.motivoCategoria === 'Vencido') {
-            await productoService.agregarStockInsumos(payload.productoId, payload.cantidad, payload.motivoCategoria);
-          } else {
-            // Para otros motivos (ej. "Cambio de producto", "Error de cliente"), el producto regresa al stock vendible.
-            await productoService.adjustStock(payload.productoId, payload.cantidad, 'increment', 'ventas');
-          }
+          await devolucionService.createDevolucionBatch(batchPayload);
 
           toast.success(`Devolución registrada exitosamente.`);
-          loadData(); // Recargar todos los datos desde la API
+          // Cerrar modal solo después de éxito
+          setIsDialogOpen(false);
+          // Recargar datos
+          loadData();
           resetFormularios();
         } catch (error) {
           toast.error("Error al registrar la devolución");
           console.error(error);
+        } finally {
+          isSubmittingRef.current = false;
         }
       },
       {
         confirmTitle: 'Confirmar Registro de Devolución',
-        confirmMessage: `¿Estás seguro de que deseas registrar la devolución de ${nuevaDevolucion.cantidad} unidad(es) de "${nuevaDevolucion.producto}" para el cliente "${nuevaDevolucion.cliente}"?`,
+        confirmMessage: `¿Estás seguro de registrar la devolución de los productos seleccionados para el cliente "${nuevaDevolucion.cliente}"?`,
         successTitle: '¡Devolución registrada exitosamente!',
         successMessage: `La devolución ha sido registrada correctamente en el sistema.`,
         requireInput: false
@@ -804,8 +749,6 @@ export function DevolucionesPage() {
       clienteId: null,
       cliente: '',
       clienteDocumento: '',
-      productoId: 0,
-      producto: '',
       cantidad: 1,
       precioUnitario: 0,
       motivoCategoria: '',
@@ -814,7 +757,7 @@ export function DevolucionesPage() {
     });
 
     setVentaSeleccionada(null);
-    setProductoSeleccionadoId(null);
+    setProductosSeleccionados({});
     setCantidadesDevolucion({});
     setVentaSearchTerm("");
     setShowVentaResults(false);
@@ -835,7 +778,7 @@ export function DevolucionesPage() {
       return;
     }
 
-    const nuevoEstado = 'Anulada';
+    const nuevoEstado = 'Anulado';
     const accion = 'anular';
 
     confirmEditAction(
@@ -1379,7 +1322,7 @@ export function DevolucionesPage() {
                   <div className="space-y-2">
                     <Label className="text-white-primary">Estado</Label>
                     <div className="grid gap-2">
-                      {['Todos', 'Completada', 'Anulada', 'Pendiente', 'Procesado'].map((estado) => (
+                      {['Todos', 'Completada', 'Anulada', ].map((estado) => (
                         <button
                           key={estado}
                           onClick={() => setFiltroEstado(estado)}
@@ -1396,15 +1339,7 @@ export function DevolucionesPage() {
                 </PopoverContent>
               </Popover>
 
-              {getSaldosClientes().length > 0 && (
-                <button
-                  onClick={() => setIsHistorialDialogOpen(true)}
-                  className="elegante-button-secondary gap-2 flex items-center"
-                >
-                  <History className="w-4 h-4" />
-                  Saldos a Favor ({clientesConSaldo})
-                </button>
-              )}
+              
             </div>
 
             <div className="flex items-center gap-4">
@@ -1966,9 +1901,7 @@ export function DevolucionesPage() {
                                   <>
                                     <div className="flex items-center gap-1.5">
                                       <ShieldCheck className={`w-3 h-3 ${isExpired ? 'text-red-400' : 'text-green-400'}`} />
-                                      <span className="text-[10px] text-gray-lighter">
-                                        Garantía: {venta.garantiaMeses} {venta.garantiaMeses === 1 ? 'Mes' : 'Meses'}
-                                      </span>
+                                      <span className="text-[10px] text-gray-lighter">Garantía: 15 días</span>
                                     </div>
                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isExpired
                                       ? 'bg-red-500/10 text-red-500 border border-red-500/20'
@@ -2051,9 +1984,7 @@ export function DevolucionesPage() {
                                 <ShieldCheck className="w-3 h-3" />
                                 {isExpired ? `EXPIRADA (${Math.abs(diffDays)}d)` : `ACTIVA (${diffDays}d)`}
                               </span>
-                              <span className="text-[10px] text-gray-lightest">
-                                ({ventaSeleccionada.garantiaMeses} {ventaSeleccionada.garantiaMeses === 1 ? 'Mes' : 'Meses'})
-                              </span>
+                              <span className="text-[10px] text-gray-lightest">(15 días)</span>
                             </>
                           );
                         })()}
@@ -2076,7 +2007,7 @@ export function DevolucionesPage() {
                     <div className="space-y-2 max-h-56 overflow-y-auto">
                       {ventaSeleccionada.productos.map((producto: any, index: number) => {
                         const productoId = Number(producto?.id || 0);
-                        const isChecked = productoSeleccionadoId === productoId;
+                        const isChecked = !!productosSeleccionados[productoId];
                         const cantidadInput = cantidadesDevolucion[productoId] ?? '';
                         const maxCantidad = Number(producto?.cantidad || 0);
                         const imagenProducto = String(
@@ -2141,7 +2072,7 @@ export function DevolucionesPage() {
                                   value={cantidadInput}
                                   onChange={(e) => handleCantidadProductoSeleccionChange(producto, e.target.value)}
                                   disabled={!isChecked}
-                                  className={`w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 ${showCantidadError && isChecked ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                                  className={`w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5`}
                                 />
                               </div>
                             </div>

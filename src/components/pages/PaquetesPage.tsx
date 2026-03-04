@@ -195,12 +195,23 @@ export function PaquetesPage() {
 
       setServiciosAgregados(nuevosServicios);
       const nuevoPrecio = nuevosServicios.reduce((total, s) => total + s.precio, 0);
+      // Recalcular duración total con base en los servicios agregados
+      const totalMinutos = nuevosServicios.reduce((acc, s) => {
+        const ref = serviciosDisponibles.find(sd => sd.nombre === s.nombre);
+        const d = Number(ref?.duracion ?? 0);
+        return acc + (Number.isFinite(d) ? d : 0);
+      }, 0);
+      const h = Math.floor(totalMinutos / 60);
+      const m = totalMinutos % 60;
+      setHoraInput(h > 0 ? String(h) : '');
+      setMinutosInput(m > 0 ? String(m) : '');
       setPrecioInput(String(nuevoPrecio));
       setNuevoPaquete({
         ...nuevoPaquete,
         servicios: nuevosServicios.map(s => s.nombre),
         serviciosTexto: nuevosServicios.map(s => s.nombre).join(', '),
-        precio: nuevoPrecio
+        precio: nuevoPrecio,
+        duracion: totalMinutos
       });
     }
 
@@ -212,12 +223,23 @@ export function PaquetesPage() {
 
     setServiciosAgregados(nuevosServicios);
     const nuevoPrecio = nuevosServicios.reduce((total, s) => total + s.precio, 0);
+    // Recalcular duración total tras eliminar
+    const totalMinutos = nuevosServicios.reduce((acc, s) => {
+      const ref = serviciosDisponibles.find(sd => sd.nombre === s.nombre);
+      const d = Number(ref?.duracion ?? 0);
+      return acc + (Number.isFinite(d) ? d : 0);
+    }, 0);
+    const h = Math.floor(totalMinutos / 60);
+    const m = totalMinutos % 60;
+    setHoraInput(h > 0 ? String(h) : '');
+    setMinutosInput(m > 0 ? String(m) : '');
     setPrecioInput(nuevoPrecio > 0 ? String(nuevoPrecio) : '');
     setNuevoPaquete({
       ...nuevoPaquete,
       servicios: nuevosServicios.map(s => s.nombre),
       serviciosTexto: nuevosServicios.map(s => s.nombre).join(', '),
-      precio: nuevoPrecio
+      precio: nuevoPrecio,
+      duracion: totalMinutos
     });
   };
 
@@ -861,7 +883,7 @@ export function PaquetesPage() {
                 {/* Lista de servicios agregados */}
                 {serviciosAgregados.length > 0 && (
                   <div className="space-y-3">
-                    <h4 className="text-lg font-semibold text-white-primary mb-2">Servicios incluidos</h4>
+                    <h4 className="text-lg font-semibold text-white-primary mb-2">Servicios agregados</h4>
                     <div className="space-y-3 max-h-48 overflow-y-auto">
                       {serviciosAgregados.map((servicio, index) => (
                         <div key={index} className="flex items-center justify-between bg-gray-darker p-4 rounded-xl border border-gray-dark">
@@ -883,23 +905,7 @@ export function PaquetesPage() {
                 )}
               </div>
 
-              {/* Servicios seleccionados (debajo de Agregar servicio) */}
-              <div className="space-y-2">
-                <Label className="text-white-primary flex items-center gap-2">
-                  <Scissors className="w-4 h-4 text-orange-primary" />
-                  Servicios Seleccionados *
-                </Label>
-                <Input
-                  value={nuevoPaquete.serviciosTexto}
-                  readOnly
-                  disabled
-                  placeholder="Agrega servicios desde el selector superior"
-                  className="elegante-input bg-gray-medium cursor-not-allowed"
-                />
-                <p className="text-gray-lightest text-xs">
-                  Los servicios agregados se mostrarán aquí. Puedes editar el precio de cada uno.
-                </p>
-              </div>
+              {/* Sección de “Servicios seleccionados” oculta para simplificar el formulario */}
 
               {/* Resumen de Totales */}
               {nuevoPaquete.precio > 0 && (
@@ -1096,19 +1102,7 @@ export function PaquetesPage() {
                     )}
                   </div>
 
-                  {/* Servicios seleccionados - solo lectura */}
-                  <div className="space-y-2">
-                    <Label className="text-white-primary flex items-center gap-2">
-                      <Scissors className="w-4 h-4 text-orange-primary" />
-                      Servicios seleccionados
-                    </Label>
-                    <Input
-                      value={Array.isArray(selectedPaquete.servicios) ? selectedPaquete.servicios.join(', ') : ''}
-                      readOnly
-                      disabled
-                      className="elegante-input bg-gray-medium cursor-not-allowed"
-                    />
-                  </div>
+                  {/* “Servicios seleccionados” redundante oculto en detalle */}
 
                   {/* Resumen de totales - solo lectura */}
                   <div className="bg-gray-darker border border-gray-dark rounded-lg p-4">

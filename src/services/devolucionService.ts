@@ -176,6 +176,38 @@ class DevolucionService {
         }
     }
 
+    async createDevolucionBatch(input: {
+        ventaId: number;
+        clienteId: number | null;
+        usuarioId: number;
+        motivoCategoria: string;
+        observaciones?: string;
+        items: Array<{ productoId: number; cantidad: number; montoDevuelto: number }>;
+    }): Promise<void> {
+        try {
+            const payload = {
+                VentaId: input.ventaId,
+                ClienteId: input.clienteId,
+                UsuarioId: input.usuarioId,
+                MotivoCategoria: input.motivoCategoria,
+                Observaciones: input.observaciones || '',
+                Items: input.items.map(it => ({
+                    ProductoId: it.productoId,
+                    Cantidad: it.cantidad,
+                    MontoDevuelto: it.montoDevuelto
+                }))
+            };
+            console.log('📤 Creando devolución en lote:', payload);
+            await this.request('/Devoluciones/lote', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+        } catch (error) {
+            console.error('Error creating devolucion batch:', error);
+            throw error;
+        }
+    }
+
     async deleteDevolucion(id: number): Promise<void> {
         try {
             await this.request(`/Devoluciones/${id}`, {

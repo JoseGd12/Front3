@@ -13,6 +13,7 @@ export interface Venta {
   iva: number;
   descuento: number;
   total: number;
+  saldoAFavorUsado?: number;
   barbero: string;
   barberoId?: number | null;
   responsable?: string;
@@ -335,12 +336,15 @@ class VentaService {
       iva: Number(data.iva || data.Iva) || 0,
       descuento: Number(data.descuento || data.Descuento) || 0,
       total: Number(data.total || data.Total) || 0,
+      saldoAFavorUsado: Number(data.saldoAFavorUsado || data.SaldoAFavorUsado || 0),
       barbero: barberoNombre,
       barberoId: finalBarberoId,
       responsable: responsableNombre,
       estado: String(data.estado || data.Estado || 'Completada'),
       metodoPago: String(data.metodoPago || data.MetodoPago || 'Efectivo'),
-      garantiaMeses: Number(data.garantiaMeses || data.GarantiaMeses || 1),
+      garantiaMeses: Number(
+        (data.garantiaMeses ?? data.GarantiaMeses ?? 0)
+      ),
       productosDetalle,
       serviciosDetalle
     };

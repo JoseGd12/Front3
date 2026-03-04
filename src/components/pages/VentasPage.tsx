@@ -106,13 +106,18 @@ const normalizeBarbero = (barbero: any): string => {
 
 // Función para calcular días restantes de garantía
 const getRemainingWarrantyDays = (fechaISO: string, garantiaMeses: number): number | null => {
-  if (!fechaISO || !garantiaMeses) return null;
+  if (!fechaISO) return null;
   try {
     const fechaVenta = new Date(fechaISO);
     if (isNaN(fechaVenta.getTime())) return null;
 
     const fechaExp = new Date(fechaVenta);
-    fechaExp.setMonth(fechaExp.getMonth() + garantiaMeses);
+    if (garantiaMeses && garantiaMeses > 0) {
+      fechaExp.setMonth(fechaExp.getMonth() + garantiaMeses);
+    } else {
+      // Garantía fija de 15 días cuando meses = 0
+      fechaExp.setDate(fechaExp.getDate() + 15);
+    }
 
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
@@ -259,18 +264,21 @@ export function VentasPage() {
       console.log('🔍 Clientes cargados (tabla clientes):', clientesData?.length || 0);
       console.log('🔍 Devoluciones cargadas:', devolucionesData?.length || 0);
 
-      // Calcular saldo a favor para cada cliente basado en las devoluciones
-      const clientesConSaldo = (clientesData || []).map((cliente: any) => {
-        const saldo = (devolucionesData as ApiDevolucion[] || [])
-          .filter(d => Number(d.clienteId) === Number(cliente.id) &&
-            (d.estado === 'Activo' || d.estado === 'Completada' || d.estado === 'Procesado'))
-          .reduce((total, d) => total + (Number(d.saldoAFavor) || 0), 0);
-
-        return {
-          ...cliente,
-          saldoAFavor: saldo
-        };
+      const saldoPorCliente = new Map<number, number>();
+      (devolucionesData as ApiDevolucion[] || []).forEach((d: any) => {
+        const estado = String(d?.estado || '').trim();
+        if (estado === 'Activo' || estado === 'Completada' || estado === 'Procesado') {
+          const cId = Number(d?.clienteId || 0);
+          if (cId > 0) {
+            const prev = saldoPorCliente.get(cId) || 0;
+            saldoPorCliente.set(cId, prev + (Number(d?.saldoAFavor) || 0));
+          }
+        }
       });
+      const clientesConSaldo = (clientesData || []).map((cliente: any) => ({
+        ...cliente,
+        saldoAFavor: saldoPorCliente.get(Number(cliente.id)) || 0
+      }));
 
       setClientesCatalogo(clientesConSaldo);
       const ventasEnriquecidas = (ventasData || []).map((venta: Venta) =>
@@ -364,7 +372,7 @@ export function VentasPage() {
     porcentajeDescuento: 0,
     usarSaldoAFavor: false,
     montoSaldoUsado: 0,
-    garantiaMeses: 1,
+    garantiaMeses: 0,
     productos: [] as { id: string; nombre: string; cantidad: number; precio: number; imagen?: string }[],
   };
 
@@ -445,32 +453,31 @@ export function VentasPage() {
     return (cantidadProducto + cantYaAgregada) > producto.stockVentas;
   }, [productoSeleccionado, cantidadProducto, nuevaVenta.productos, productosAPI]);
 
-  const filteredVentas = ventas.filter((venta) => {
-    const clienteStr = normalizeCliente(venta.cliente);
-    const barberoStr = normalizeBarbero(venta.barbero);
+  const filteredVentas = useMemo(() => {
     const query = normalizeSearchText(searchTerm);
-    const searchableText = normalizeSearchText([
-      venta.id,
-      venta.numeroVenta,
-      venta.clienteDocumento,
-      clienteStr,
-      formatCurrency(venta.total),
-      venta.total,
-      formatDate(venta.fecha),
-      venta.estado,
-      venta.metodoPago,
-      barberoStr,
-      venta.clienteId
-    ].join(' '));
-
-    const matchesSearch = query.length === 0 || searchableText.includes(query);
-
-    const matchesBarbero =
-      barberoSeleccionado === VALOR_TODOS_BARBEROS ||
-      barberoStr === barberoSeleccionado;
-
-    return matchesSearch && matchesBarbero;
-  });
+    return ventas.filter((venta) => {
+      const clienteStr = normalizeCliente(venta.cliente);
+      const barberoStr = normalizeBarbero(venta.barbero);
+      const searchableText = normalizeSearchText([
+        venta.id,
+        venta.numeroVenta,
+        venta.clienteDocumento,
+        clienteStr,
+        formatCurrency(venta.total),
+        venta.total,
+        formatDate(venta.fecha),
+        venta.estado,
+        venta.metodoPago,
+        barberoStr,
+        venta.clienteId
+      ].join(' '));
+      const matchesSearch = query.length === 0 || searchableText.includes(query);
+      const matchesBarbero =
+        barberoSeleccionado === VALOR_TODOS_BARBEROS ||
+        barberoStr === barberoSeleccionado;
+      return matchesSearch && matchesBarbero;
+    });
+  }, [ventas, searchTerm, barberoSeleccionado]);
 
   const totalPages = Math.max(1, Math.ceil(filteredVentas.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -605,7 +612,10 @@ export function VentasPage() {
       const matchId = Number(d.ventaId) === ventaIdNum;
       const estado = (d.estado || '').toLowerCase().trim();
       const noAnulada = estado !== 'anulada' && estado !== 'anulado';
-      return matchId && noAnulada;
+      const motivoDet = String((d as any).motivoDetalle || '').toLowerCase();
+      const motivoCat = String((d as any).motivo || (d as any).motivoCategoria || '').toLowerCase();
+      const esConsumoSaldo = (motivoDet.includes('consumo') && motivoDet.includes('saldo')) || (motivoCat.includes('consumo') && motivoCat.includes('saldo'));
+      return matchId && noAnulada && !esConsumoSaldo;
     });
   }, [selectedVenta, devoluciones]);
 
@@ -681,6 +691,33 @@ export function VentasPage() {
     return detalleItemsVenta.reduce((sum, item) => sum + item.cantidadDevuelta, 0);
   }, [detalleItemsVenta]);
 
+  // Saldo a favor usado: tomar del campo si viene de la API;
+  // si no, derivarlo de la aritmética de la venta.
+  const saldoUsadoDetalle = useMemo(() => {
+    if (!selectedVenta) return 0;
+    // Prioridad: usar exactamente 'SaldoAFavorUsado' (PascalCase) si viene del backend
+    const explicit = Number(
+      (selectedVenta as any).SaldoAFavorUsado ??
+      (selectedVenta as any).saldoAFavorUsado ??
+      (selectedVenta as any).SaldoAFavor ??
+      (selectedVenta as any).saldoAFavorUsado ??
+      (selectedVenta as any).saldoAFavor ??
+      0
+    );
+    if (explicit > 0) return explicit;
+    const subtotal = Number(selectedVenta.subtotal || 0);
+    const iva = Number((selectedVenta as any).iva || 0);
+    const descuento = Number(selectedVenta.descuento || 0);
+    const total = Number(selectedVenta.total || 0);
+    const candidates = [
+      subtotal - total,
+      subtotal + iva - descuento - total
+    ].filter(v => Number.isFinite(v) && v > 0) as number[];
+    if (candidates.length === 0) return 0;
+    const best = Math.max(...candidates);
+    return Math.max(0, Math.min(best, subtotal));
+  }, [selectedVenta]);
+
 
   const calcularSubtotal = () => {
     let subtotal = 0;
@@ -755,7 +792,7 @@ export function VentasPage() {
   };
 
   const calcularIva = (subtotal: number) => {
-    return subtotal * 0.19; // 19% IVA
+    return 0;
   };
 
   const agregarProducto = () => {
@@ -1167,7 +1204,7 @@ export function VentasPage() {
         servicios: serviciosTexto,
         productos: productosTexto,
         subtotal: subtotal,
-        iva: iva,
+        iva: 0,
         descuento: descuento,
         total: total,
         barberoId: nuevaVenta.barberoId ?? undefined,
@@ -1197,8 +1234,57 @@ export function VentasPage() {
         await productoService.adjustStock(Number(p.id), p.cantidad, 'decrement', 'ventas');
       }
 
-      // Recargar datos para refrescar saldos de clientes
-      cargarVentas();
+      // Ajustar saldo a favor localmente si se usó
+      if (nuevaVenta.usarSaldoAFavor && nuevaVenta.clienteId) {
+        const clienteSel = clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId));
+        const saldoDisponible = clienteSel?.saldoAFavor || 0;
+        const totalSinSaldo = subtotal + 0 - descuento;
+        const montoUsado = Math.min(totalSinSaldo, saldoDisponible);
+        if (montoUsado > 0) {
+          let persistOk = true;
+          // Crear un registro de "consumo de saldo" como devolución negativa para persistir el ajuste
+          try {
+            await devolucionService.createDevolucion({
+              ventaId: Number(nuevaVentaCreada.id || nuevaVentaCreada.numeroVenta || numeroVenta),
+              productoId: (productosActuales[0]?.id ? Number(productosActuales[0].id) : 0),
+              servicioId: undefined,
+              clienteId: Number(nuevaVenta.clienteId),
+              cantidad: 0,
+              motivoCategoria: 'ConsumoSaldo',
+              motivoDetalle: `Consumo de saldo por venta ${nuevaVentaCreada.numeroVenta || numeroVenta}`,
+              montoDevuelto: 0,
+              saldoAFavor: -Math.abs(montoUsado),
+              usuarioId: Number(user.id),
+              observaciones: 'Ajuste automático al usar saldo a favor en venta'
+            });
+          } catch (e) {
+            console.warn('No se pudo registrar consumo de saldo a favor en devoluciones:', e);
+            persistOk = false;
+          }
+          setClientesAPI(prev => prev.map((c: any) => {
+            if (Number(c.id) === Number(nuevaVenta.clienteId)) {
+              const nuevoSaldo = Math.max(0, Number((c as any).saldoAFavor || 0) - montoUsado);
+              return { ...c, saldoAFavor: nuevoSaldo };
+            }
+            return c;
+          }));
+          // Recargar datos; si la persistencia falló, re-aplicar el ajuste local después de recargar
+          await cargarVentas();
+          if (!persistOk) {
+            setClientesAPI(prev => prev.map((c: any) => {
+              if (Number(c.id) === Number(nuevaVenta.clienteId)) {
+                const nuevoSaldo = Math.max(0, Number((c as any).saldoAFavor || 0) - montoUsado);
+                return { ...c, saldoAFavor: nuevoSaldo };
+              }
+              return c;
+            }));
+          }
+        }
+      }
+      // Recargar datos generales si no se recargó arriba
+      if (!(nuevaVenta.usarSaldoAFavor && nuevaVenta.clienteId)) {
+        await cargarVentas();
+      }
 
       // Si la API no expande relaciones al crear, preservar datos visibles del formulario
       const ventaConFallback = {
@@ -1296,12 +1382,40 @@ export function VentasPage() {
             }
           }
 
+          // Restaurar saldo a favor si esta venta había consumido saldo (anular devoluciones negativas ligadas a la venta)
+          try {
+            const devs = await devolucionService.getDevoluciones();
+            const consumoDevs = (devs || []).filter((d: any) => {
+              const estado = String(d.estado || '').toLowerCase();
+              const esEstadoValido = estado === 'completada' || estado === 'activo' || estado === 'procesado';
+              return Number(d.ventaId) === Number(venta.id) && Number(d.saldoAFavor) < 0 && esEstadoValido;
+            });
+            let montoRestaurado = 0;
+            for (const d of consumoDevs) {
+              await devolucionService.updateDevolucionStatus(Number(d.id), 'Anulado');
+              montoRestaurado += Math.abs(Number(d.saldoAFavor) || 0);
+            }
+            if (montoRestaurado > 0 && venta.clienteId) {
+              setClientesAPI(prev => prev.map((c: any) => {
+                if (Number(c.id) === Number(venta.clienteId)) {
+                  const nuevoSaldo = Number((c as any).saldoAFavor || 0) + montoRestaurado;
+                  return { ...c, saldoAFavor: nuevoSaldo };
+                }
+                return c;
+              }));
+            }
+          } catch (e) {
+            console.warn('No se pudo restaurar saldo a favor asociado a la venta anulada:', e);
+          }
+
           // Actualizar estado local
           setVentas(prev => prev.map(v =>
             v.id === venta.id
               ? { ...v, estado: nuevoEstado }
               : v
           ));
+          // Recargar datos para recalcular saldos
+          cargarVentas();
 
           edited("Venta anulada ✔️", `La venta ${venta.numeroVenta} ha sido anulada exitosamente.`);
         } catch (error: any) {
@@ -1964,30 +2078,13 @@ export function VentasPage() {
                             <Label className="text-white-primary flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <ShieldCheck className="w-4 h-4 text-orange-primary" />
-                                Garantía (Meses)
+                                Garantía
                               </div>
-                              {nuevaVenta.garantiaMeses > 0 && (
-                                <span className="text-[10px] text-gray-500 font-medium bg-gray-dark/30 px-2 py-0.5 rounded-full border border-gray-dark/50">
-                                  ~{nuevaVenta.garantiaMeses * 30} días
-                                </span>
-                              )}
+                              <span className="text-[10px] text-gray-500 font-medium bg-gray-dark/30 px-2 py-0.5 rounded-full border border-gray-dark/50">
+                                15 días (fijo)
+                              </span>
                             </Label>
-                            <Select
-                              value={nuevaVenta.garantiaMeses.toString()}
-                              onValueChange={(value) => setNuevaVenta({ ...nuevaVenta, garantiaMeses: Number(value) })}
-                            >
-                              <SelectTrigger className="elegante-input">
-                                <SelectValue placeholder="Meses de garantía" />
-                              </SelectTrigger>
-                              <SelectContent className="elegante-card">
-                                <SelectItem value="0">Sin garantía</SelectItem>
-                                <SelectItem value="1">1 Mes (Estándar)</SelectItem>
-                                <SelectItem value="2">2 Meses</SelectItem>
-                                <SelectItem value="3">3 Meses</SelectItem>
-                                <SelectItem value="6">6 Meses</SelectItem>
-                                <SelectItem value="12">1 Año</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <Input value="15 días (fijo)" disabled className="elegante-input bg-gray-medium cursor-not-allowed" />
                           </div>
                         </div>
 
@@ -2017,9 +2114,16 @@ export function VentasPage() {
                                   <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                                     {(() => {
                                       const query = normalizeSearchText(productSearchTerm);
-                                      const filteredResults = productosAPI.filter(p =>
-                                        normalizeSearchText(p.nombre).includes(query)
-                                      ).slice(0, 20);
+                                      const filteredResults = productosAPI
+                                        .filter(p =>
+                                          normalizeSearchText(p.nombre).includes(query)
+                                        )
+                                        .filter(p => {
+                                          const stock = Number((p as any).stockVentas ?? (p as any).stock ?? 0);
+                                          const precioNum = Number((p as any).precio ?? (p as any).precioBase ?? 0);
+                                          return stock > 0 && precioNum > 0;
+                                        })
+                                        .slice(0, 20);
 
                                       if (filteredResults.length === 0) {
                                         return (
@@ -2498,9 +2602,7 @@ export function VentasPage() {
                     {displayedVentas.length > 0 ? displayedVentas.map((venta) => (
                       <tr key={venta.id} className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
                         <td className="py-4 px-4 text-center">
-                          <span className="text-gray-lighter">
-                            {venta.id}
-                          </span>
+                          <span className="text-gray-lighter">{venta.id}</span>
                         </td>
                         <td className="py-4 px-4 text-center">
                           <div className="text-center">
@@ -2517,7 +2619,27 @@ export function VentasPage() {
                           </div>
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <span className="text-gray-lighter font-bold">${formatCurrency(venta.total)}</span>
+                          <span className="text-gray-lighter font-bold">
+                            ${(() => {
+                              const sumDev = devoluciones
+                                .filter((d) => {
+                                  const motivoDet = String((d as any).motivoDetalle || '').toLowerCase();
+                                  const motivoCat = String((d as any).motivo || (d as any).motivoCategoria || '').toLowerCase();
+                                  const esConsumoSaldo = (motivoDet.includes('consumo') && motivoDet.includes('saldo')) || (motivoCat.includes('consumo') && motivoCat.includes('saldo'));
+                                  const estado = String((d as any).estado || '').toLowerCase().trim();
+                                  const noAnulada = estado !== 'anulada' && estado !== 'anulado';
+                                  return Number((d as any).ventaId) === Number(venta.id) && noAnulada && !esConsumoSaldo;
+                                })
+                                .reduce((acc, d) => acc + (Number((d as any).monto) || 0), 0);
+                              // Si hay devoluciones, ajustamos; si no, mostramos el total del backend (ya considera saldo a favor)
+                              if (sumDev > 0) {
+                                const adjSubtotal = Math.max(0, (Number(venta.subtotal) || 0) - sumDev);
+                                const adjTotal = Math.max(0, adjSubtotal - (Number(venta.descuento) || 0));
+                                return formatCurrency(adjTotal);
+                              }
+                              return formatCurrency(Number(venta.total) || 0);
+                            })()}
+                          </span>
                         </td>
                         <td className="py-4 px-4 text-center">
                           <span className="text-gray-lighter">{formatDate(venta.fecha)}</span>
@@ -2743,28 +2865,26 @@ export function VentasPage() {
                           <ShieldCheck className="w-4 h-4 text-orange-primary" />
                           Garantía
                         </div>
-                        {selectedVenta && selectedVenta.garantiaMeses > 0 && (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${(() => {
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${(() => {
+                          const diffDays = getRemainingWarrantyDays(selectedVenta.fecha, selectedVenta.garantiaMeses);
+                          return (diffDays !== null && diffDays < 0)
+                            ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                            : 'bg-green-500/10 text-green-500 border border-green-500/20';
+                        })()
+                          }`}>
+                          {(() => {
                             const diffDays = getRemainingWarrantyDays(selectedVenta.fecha, selectedVenta.garantiaMeses);
-                            return (diffDays !== null && diffDays < 0)
-                              ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                              : 'bg-green-500/10 text-green-500 border border-green-500/20';
-                          })()
-                            }`}>
-                            {(() => {
-                              const diffDays = getRemainingWarrantyDays(selectedVenta.fecha, selectedVenta.garantiaMeses);
-                              if (diffDays === null) return '';
-                              return diffDays < 0 ? `EXPIRADA (${Math.abs(diffDays)}d)` : `ACTIVA (${diffDays}d)`;
-                            })()}
-                          </span>
-                        )}
+                            if (diffDays === null) return '';
+                            return diffDays < 0 ? `EXPIRADA (${Math.abs(diffDays)}d)` : `ACTIVA (${diffDays}d)`;
+                          })()}
+                        </span>
                       </Label>
                       <Input
                         value={
-                          selectedVenta.garantiaMeses === 0
-                            ? 'Sin garantía'
+                          (selectedVenta.garantiaMeses ?? 0) <= 0
+                            ? '15 días'
                             : selectedVenta.garantiaMeses === 1
-                              ? '1 Mes (Estándar)'
+                              ? '1 Mes'
                               : selectedVenta.garantiaMeses >= 12
                                 ? `${selectedVenta.garantiaMeses / 12} Año(s)`
                                 : `${selectedVenta.garantiaMeses} Meses`
@@ -2845,181 +2965,52 @@ export function VentasPage() {
                     </div>
                   </div>
 
-                  {selectedVenta && devoluciones.filter((d) => d.ventaId === selectedVenta.id).length > 0 && (
-                    <div className="space-y-3 pt-4 border-t border-gray-dark">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-md font-medium text-white-primary flex items-center gap-2">
-                          <Ban className="w-4 h-4 text-orange-primary" />
-                          Devoluciones Asociadas
-                        </h4>
-                      </div>
+                  
 
-                      <div className="space-y-4 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
-                        {devoluciones
-                          .filter((d) => d.ventaId === selectedVenta.id)
-                          .map((dev) => (
-                            <div key={dev.id} className="bg-gray-darker p-4 rounded-lg space-y-4 border border-gray-dark">
-                              <div className="flex justify-between items-center pb-2 border-b border-gray-dark/50">
-                                <span className="text-white-primary font-semibold text-sm">Devolución #{dev.id}</span>
-                                <div className="flex items-center gap-3">
-                                  <span className="text-xs text-gray-lightest flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-orange-primary" />
-                                    {dev.fecha} {dev.hora}
-                                  </span>
-                                  <span className={`px-2 py-1 rounded-full text-xs ${getEstadoColor(dev.estado)}`}>
-                                    {(() => {
-                                      const e = (dev.estado || '').toLowerCase().trim();
-                                      if (e === 'activo' || e === 'completada' || e === 'completado') return 'Completada';
-                                      if (e === 'anulada' || e === 'anulado') return 'Anulada';
-                                      if (e === 'pendiente') return 'Pendiente';
-                                      if (e === 'procesado') return 'Procesado';
-                                      return dev.estado;
-                                    })()}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                <p className="text-sm text-gray-light">Producto Devuelto</p>
-                                <div className="bg-gray-darkest rounded-lg px-3 py-2.5 border-l-2 border-[#D9C3A4]/70">
-                                  <div className="flex items-center gap-4 flex-nowrap min-w-0">
-                                    <div className="shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-colors border-[#D9C3A4] bg-[#D9C3A4]/20">
-                                      <input
-                                        type="checkbox"
-                                        checked={true}
-                                        readOnly
-                                        className="h-4 w-4 accent-[#D9C3A4] shrink-0 cursor-not-allowed"
-                                      />
-                                    </div>
-
-                                    <div className="shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-dark border border-gray-dark flex items-center justify-center">
-                                      <ImageRenderer
-                                        url={dev.productoImagen}
-                                        alt={dev.producto}
-                                        className="w-full h-full border-0 bg-transparent"
-                                      />
-                                    </div>
-
-                                    <div className="min-w-0 flex-1 shrink flex items-center justify-start">
-                                      <span className="text-white-primary font-semibold text-base truncate block w-full">
-                                        {dev.producto}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex flex-col gap-0.5 shrink-0">
-                                      <label className="text-[11px] text-gray-400 font-normal">Cantidad</label>
-                                      <Input
-                                        type="number"
-                                        value={dev.cantidad}
-                                        disabled
-                                        className="w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 bg-gray-dark cursor-not-allowed"
-                                      />
-                                    </div>
-
-                                    <div className="flex flex-col gap-0.5 shrink-0">
-                                      <label className="text-[11px] text-gray-400 font-normal">Precio Unit.</label>
-                                      <span className="text-white-primary font-semibold text-xs tabular-nums leading-7">
-                                        ${formatCurrency(dev.precioUnitario)}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex flex-col gap-0.5 shrink-0 justify-center">
-                                      <label className="text-[11px] text-gray-400 font-normal">Subt.</label>
-                                      <span className="text-orange-primary font-semibold text-xs tabular-nums leading-7">
-                                        ${formatCurrency(dev.monto)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label className="text-white-primary flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4 text-orange-primary" />
-                                    Motivo de la Devolución
-                                  </Label>
-                                  <Input
-                                    value={dev.motivoDetalle || "N/A"}
-                                    disabled
-                                    className="elegante-input bg-gray-dark cursor-not-allowed w-full"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label className="text-white-primary flex items-center gap-2">
-                                    <DollarSign className="w-4 h-4 text-orange-primary" />
-                                    Resumen Seleccionado
-                                  </Label>
-                                  <Input
-                                    type="text"
-                                    value={`${dev.producto} x${dev.cantidad}`}
-                                    disabled
-                                    className="elegante-input bg-gray-dark cursor-not-allowed w-full"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label className="text-white-primary flex items-center gap-2">
-                                  <FileText className="w-4 h-4 text-orange-primary" />
-                                  Observaciones
-                                </Label>
-                                <textarea
-                                  value={dev.observaciones || "Sin observaciones adicionales."}
-                                  disabled
-                                  rows={3}
-                                  className="elegante-input w-full resize-none bg-gray-dark cursor-not-allowed"
-                                />
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="bg-gray-darker p-4 rounded-lg space-y-2">
+                  <div className="bg-gray-darker p-4 rounded-xl border border-gray-dark space-y-3">
+                    {/* Subtotal Original */}
                     <div className="flex justify-between text-gray-lightest">
                       <span>Subtotal Original:</span>
-                      <span>${formatCurrency(selectedVenta.subtotal)}</span>
+                      <span className="font-medium">${formatCurrency(selectedVenta.subtotal)}</span>
                     </div>
-                    {devolucionesVentaActual.length > 0 && (
-                      <div className="flex justify-between text-yellow-400">
-                        <span>Devoluciones ({devolucionesVentaActual.length}) — {totalItemsDevueltos} producto{totalItemsDevueltos !== 1 ? 's' : ''} devuelto{totalItemsDevueltos !== 1 ? 's' : ''}:</span>
-                        <span>-${formatCurrency(totalMontoDevuelto)}</span>
+
+                    {/* Saldo a Favor Usado - Estilo Verde */}
+                    {saldoUsadoDetalle > 0 && (
+                      <div className="flex justify-between text-green-500 font-medium">
+                        <span>Saldo a Favor Usado:</span>
+                        <span className="font-bold">-${formatCurrency(saldoUsadoDetalle)}</span>
                       </div>
                     )}
-                    {devolucionesVentaActual.length > 0 && (
-                      <div className="flex justify-between text-gray-lightest font-medium">
-                        <span>Subtotal Ajustado:</span>
-                        <span>${formatCurrency(subtotalAjustado)}</span>
-                      </div>
-                    )}
-                    {selectedVenta.descuento > 0 && (
-                      <div className="flex justify-between text-gray-lightest">
-                        <span>
-                          Descuento ({selectedVenta.subtotal > 0 ? ((selectedVenta.descuento / selectedVenta.subtotal) * 100).toFixed(2) : '0'}%):
-                        </span>
-                        <span>-${formatCurrency(selectedVenta.descuento)}</span>
-                      </div>
-                    )}
-                    <hr className="border-gray-medium" />
-                    {devolucionesVentaActual.length > 0 ? (
-                      <>
-                        <div className="flex justify-between text-white-primary font-bold text-lg">
-                          <span>Total Ajustado:</span>
-                          <span className="text-orange-primary">${formatCurrency(Math.max(0, subtotalAjustado - selectedVenta.descuento))}</span>
-                        </div>
-                        <div className="flex justify-between text-gray-500 text-xs pt-1">
-                          <span>Total Original:</span>
-                          <span>${formatCurrency(selectedVenta.total)}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex justify-between text-white-primary font-bold text-lg">
-                        <span>Total:</span>
-                        <span className="text-orange-primary">${formatCurrency(selectedVenta.total)}</span>
-                      </div>
-                    )}
+
+                    {/* Subtotal Ajustado */}
+                    <div className="flex justify-between text-white-primary font-semibold">
+                      <span>Subtotal Ajustado:</span>
+                      <span>
+                        ${formatCurrency(
+                          Math.max(0, (selectedVenta.subtotal || 0) - (saldoUsadoDetalle || 0) - (totalMontoDevuelto || 0))
+                        )}
+                      </span>
+                    </div>
+
+                    <hr className="border-gray-medium my-2" />
+
+                    {/* Total Ajustado - Grande y Naranja */}
+                    <div className="flex justify-between items-end">
+                      <span className="text-white-primary font-bold text-xl">Total Ajustado:</span>
+                      <span className="text-orange-primary font-bold text-2xl">
+                        ${formatCurrency(
+                          devolucionesVentaActual.length > 0
+                            ? Math.max(0, subtotalAjustado - (selectedVenta.descuento || 0))
+                            : (selectedVenta.total || 0)
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Total Original - Pequeño y Gris como en la imagen */}
+                    <div className="flex justify-between text-gray-500 text-[11px] mt-1">
+                      <span>Total Original:</span>
+                      <span>${formatCurrency((selectedVenta.subtotal || 0) - (selectedVenta.descuento || 0))}</span>
+                    </div>
                   </div>
                 </div>
 

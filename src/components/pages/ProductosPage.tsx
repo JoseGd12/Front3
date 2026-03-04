@@ -73,6 +73,8 @@ export function ProductosPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showProductoFormErrors, setShowProductoFormErrors] = useState(false);
   const [productoValidationAttempt, setProductoValidationAttempt] = useState(0);
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
+  const [showCategoryResults, setShowCategoryResults] = useState(false);
 
   const shakeClass = productoValidationAttempt > 0 ? 'animate-shake' : '';
 
@@ -93,7 +95,27 @@ export function ProductosPage() {
         ]);
 
         console.log('🔍 Datos cargados - Productos:', productosData.length, 'Categorías:', categoriasData.length);
-        setProductos(productosData);
+        const categoriaById = new Map<string | number, any>();
+        categoriasData.forEach((c: any) => {
+          if (c && (c.id !== undefined || c.Id !== undefined)) {
+            const id = c.id ?? c.Id;
+            categoriaById.set(id, c);
+          }
+        });
+        const enriquecidos = productosData.map((p: any) => {
+          const cat = p?.categoria;
+          if (cat && !cat.nombre && cat.id) {
+            const found = categoriaById.get(cat.id);
+            if (found && found.nombre) {
+              return {
+                ...p,
+                categoria: { id: cat.id, nombre: found.nombre }
+              };
+            }
+          }
+          return p;
+        });
+        setProductos(enriquecidos);
         setCategorias(categoriasData);
       } catch (err: any) {
         console.error('Error loading data:', err);
@@ -223,8 +245,25 @@ export function ProductosPage() {
       console.log('✅ URL de imagen en producto creado:', productoCreado.imagenProduc);
 
       // Refresh products list
-      const productosActualizados = await productoService.getProductos();
-      console.log('📦 Productos actualizados después de crear:', productosActualizados);
+      const productosActualizadosRaw = await productoService.getProductos();
+      console.log('📦 Productos actualizados después de crear:', productosActualizadosRaw);
+      const categoriaByIdAfterCreate = new Map<string | number, any>();
+      categorias.forEach((c: any) => {
+        if (c && (c.id !== undefined || c.Id !== undefined)) {
+          const id = c.id ?? c.Id;
+          categoriaByIdAfterCreate.set(id, c);
+        }
+      });
+      const productosActualizados = productosActualizadosRaw.map((p: any) => {
+        const cat = p?.categoria;
+        if (cat && !cat.nombre && cat.id) {
+          const found = categoriaByIdAfterCreate.get(cat.id);
+          if (found && found.nombre) {
+            return { ...p, categoria: { id: cat.id, nombre: found.nombre } };
+          }
+        }
+        return p;
+      });
       const productoRecienCreado = productosActualizados.find(p => p.id === productoCreado.id || p.nombre === productoCreado.nombre);
       if (productoRecienCreado) {
         console.log('🔍 Producto recién creado encontrado en lista:', productoRecienCreado);
@@ -244,6 +283,7 @@ export function ProductosPage() {
         imagenProduc: '',
         activo: true
       });
+      setCategorySearchTerm('');
       setImagenPreview(null);
       setIsDialogOpen(false);
       setIsCreateDialogOpen(false);
@@ -274,6 +314,7 @@ export function ProductosPage() {
       imagenProduc: producto.imagenProduc,
       activo: producto.activo
     });
+    setCategorySearchTerm(categoriaVal || '');
     setImagenPreview(producto.imagenProduc || null);
     setImageError(null);
     setIsDialogOpen(true);
@@ -320,7 +361,22 @@ export function ProductosPage() {
       const productoActualizado = await productoService.updateProducto(editingProducto.id, productoData as any);
 
       // Refresh products list
-      const productosActualizados = await productoService.getProductos();
+      const productosActualizadosRaw = await productoService.getProductos();
+      const categoriaByIdAfterUpdate = new Map<string | number, any>();
+      categorias.forEach((c: any) => {
+        const id = c.id ?? c.Id;
+        categoriaByIdAfterUpdate.set(id, c);
+      });
+      const productosActualizados = productosActualizadosRaw.map((p: any) => {
+        const cat = p?.categoria;
+        if (cat && !cat.nombre && cat.id) {
+          const found = categoriaByIdAfterUpdate.get(cat.id);
+          if (found && found.nombre) {
+            return { ...p, categoria: { id: cat.id, nombre: found.nombre } };
+          }
+        }
+        return p;
+      });
       setProductos(productosActualizados);
 
       setEditingProducto(null);
@@ -337,6 +393,7 @@ export function ProductosPage() {
         imagenProduc: '',
         activo: true
       });
+      setCategorySearchTerm('');
       setImagenPreview(null);
       setIsDialogOpen(false);
       setIsEditDialogOpen(false);
@@ -680,16 +737,51 @@ export function ProductosPage() {
                             <Tags className="w-3.5 h-3.5 text-orange-primary" />
                             Categoría *
                           </Label>
-                          <select
-                            value={nuevoProducto.categoria}
-                            onChange={(e) => setNuevoProducto({ ...nuevoProducto, categoria: e.target.value })}
-                            className={`elegante - input w - full h - 9 text - sm ${showProductoFormErrors && !nuevoProducto.categoria ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''} `}
-                          >
-                            <option value="">Seleccionar</option>
-                            {categorias.filter(c => c.estado === true).map((categoria) => (
-                              <option key={categoria.id} value={categoria.nombre}>{categoria.nombre}</option>
-                            ))}
-                          </select>
+                          <div className="relative">
+                            <Input
+                              placeholder="Escribe para buscar categoría..."
+                              value={categorySearchTerm}
+                              onChange={(e) => {
+                                setCategorySearchTerm(e.target.value);
+                                setShowCategoryResults(true);
+                              }}
+                              onFocus={() => setShowCategoryResults(true)}
+                              className={`elegante-input h-9 text-sm ${showProductoFormErrors && !nuevoProducto.categoria ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                            />
+                            {showCategoryResults && categorySearchTerm.trim() !== '' && (
+                              <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar">
+                                {(() => {
+                                  const q = categorySearchTerm.trim().toLowerCase();
+                                  const list = categorias
+                                    .filter(c => c.estado === true)
+                                    .filter(c => String(c.nombre || '').toLowerCase().includes(q))
+                                    .slice(0, 20);
+                                  if (list.length === 0) {
+                                    return (
+                                      <div className="p-3 text-center text-gray-lightest italic">
+                                        Sin resultados.
+                                      </div>
+                                    );
+                                  }
+                                  return list.map((c: any) => (
+                                    <div
+                                      key={c.id}
+                                      onClick={() => {
+                                        setNuevoProducto({ ...nuevoProducto, categoria: c.nombre });
+                                        setCategorySearchTerm(c.nombre);
+                                        setShowCategoryResults(false);
+                                      }}
+                                      className="p-3 border-b border-gray-dark hover:bg-gray-dark transition-colors cursor-pointer"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-white-primary text-sm">{c.nombre}</span>
+                                      </div>
+                                    </div>
+                                  ));
+                                })()}
+                              </div>
+                            )}
+                          </div>
                           {showProductoFormErrors && !nuevoProducto.categoria && (
                             <p className="text-[10px] text-red-400 mt-1">Selecciona una categoría</p>
                           )}

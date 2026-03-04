@@ -7,7 +7,6 @@ import {
   User as UserIcon,
   Phone,
   Mail,
-
   Edit,
   Search,
   Eye,
@@ -15,28 +14,19 @@ import {
   ChevronRight,
   Calendar,
   UserCheck,
-
-
   UserPlus,
   MapPin,
-
   IdCard,
   Wallet,
-
   TrendingUp,
-
   Camera,
-
   X,
   ToggleLeft,
   ToggleRight,
   UserX,
   Trash2,
   FileText,
-  Hash,
-  Lock,
-  EyeOff,
-  KeyRound
+  Hash
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -45,7 +35,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCustomAlert } from "../ui/custom-alert";
 import { useDoubleConfirmation } from "../ui/double-confirmation";
 import { useAuth } from "../AuthContext";
+import { notifyEntityCreated } from "../../services/notificationService";
 import { AppRole } from "../../services/authSyncService";
+import { firebaseAuthService } from "../../services/firebase";
 
 // Tipos de documento
 const TIPOS_DOCUMENTO = [
@@ -92,7 +84,7 @@ interface Devolucion {
 export function ClientesPage() {
   const { success, error, created, edited, deleted, AlertContainer } = useCustomAlert();
   const { confirmDeleteAction, DoubleConfirmationContainer } = useDoubleConfirmation();
-  const { isAdmin } = useAuth();
+  const { isAdmin, resetPassword } = useAuth();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [devoluciones, setDevoluciones] = useState<Devolucion[]>([]);
@@ -145,8 +137,8 @@ export function ClientesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showCreateValidation, setShowCreateValidation] = useState(false);
   const [showEditValidation, setShowEditValidation] = useState(false);
-  const [showClientePassword, setShowClientePassword] = useState(false);
   const [clienteGeneratedPassword, setClienteGeneratedPassword] = useState('');
+  const [createInFirebase, setCreateInFirebase] = useState(true);
 
   const generateClientePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -291,8 +283,7 @@ export function ClientesPage() {
   };
 
   const validateForm = (form: any) => {
-    if (!form.numeroDocumento || !form.nombre || !form.apellido || !form.email) {
-      error('Campos obligatorios faltantes', 'Por favor completa todos los campos obligatorios: número de documento, nombre, apellido y email.');
+    if (!form.numeroDocumento || !form.nombre || !form.apellido || !form.email || !form.fechaNacimiento) {
       return false;
     }
 
@@ -368,6 +359,13 @@ export function ClientesPage() {
       const createdClienteAPI = await clientesService.createCliente({ ...createData, contrasena: clienteGeneratedPassword } as any);
       const mappedCliente = clientesService.mapApiToComponent(createdClienteAPI);
 
+      await notifyEntityCreated('cliente', {
+        id: mappedCliente.id,
+        nombre: mappedCliente.nombre,
+        apellido: mappedCliente.apellido,
+        correo: mappedCliente.email,
+        telefono: mappedCliente.telefono
+      });
       setClientes([mappedCliente, ...clientes]);
       setIsCreateDialogOpen(false);
       setIsCreateConfirmOpen(false);
@@ -388,6 +386,32 @@ export function ClientesPage() {
       setFormError('');
 
       created('Cliente creado exitosamente ✔️', `El cliente ${mappedCliente.nombre} ${mappedCliente.apellido} ha sido registrado en el sistema.`);
+
+      if (createInFirebase) {
+        try {
+          const tempPass = (clienteGeneratedPassword && clienteGeneratedPassword.length >= 6)
+            ? clienteGeneratedPassword
+            : Math.random().toString(36).slice(-8) + "A1";
+          await firebaseAuthService.createUserWithoutAffectingSession(
+            mappedCliente.email,
+            tempPass,
+            { sendVerification: false, sendPasswordReset: true }
+          );
+          created('Cuenta Firebase creada', 'Se envió enlace para configurar contraseña al cliente.');
+        } catch (fbErr: any) {
+          const msg = String(fbErr?.message || '').toLowerCase();
+          if (msg.includes('already')) {
+            const res = await resetPassword(mappedCliente.email);
+            if (res.success) {
+              created('Correo ya existe en Firebase', 'Se envió enlace para configurar contraseña.');
+            } else {
+              error('No se pudo enviar enlace de contraseña', 'Intenta nuevamente.');
+            }
+          } else {
+            error('No se pudo crear cuenta en Firebase', 'Verifica el correo del cliente e intenta nuevamente.');
+          }
+        }
+      }
     } catch (err: unknown) {
       console.error('Error creando cliente:', err);
       const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
@@ -525,8 +549,7 @@ export function ClientesPage() {
   };
 
   const validateEditForm = (form: any) => {
-    if (!form.numeroDocumento || !form.nombre || !form.apellido || !form.email) {
-      error('Campos obligatorios faltantes', 'Por favor completa todos los campos obligatorios: número de documento, nombre, apellido y email.');
+    if (!form.numeroDocumento || !form.nombre || !form.apellido || !form.email || !form.fechaNacimiento) {
       return false;
     }
 
@@ -657,14 +680,61 @@ export function ClientesPage() {
       "confirmar",
       async () => {
         try {
-          await clientesService.deleteCliente(parseInt(cliente.id));
+          const idNum = parseInt(cliente.id);
+          await clientesService.deleteCliente(idNum, {
+            correo: cliente.email,
+            documento: cliente.numeroDocumento,
+            tipoDocumento: cliente.tipoDocumento
+          });
+          let stillExists = false;
+          try {
+            const check = await clientesService.getClienteById(idNum);
+            if (check && (check.id || check.Id)) {
+              stillExists = true;
+            }
+          } catch {
+            stillExists = false;
+          }
+          if (stillExists) {
+            try {
+              await clientesService.toggleClienteEstado(idNum, false);
+              setClientes(prev => prev.map(c => c.id === cliente.id ? { ...c, activo: false } : c));
+              success('Cliente desactivado', 'Este cliente tiene registros asociados. Se desactivó para conservar el historial.');
+            } catch {
+              error('No se puede eliminar', 'Este cliente tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.');
+            }
+            // Evitar que el flujo muestre éxito de eliminación
+            throw new Error('DEACTIVATED_INSTEAD');
+          }
           setClientes(prev => prev.filter(c => c.id !== cliente.id));
           setSelectedItems(prev => prev.filter(id => id !== cliente.id));
-          deleted('Cliente eliminado exitosamente ✔️', `El cliente ${cliente.nombre} ${cliente.apellido} ha sido eliminado permanentemente del sistema.`);
         } catch (err: unknown) {
-          console.error('Error eliminando cliente:', err);
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          error('Error', `No se pudo eliminar el cliente: ${errorMessage}`);
+          const errorMessage = err instanceof Error ? (err.message || '') : String(err || '');
+          const msg = errorMessage.toLowerCase();
+          const related =
+            msg.includes('409') ||
+            msg.includes('foreign') ||
+            msg.includes('constraint') ||
+            msg.includes('referenc') ||
+            msg.includes('venta') ||
+            msg.includes('compra') ||
+            msg.includes('agend') ||
+            msg.includes('cita') ||
+            msg.includes('insumo') ||
+            msg.includes('entrega');
+          if (related) {
+            try {
+              await clientesService.toggleClienteEstado(parseInt(cliente.id), false);
+              setClientes(prev => prev.map(c => c.id === cliente.id ? { ...c, activo: false } : c));
+              success('Cliente desactivado', 'Este cliente tiene registros asociados. Se desactivó para conservar el historial.');
+            } catch {
+              error('No se puede eliminar', 'Este cliente tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.');
+            }
+          } else {
+            error('Error', `No se pudo eliminar el cliente: ${errorMessage || 'Error desconocido'}`);
+          }
+          // Lanzar para evitar que se dispare la alerta de éxito de confirmación
+          throw new Error(errorMessage || 'DELETE_FAILED');
         }
       },
       {
@@ -1262,8 +1332,9 @@ export function ClientesPage() {
                   type="date"
                   value={editForm.fechaNacimiento}
                   onChange={(e) => setEditForm({ ...editForm, fechaNacimiento: e.target.value })}
-                  className="elegante-input w-full"
+                  className={`elegante-input w-full ${showEditValidation && !editForm.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 />
+                {showEditValidation && !editForm.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
             </div>
 
@@ -1478,8 +1549,9 @@ export function ClientesPage() {
                   type="date"
                   value={createForm.fechaNacimiento}
                   onChange={(e) => setCreateForm({ ...createForm, fechaNacimiento: e.target.value })}
-                  className="elegante-input w-full"
+                  className={`elegante-input w-full ${showCreateValidation && !createForm.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 />
+                {showCreateValidation && !createForm.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
             </div>
 
@@ -1546,41 +1618,14 @@ export function ClientesPage() {
             </div>
 
 
-            {/* Contraseña Temporal */}
-            <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <Label className="text-white-primary flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-orange-primary" />
-                  Contraseña Temporal
-                </Label>
-                <div className="flex items-center gap-3">
-                  <div className="relative flex-1">
-                    <Input
-                      type={showClientePassword ? 'text' : 'password'}
-                      value={clienteGeneratedPassword}
-                      onChange={(e) => setClienteGeneratedPassword(e.target.value)}
-                      className="elegante-input w-full pr-10"
-                      placeholder="Contraseña temporal del cliente"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowClientePassword(!showClientePassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-lighter hover:text-white-primary"
-                    >
-                      {showClientePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={generateClientePassword}
-                    className="elegante-button-secondary text-xs whitespace-nowrap"
-                  >
-                    <KeyRound className="w-4 h-4 mr-1 inline" />
-                    Generar Contraseña Temporal
-                  </button>
-                </div>
-                <p className="text-xs text-gray-lightest">Se genera automáticamente al crear un nuevo cliente. El cliente podrá cambiarla después.</p>
-              </div>
+            {/* Contraseña temporal generada automáticamente al crear (no visible en el formulario) */}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={createInFirebase}
+                onChange={(e) => setCreateInFirebase(e.target.checked)}
+              />
+              <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
             </div>
 
             <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">

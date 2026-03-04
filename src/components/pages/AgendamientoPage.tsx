@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { agendamientoService } from "../../services/agendamientoService";
 import { barberosService } from "../../services/barberosService";
 import { servicioService } from "../../services/servicioService";
@@ -197,6 +197,31 @@ export function AgendamientoPage() {
       case 'Pendiente': return '#d8b081';
       default: return '#d8b081';
     }
+  };
+
+  // Verifica disponibilidad del barbero en la fecha/hora/duración seleccionadas
+  const isBarberoDisponible = (barberoId: number): boolean => {
+    if (!nuevaCita.fecha || !nuevaCita.hora) return true;
+    const durNueva = Number(nuevaCita.duracion || 60);
+    const [hhStr, mmStr = '0'] = String(nuevaCita.hora).split(':');
+    const startNueva = (parseInt(hhStr || '0', 10) * 60) + (parseInt(mmStr || '0', 10));
+    const endNueva = startNueva + durNueva;
+
+    return !citas.some((cita: any) => {
+      if (cita.fecha !== nuevaCita.fecha) return false;
+      if (Number(cita.barberoId) !== Number(barberoId)) return false;
+      // Ignorar la propia cita cuando estamos editando
+      if (selectedCita && cita.id === selectedCita.id) return false;
+      // Ignorar canceladas
+      const estado = String(cita.estado || '');
+      if (estado.toLowerCase() === 'cancelada') return false;
+      const [ch, cm = '0'] = String(cita.hora || '').split(':');
+      const startExist = (parseInt(ch || '0', 10) * 60) + (parseInt(cm || '0', 10));
+      const durExist = Number(cita.duracion || 60);
+      const endExist = startExist + durExist;
+      // Se solapan si inician antes de que termine la otra y terminan después de que empiece
+      return startNueva < endExist && startExist < endNueva;
+    });
   };
 
   const getEstadoInfo = (estado: string) => {
@@ -896,6 +921,7 @@ export function AgendamientoPage() {
                           <div className="absolute z-50 w-full mt-1 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-52 overflow-y-auto">
                             {barberosList
                               .filter(b => `${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase()))
+                              .filter(b => isBarberoDisponible(b.id))
                               .map(barbero => (
                                 <div
                                   key={barbero.id}
@@ -917,7 +943,10 @@ export function AgendamientoPage() {
                                 </div>
                               ))
                             }
-                            {barberosList.filter(b => `${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase())).length === 0 && (
+                            {barberosList.filter(b =>
+                              (`${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase()))
+                              && isBarberoDisponible(b.id)
+                            ).length === 0 && (
                               <div className="p-3 text-center text-gray-lightest text-sm italic">No se encontraron barberos</div>
                             )}
                           </div>

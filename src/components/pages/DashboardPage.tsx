@@ -1,143 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Calendar, DollarSign, Users, Scissors, Package, Clock, Download, ChevronDown, ChevronUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend, LineChart, Line, LegendType } from "recharts";
 import { useThemeColors } from "../utils/themeColors";
+import { ventaService, type Venta } from "../../services/ventaService";
+import { agendamientoService, type Agendamiento } from "../../services/agendamientoService";
+import { insumosService, type Insumo } from "../../services/insumosService";
 
-const metrics = [
-  {
-    title: "Ventas Hoy",
-    value: "$2,847",
-    change: "+18.2%",
-    icon: DollarSign,
-    iconColor: "text-primary-gold",
-    isPositive: true
-  },
-  {
-    title: "Citas Agendadas",
-    value: "23",
-    change: "+12.5%",
-    icon: Calendar,
-    iconColor: "text-secondary-gold",
-    isPositive: true
-  },
-  {
-    title: "Clientes Atendidos",
-    value: "18",
-    change: "+8.3%",
-    icon: Users,
-    iconColor: "text-primary-gold",
-    isPositive: true
-  },
-  {
-    title: "Servicios Realizados",
-    value: "31",
-    change: "+15.7%",
-    icon: Scissors,
-    iconColor: "text-gray-lightest",
-    isPositive: true
-  },
-];
-
-const ventasComparativasPorPeriodo = {
-  semanal: {
-    productos: [
-      { nombre: "Pomada Hair Wax", monto: 680000, cantidad: 42 },
-      { nombre: "Shampoo Premium", monto: 520000, cantidad: 35 },
-      { nombre: "Aceite de Barba", monto: 740000, cantidad: 48 },
-      { nombre: "Cera Modeladora", monto: 410000, cantidad: 29 }
-    ],
-    servicios: [
-      { nombre: "Corte + Barba", monto: 1280000, cantidad: 64 },
-      { nombre: "Afeitado Clásico", monto: 820000, cantidad: 55 },
-      { nombre: "Corte Dama", monto: 1090000, cantidad: 36 },
-      { nombre: "Trat. Capilar", monto: 950000, cantidad: 22 }
-    ],
-  },
-  mensual: {
-    productos: [
-      { nombre: "Pomada Hair Wax", monto: 2850000, cantidad: 185 },
-      { nombre: "Shampoo Premium", monto: 2440000, cantidad: 160 },
-      { nombre: "Aceite de Barba", monto: 3150000, cantidad: 210 },
-      { nombre: "Cera Modeladora", monto: 1980000, cantidad: 135 }
-    ],
-    servicios: [
-      { nombre: "Corte + Barba", monto: 5400000, cantidad: 270 },
-      { nombre: "Afeitado Clásico", monto: 3200000, cantidad: 215 },
-      { nombre: "Corte Dama", monto: 3800000, cantidad: 125 },
-      { nombre: "Trat. Capilar", monto: 2960000, cantidad: 70 }
-    ],
-  },
-  anual: {
-    productos: [
-      { nombre: "Pomada Hair Wax", monto: 35800000, cantidad: 2300 },
-      { nombre: "Shampoo Premium", monto: 33200000, cantidad: 2180 },
-      { nombre: "Aceite de Barba", monto: 40200000, cantidad: 2680 },
-      { nombre: "Cera Modeladora", monto: 26100000, cantidad: 1820 }
-    ],
-    servicios: [
-      { nombre: "Corte + Barba", monto: 68200000, cantidad: 3410 },
-      { nombre: "Afeitado Clásico", monto: 41500000, cantidad: 2790 },
-      { nombre: "Corte Dama", monto: 47800000, cantidad: 1570 },
-      { nombre: "Trat. Capilar", monto: 36500000, cantidad: 870 }
-    ],
-  },
-} as const;
-
-const ingresosHistoricosPorPeriodo: Record<
-  PeriodoClave,
-  Array<{ label: string; ingresos: number; productos: number; servicios: number }>
-> = {
-  semanal: [
-    { label: "Lun", ingresos: 920000, productos: 320000, servicios: 600000 },
-    { label: "Mar", ingresos: 870000, productos: 275000, servicios: 595000 },
-    { label: "Mié", ingresos: 940000, productos: 310000, servicios: 630000 },
-    { label: "Jue", ingresos: 1020000, productos: 365000, servicios: 655000 },
-    { label: "Vie", ingresos: 1160000, productos: 400000, servicios: 760000 },
-    { label: "Sáb", ingresos: 1230000, productos: 430000, servicios: 800000 },
-    { label: "Dom", ingresos: 870000, productos: 270000, servicios: 600000 },
-  ],
-  mensual: [
-    { label: "Semana 1", ingresos: 3200000, productos: 980000, servicios: 2220000 },
-    { label: "Semana 2", ingresos: 3350000, productos: 1010000, servicios: 2340000 },
-    { label: "Semana 3", ingresos: 3480000, productos: 1060000, servicios: 2420000 },
-    { label: "Semana 4", ingresos: 3620000, productos: 1100000, servicios: 2520000 },
-  ],
-  anual: [
-    { label: "Ene", ingresos: 41000000, productos: 14500000, servicios: 26500000 },
-    { label: "Feb", ingresos: 43000000, productos: 15000000, servicios: 28000000 },
-    { label: "Mar", ingresos: 45000000, productos: 15500000, servicios: 29500000 },
-    { label: "Abr", ingresos: 47000000, productos: 16000000, servicios: 31000000 },
-    { label: "May", ingresos: 48500000, productos: 16300000, servicios: 32200000 },
-    { label: "Jun", ingresos: 50000000, productos: 16800000, servicios: 33200000 },
-  ],
-};
-
-const citasHoy = [
-  { id: 1, cliente: "Carlos Mendez", servicio: "Corte + Barba", precio: 85000, hora: "09:00", barbero: "Miguel", estado: "confirmada" },
-  { id: 2, cliente: "Ana García", servicio: "Corte Dama", precio: 65000, hora: "10:30", barbero: "Sofia", estado: "en-curso" },
-  { id: 3, cliente: "José Torres", servicio: "Afeitado Clásico", precio: 45000, hora: "11:00", barbero: "Miguel", estado: "pendiente" },
-  { id: 4, cliente: "María López", servicio: "Tratamiento Capilar", precio: 110000, hora: "12:00", barbero: "Sofia", estado: "confirmada" },
-  { id: 5, cliente: "Roberto Silva", servicio: "Corte + Barba", precio: 85000, hora: "14:30", barbero: "Miguel", estado: "pendiente" },
-];
-
-const ventasRecientes = [
-  { id: 1, producto: "Pomada Hair Wax", cantidad: 3, precioUnit: 45000, cliente: "Carlos Mendez" },
-  { id: 2, producto: "Shampoo Premium", cantidad: 2, precioUnit: 38000, cliente: "Ana García" },
-  { id: 3, producto: "Aceite de Barba", cantidad: 5, precioUnit: 52000, cliente: "José Torres" },
-  { id: 4, producto: "Cera Modeladora", cantidad: 2, precioUnit: 36000, cliente: "María López" },
-  { id: 5, producto: "Gel Fijador", cantidad: 4, precioUnit: 30000, cliente: "Roberto Silva" },
-  { id: 6, producto: "Shampoo Premium", cantidad: 3, precioUnit: 38000, cliente: "Laura Duarte" },
-  { id: 7, producto: "Pomada Hair Wax", cantidad: 1, precioUnit: 45000, cliente: "Tatiana Ruiz" },
-];
-
-const inventarioBajo = [
-  { producto: "Shampoo Premium", stock: 3, minimo: 10, categoria: "Cuidado Capilar" },
-  { producto: "Cuchillas de Afeitar", stock: 8, minimo: 20, categoria: "Herramientas" },
-  { producto: "Toallas Desechables", stock: 15, minimo: 50, categoria: "Suministros" },
-];
-
-type PeriodoClave = keyof typeof ventasComparativasPorPeriodo;
+type PeriodoClave = "semanal" | "mensual" | "anual";
 
 const formatCurrencyValue = (amount: number) =>
   amount.toLocaleString("es-CO", { minimumFractionDigits: 0 });
@@ -159,10 +29,243 @@ const periodoLabels: Record<PeriodoClave, string> = {
 };
 
 export function DashboardPage() {
-  // Hook para colores temáticos que se actualiza automáticamente
   const colors = useThemeColors();
   const [periodoIngresos, setPeriodoIngresos] = useState<PeriodoClave>("mensual");
   const [showResumenPeriodos, setShowResumenPeriodos] = useState(true);
+  const [ventas, setVentas] = useState<Venta[]>([]);
+  const [agendamientos, setAgendamientos] = useState<Agendamiento[]>([]);
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([
+      ventaService.getVentas().catch(() => []),
+      agendamientoService.getAgendamientos().catch(() => []),
+      insumosService.getInsumos().catch(() => [])
+    ]).then(([v, a, i]) => {
+      if (!isMounted) return;
+      setVentas(Array.isArray(v) ? v : []);
+      setAgendamientos(Array.isArray(a) ? a : []);
+      setInsumos(Array.isArray(i) ? i : []);
+    }).catch(() => {
+      if (!isMounted) return;
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const today = new Date();
+  const isSameDay = (d: Date, b: Date) =>
+    d.getFullYear() === b.getFullYear() && d.getMonth() === b.getMonth() && d.getDate() === b.getDate();
+
+  const ventasHoy = useMemo(() => {
+    return ventas.filter(v => {
+      const dt = new Date(v.fecha);
+      return isSameDay(dt, today);
+    });
+  }, [ventas]);
+
+  const citasHoy = useMemo(() => {
+    const hoy = today;
+    return agendamientos
+      .filter(c => {
+        if (!c.fecha) return false;
+        const [y, m, d] = c.fecha.split('-').map(Number);
+        if (!y || !m || !d) return false;
+        const dt = new Date(y, (m - 1), d);
+        return isSameDay(dt, hoy);
+      })
+      .map(c => ({
+        id: c.id,
+        cliente: c.clienteNombre,
+        servicio: c.servicioNombre || (c.paqueteNombre || "Servicio"),
+        precio: Number(c.precio || 0),
+        hora: c.hora || "",
+        barbero: c.barberoNombre,
+        estado: (c.estado || "").toString().toLowerCase()
+      }));
+  }, [agendamientos]);
+
+  const inventarioBajo = useMemo(() => {
+    return insumos
+      .filter(p => typeof p.stock === "number" && typeof p.minimo === "number" && p.stock < p.minimo)
+      .map(p => ({
+        producto: p.nombre,
+        stock: p.stock,
+        minimo: p.minimo,
+        categoria: p.categoria
+      }));
+  }, [insumos]);
+
+  const totalVentasHoy = useMemo(() => ventasHoy.reduce((acc, v) => acc + (Number(v.total) || 0), 0), [ventasHoy]);
+  const clientesAtendidosHoy = useMemo(() => {
+    const setIds = new Set<string | number>();
+    ventasHoy.forEach(v => {
+      const id = v.clienteId ?? v.cliente;
+      if (id !== undefined && id !== null && id !== '') setIds.add(id as any);
+    });
+    return setIds.size;
+  }, [ventasHoy]);
+  const serviciosRealizadosHoy = useMemo(() => {
+    return ventasHoy.reduce((acc, v) => {
+      const det = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+      return acc + det.reduce((s, d) => s + (Number(d.cantidad || 1)), 0);
+    }, 0);
+  }, [ventasHoy]);
+
+  const metrics = useMemo(() => {
+    return [
+      {
+        title: "Ventas Hoy",
+        value: `$${formatCurrencyValue(totalVentasHoy)}`,
+        change: "",
+        icon: DollarSign,
+        iconColor: "text-primary-gold",
+        isPositive: true
+      },
+      {
+        title: "Citas Agendadas",
+        value: `${citasHoy.length}`,
+        change: "",
+        icon: Calendar,
+        iconColor: "text-secondary-gold",
+        isPositive: true
+      },
+      {
+        title: "Clientes Atendidos",
+        value: `${clientesAtendidosHoy}`,
+        change: "",
+        icon: Users,
+        iconColor: "text-primary-gold",
+        isPositive: true
+      },
+      {
+        title: "Servicios Realizados",
+        value: `${serviciosRealizadosHoy}`,
+        change: "",
+        icon: Scissors,
+        iconColor: "text-gray-lightest",
+        isPositive: true
+      }
+    ];
+  }, [totalVentasHoy, citasHoy.length, clientesAtendidosHoy, serviciosRealizadosHoy]);
+
+  const ventasComparativasPorPeriodo = useMemo(() => {
+    const withinDays = (v: Venta, days: number) => {
+      const dt = new Date(v.fecha);
+      const start = new Date(today);
+      start.setDate(start.getDate() - (days - 1));
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      return dt >= start && dt <= end;
+    };
+    const aggregate = (subset: Venta[]) => {
+      const prod = new Map<string, { nombre: string; monto: number; cantidad: number }>();
+      const serv = new Map<string, { nombre: string; monto: number; cantidad: number }>();
+      subset.forEach(v => {
+        const pd = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+        const sd = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+        pd.forEach(d => {
+          const n = d.nombre || "Producto";
+          const m = Number(d.precio || 0) * Number(d.cantidad || 1);
+          const e = prod.get(n) || { nombre: n, monto: 0, cantidad: 0 };
+          e.monto += m;
+          e.cantidad += Number(d.cantidad || 1);
+          prod.set(n, e);
+        });
+        sd.forEach(d => {
+          const n = d.nombre || "Servicio";
+          const m = Number(d.precio || 0) * Number(d.cantidad || 1);
+          const e = serv.get(n) || { nombre: n, monto: 0, cantidad: 0 };
+          e.monto += m;
+          e.cantidad += Number(d.cantidad || 1);
+          serv.set(n, e);
+        });
+      });
+      const topN = (arr: { nombre: string; monto: number; cantidad: number }[]) =>
+        arr.sort((a, b) => b.monto - a.monto).slice(0, 4);
+      return {
+        productos: topN(Array.from(prod.values())),
+        servicios: topN(Array.from(serv.values()))
+      };
+    };
+    const semanal = aggregate(ventas.filter(v => withinDays(v, 7)));
+    const mensual = aggregate(ventas.filter(v => withinDays(v, 30)));
+    const anual = aggregate(ventas.filter(v => withinDays(v, 365)));
+    return { semanal, mensual, anual } as const;
+  }, [ventas]);
+
+  const ingresosHistoricosPorPeriodo = useMemo(() => {
+    const dayNames: string[] = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    const sumBuckets = (buckets: { key: string; ventas: Venta[] }[]) => {
+      return buckets.map(b => {
+        let productos = 0;
+        let servicios = 0;
+        b.ventas.forEach(v => {
+          const pd = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+          const sd = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+          productos += pd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+          servicios += sd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+        });
+        return { label: b.key, ingresos: productos + servicios, productos, servicios };
+      });
+    };
+    const semanalBuckets: { key: string; ventas: Venta[] }[] = (() => {
+      const arr: { key: string; ventas: Venta[] }[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const label: string = dayNames[d.getDay()] ?? "";
+        arr.push({
+          key: label,
+          ventas: ventas.filter(v => isSameDay(new Date(v.fecha), d))
+        });
+      }
+      return arr;
+    })();
+    const mensualBuckets: { key: string; ventas: Venta[] }[] = (() => {
+      const arr: { key: string; ventas: Venta[] }[] = [];
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(today);
+        start.setDate(start.getDate() - (i + 1) * 7);
+        const end = new Date(today);
+        end.setDate(end.getDate() - i * 7);
+        const label = `Semana ${4 - i}`;
+        arr.push({
+          key: label,
+          ventas: ventas.filter(v => {
+            const dt = new Date(v.fecha);
+            return dt >= start && dt <= end;
+          })
+        });
+      }
+      return arr;
+    })();
+    const monthNames: string[] = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const anualBuckets: { key: string; ventas: Venta[] }[] = (() => {
+      const arr: { key: string; ventas: Venta[] }[] = [];
+      for (let i = 5; i >= 0; i--) {
+        const ref = new Date(today.getFullYear(), today.getMonth(), 1);
+        ref.setMonth(ref.getMonth() - i);
+        const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+        const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999);
+        const label: string = monthNames[ref.getMonth()] ?? "";
+        arr.push({
+          key: label,
+          ventas: ventas.filter(v => {
+            const dt = new Date(v.fecha);
+            return dt >= start && dt <= end;
+          })
+        });
+      }
+      return arr;
+    })();
+    return {
+      semanal: sumBuckets(semanalBuckets),
+      mensual: sumBuckets(mensualBuckets),
+      anual: sumBuckets(anualBuckets)
+    } as Record<PeriodoClave, Array<{ label: string; ingresos: number; productos: number; servicios: number }>>;
+  }, [ventas]);
 
   const getEstadoColor = (estado: string) => {
     switch (estado) {
@@ -183,6 +286,23 @@ export function DashboardPage() {
   };
 
   const generateDailyReportPDF = () => {
+    const ventasRecientesData = (() => {
+      const rows: { producto: string; cliente: string; cantidad: number; precioUnit: number }[] = [];
+      const ordenadas = [...ventas].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).slice(0, 20);
+      ordenadas.forEach(v => {
+        const cliente = v.cliente;
+        const det = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+        det.forEach(d => {
+          rows.push({
+            producto: d.nombre || "Producto",
+            cliente: typeof cliente === "string" ? cliente : "",
+            cantidad: Number(d.cantidad || 1),
+            precioUnit: Number(d.precio || 0)
+          });
+        });
+      });
+      return rows;
+    })();
     // Crear el contenido HTML del reporte
     const reportContent = `
       <!DOCTYPE html>
@@ -481,7 +601,7 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                ${ventasRecientes.map(venta => `
+                ${ventasRecientesData.map(venta => `
                   <tr>
                     <td>${venta.producto}</td>
                     <td>${venta.cliente}</td>
@@ -501,7 +621,7 @@ export function DashboardPage() {
               <p><strong>Citas Completadas:</strong> ${citasHoy.filter(c => c.estado === 'en-curso').length} en curso</p>
               <p><strong>Citas Pendientes:</strong> ${citasHoy.filter(c => c.estado === 'pendiente').length} por atender</p>
               <p><strong>Productos con Stock Bajo:</strong> ${inventarioBajo.length} requieren restock</p>
-              <p><strong>Ventas de Productos:</strong> ${ventasRecientes.length} transacciones realizadas</p>
+              <p><strong>Ventas de Productos:</strong> ${ventasRecientesData.length} transacciones realizadas</p>
           </div>
         </div>
         
@@ -587,19 +707,27 @@ export function DashboardPage() {
 
   const ventasPorProducto = useMemo(() => {
     const mapa = new Map<string, { producto: string; unidades: number; ingresos: number }>();
-    ventasRecientes.forEach(venta => {
-      const ingreso = venta.cantidad * venta.precioUnit;
-      if (!mapa.has(venta.producto)) {
-        mapa.set(venta.producto, { producto: venta.producto, unidades: 0, ingresos: 0 });
-      }
-      const registro = mapa.get(venta.producto)!;
-      registro.unidades += venta.cantidad;
-      registro.ingresos += ingreso;
+    const ordenadas = [...ventas].sort((a, b) => {
+      const da = new Date(a.fecha).getTime();
+      const db = new Date(b.fecha).getTime();
+      return db - da;
+    }).slice(0, 30);
+    ordenadas.forEach(v => {
+      const detalles = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+      detalles.forEach(d => {
+        const nombre = d.nombre || "Producto";
+        const unidades = Number(d.cantidad || 1);
+        const ingreso = Number(d.precio || 0) * unidades;
+        const actual = mapa.get(nombre) || { producto: nombre, unidades: 0, ingresos: 0 };
+        actual.unidades += unidades;
+        actual.ingresos += ingreso;
+        mapa.set(nombre, actual);
+      });
     });
     return Array.from(mapa.values()).sort((a, b) => b.ingresos - a.ingresos);
-  }, []);
+  }, [ventas]);
 
-  const totalIngresosRecientes = ventasPorProducto.reduce((acc, item) => acc + item.ingresos, 0);
+  // removed unused totalIngresosRecientes
   const renderIngresosTooltip = ({ active, payload }: any) => {
     if (!active || !payload || !payload.length) return null;
     const item = payload[0]?.payload;

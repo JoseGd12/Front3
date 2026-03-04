@@ -570,7 +570,7 @@ export function ServiciosPage() {
 
         {/* Dialog de Detalle */}
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-          <DialogContent className="bg-gray-darkest border-gray-dark max-w-7xl overflow-visible">
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-3xl w-full overflow-visible">
             <DialogHeader>
               <DialogTitle className="text-white-primary">Detalle del Servicio</DialogTitle>
               <DialogDescription className="text-gray-lightest">
