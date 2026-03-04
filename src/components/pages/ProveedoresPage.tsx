@@ -278,7 +278,8 @@ export function ProveedoresPage() {
       tipoDocumentoContactoAdicional: "",
       documentoContactoAdicional: "",
       telefonoContactoAdicional: "",
-      correoContactoAdicional: ""
+      correoContactoAdicional: "",
+      estado: true
     });
     setShowProveedorFormErrors(false);
     setProveedorValidationAttempt(0);
@@ -317,15 +318,23 @@ export function ProveedoresPage() {
     }
 
     try {
-      const nuevoProveedor = await proveedorService.crearProveedor({
+      const documentoUnico = (formData.nit || '').trim();
+      const payload = {
         ...formData,
+        nit: documentoUnico,
+        // Para Naturales, el backend usa numeroIdentificacion; para Jurídico, nit.
+        numeroIdentificacion: documentoUnico,
+        // Valor por defecto razonable si no viene del formulario en Naturales
+        tipoIdentificacion: formData.tipoProveedor === 'Natural' ? (formData as any).tipoIdentificacion || 'CC' : (formData as any).tipoIdentificacion,
         fechaCreacion: new Date().toLocaleDateString('es-ES', {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric'
         }),
         activo: true
-      });
+      };
+
+      const nuevoProveedor = await proveedorService.crearProveedor(payload as any);
 
       created("Proveedor creado", `El proveedor "${formData.nombre}" ha sido agregado exitosamente al sistema.`);
 
@@ -412,7 +421,14 @@ export function ProveedoresPage() {
     }
 
     try {
-      const tempFormData = { ...formData };
+      // Unificar el documento en un solo campo antes de actualizar
+      const documentoUnico = (formData.nit || '').trim();
+      const tempFormData = {
+        ...formData,
+        nit: documentoUnico,
+        numeroIdentificacion: documentoUnico,
+        tipoIdentificacion: formData.tipoProveedor === 'Natural' ? (formData as any).tipoIdentificacion || 'CC' : (formData as any).tipoIdentificacion
+      };
       const tempSelectedProveedor = { ...selectedProveedor };
       setIsEditDialogOpen(false);
       if (tempSelectedProveedor.id) {
@@ -1049,7 +1065,7 @@ export function ProveedoresPage() {
                       <h3 className="text-lg font-medium text-white-primary mb-2">Error de conexión</h3>
                       <p className="text-gray-lightest mb-4">{pageError}</p>
                       <button
-                        onClick={cargarProveedores}
+                        onClick={() => cargarProveedores()}
                         className="elegante-button-primary text-sm"
                       >
                         Reintentar

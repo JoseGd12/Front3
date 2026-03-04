@@ -689,7 +689,7 @@ export function ClientesPage() {
           let stillExists = false;
           try {
             const check = await clientesService.getClienteById(idNum);
-            if (check && (check.id || check.Id)) {
+            if (check && (check.id || (check as any).Id)) {
               stillExists = true;
             }
           } catch {

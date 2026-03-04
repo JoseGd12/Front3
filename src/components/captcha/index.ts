@@ -6,6 +6,3 @@ export { CheckboxCaptcha } from './CheckboxCaptcha';
 export { ImageSelectionCaptcha } from './ImageSelectionCaptcha';
 export { CaptchaSelector, type CaptchaType } from './CaptchaSelector';
 export { SimpleCaptcha } from './SimpleCaptcha';
-
-// Re-exportar tipos útiles
-export type { CaptchaType };

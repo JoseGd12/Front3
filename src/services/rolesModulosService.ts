@@ -247,8 +247,9 @@ export class RolesModulosService {
       const rolesModulos = await apiService.getRolesModulosByRolId(rolId);
       
       for (const rm of rolesModulos) {
-        if (permisosMap[rm.moduloId]) {
-          await this.actualizarPermisos(rm.id!, permisosMap[rm.moduloId]);
+        const perms = permisosMap[rm.moduloId];
+        if (perms) {
+          await this.actualizarPermisos(rm.id!, perms);
         }
       }
       

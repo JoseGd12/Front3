@@ -3,7 +3,7 @@ import { Search, Star, Clock, DollarSign, Scissors, Check, Calendar, Sparkles, A
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 // Función para formatear moneda colombiana
 const formatCurrency = (amount: number): string => {

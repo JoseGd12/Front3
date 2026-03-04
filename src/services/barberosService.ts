@@ -35,7 +35,7 @@ export interface CreateBarberoData {
   fechaNacimiento: string;
   rol: string;
   status: string;
-  fotoPerfil: string;
+  fotoPerfil?: string;
   especialidad?: string;
   estado?: boolean;
 }

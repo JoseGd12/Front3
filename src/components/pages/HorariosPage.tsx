@@ -137,8 +137,8 @@ export function HorariosPage() {
       // Mapear barberos de API a formato local para evitar problemas de nombres de propiedades
       const barberosMapeados = barberosData.map(b => ({
         id: b.id,
-        nombre: b.nombres || (b as any).nombre,
-        apellido: b.apellidos || (b as any).apellido,
+        nombre: (b as any).nombres || b.nombre,
+        apellido: (b as any).apellidos || b.apellido,
         documento: b.documento || (b as any).documento || '',
         tipoDocumento: b.tipoDocumento || (b as any).tipoDocumento || 'CC',
         estado: b.estado

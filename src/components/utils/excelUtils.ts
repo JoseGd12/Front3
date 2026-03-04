@@ -95,7 +95,10 @@ export const filterDataByDateRange = (
 
 // Función para parsear fecha en formato dd-mm-yyyy
 export const parseDate = (dateString: string): Date => {
-  const [day, month, year] = dateString.split('-').map(Number);
+  const parts = (dateString || '').split('-').map(Number);
+  const day = parts[0] ?? 1;
+  const month = parts[1] ?? 1;
+  const year = parts[2] ?? 1970;
   return new Date(year, month - 1, day);
 };
 

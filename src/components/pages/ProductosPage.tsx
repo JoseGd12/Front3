@@ -823,7 +823,7 @@ export function ProductosPage() {
                                 }}
                                 className={`elegante - input h - 9 text - sm ${showProductoFormErrors && Number(nuevoProducto.precioBase) < 0 ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''} `}
                               />
-                              {showProductoFormErrors && (nuevoProducto.precioBase === '' || Number(nuevoProducto.precioBase) < 0) && (
+                              {showProductoFormErrors && (String(nuevoProducto.precioBase) === '' || Number(nuevoProducto.precioBase) < 0) && (
                                 <p className="text-[10px] text-red-400 mt-1">Precio inválido</p>
                               )}
                             </div>

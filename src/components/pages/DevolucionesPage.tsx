@@ -749,6 +749,8 @@ export function DevolucionesPage() {
       clienteId: null,
       cliente: '',
       clienteDocumento: '',
+      productoId: 0,
+      producto: '',
       cantidad: 1,
       precioUnitario: 0,
       motivoCategoria: '',

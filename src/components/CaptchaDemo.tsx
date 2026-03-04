@@ -206,7 +206,7 @@ export function CaptchaDemo({ onBack }: CaptchaDemoProps) {
                 {captchaTypes.map((type) => (
                   <button
                     key={type.id}
-                    onClick={() => setActiveDemo(type.id)}
+                  onClick={() => setActiveDemo(type.id as 'selector' | CaptchaType)}
                     className={`w-full p-3 rounded-lg text-left transition-all duration-200 flex items-center gap-3 ${
                       activeDemo === type.id
                         ? 'bg-orange-primary text-black-primary'

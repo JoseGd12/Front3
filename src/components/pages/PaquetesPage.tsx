@@ -80,7 +80,7 @@ export function PaquetesPage() {
         ]);
         setPaquetes(paquetesData);
         setServiciosDisponibles(serviciosData.filter(s => s.estado === true));
-        await enrichPaquetesWithServicios(paquetesData);
+        await enrichPaquetesWithServicios();
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {

@@ -222,7 +222,8 @@ export function ComprasPage() {
       precio: number,
       stockVentas: number,
       stockInsumos: number,
-      imagen?: string
+      imagen?: string,
+      categoria?: string
     }>
   };
 
@@ -821,7 +822,7 @@ export function ComprasPage() {
       } catch {
         // silently ignore doc fetch errors
       }
-      setSelectedCompra({ ...compra, detalles: detalles, responsableDocumento });
+      setSelectedCompra({ ...compra, detalles: detalles, responsableDocumento } as any);
       setIsDetailDialogOpen(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la compra");

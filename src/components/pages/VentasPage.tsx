@@ -1375,7 +1375,7 @@ export function VentasPage() {
           // Revertir el stock de los productos vendidos
           if (venta.productosDetalle && Array.isArray(venta.productosDetalle)) {
             for (const p of venta.productosDetalle) {
-              const pId = Number(p.id || p.productoId || p.ProductoId);
+              const pId = Number((p as any).id || (p as any).productoId || (p as any).ProductoId);
               if (!isNaN(pId)) {
                 await productoService.adjustStock(pId, p.cantidad, 'increment', 'ventas');
               }

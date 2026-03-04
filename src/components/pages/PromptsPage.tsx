@@ -195,10 +195,7 @@ export function PromptsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <Switch
-                            checked={prompt.status}
-                            size="sm"
-                          />
+                          <Switch checked={prompt.status} />
                           {prompt.status ? (
                             <Play className="w-4 h-4 text-green-600" />
                           ) : (

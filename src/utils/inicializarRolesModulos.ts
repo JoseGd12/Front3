@@ -49,7 +49,7 @@ export async function inicializarRolesModulos() {
       console.log(`📦 Módulos a asignar: ${modulosIds.map(id => MODULOS_DESCRIPTION[id as keyof typeof MODULOS_DESCRIPTION]).join(', ')}`);
       
       try {
-        await rolesModulosService.asignarModulosARol(rolId, modulosIds as number[]);
+        await rolesModulosService.asignarModulosARolSimple(rolId, modulosIds as number[]);
         console.log(`✅ Rol ${rolNombre} configurado exitosamente`);
       } catch (error) {
         console.error(`❌ Error configurando rol ${rolNombre}:`, error);

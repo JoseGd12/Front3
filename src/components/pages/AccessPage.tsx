@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Label } from "../ui/label";
 import { Eye, EyeOff, Lock, Mail, User, Key, Shield, ArrowLeft, CheckCircle, RefreshCw } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 export function AccessPage() {
   const [showPassword, setShowPassword] = useState(false);

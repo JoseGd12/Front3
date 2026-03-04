@@ -18,6 +18,30 @@ export interface Insumo {
 
 const API_BASE_URL = '/api';
 
+const pickNumber = (obj: any, keys: string[], fallback = 0) => {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && v !== '') return Number(v);
+  }
+  return fallback;
+};
+
+const inferNumberByKeyMatch = (
+  obj: any,
+  matcher: (key: string) => boolean,
+  fallback = 0
+) => {
+  if (!obj || typeof obj !== 'object') return fallback;
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (!matcher(k)) continue;
+    const n = Number(v);
+    if (!Number.isNaN(n)) return n;
+  }
+
+  return fallback;
+};
+
 class InsumosService {
   private async request(endpoint: string, options: RequestInit = {}): Promise<Response> {
     const url = `${API_BASE_URL}${endpoint}`;
@@ -55,30 +79,6 @@ class InsumosService {
       if (Array.isArray(raw) && raw.length > 0) {
         console.log('🧪 Producto raw[0] desde API:', raw[0]);
       }
-
-      const pickNumber = (obj: any, keys: string[], fallback = 0) => {
-        for (const k of keys) {
-          const v = obj?.[k];
-          if (v !== undefined && v !== null && v !== '') return Number(v);
-        }
-        return fallback;
-      };
-
-      const inferNumberByKeyMatch = (
-        obj: any,
-        matcher: (key: string) => boolean,
-        fallback = 0
-      ) => {
-        if (!obj || typeof obj !== 'object') return fallback;
-
-        for (const [k, v] of Object.entries(obj)) {
-          if (!matcher(k)) continue;
-          const n = Number(v);
-          if (!Number.isNaN(n)) return n;
-        }
-
-        return fallback;
-      };
 
       const data: Insumo[] = (Array.isArray(raw) ? raw : []).map((p: any) => {
         const categoria = (() => {

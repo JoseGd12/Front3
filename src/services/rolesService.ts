@@ -33,6 +33,35 @@ class RolesService {
     return this.request<Role[]>('/Roles');
   }
 
+  getRoleById(id: number): Promise<Role> {
+    return this.request<Role>(`/Roles/${id}`);
+  }
+
+  createRole(data: Partial<Role>): Promise<Role> {
+    const payload = {
+      Nombre: data.nombre ?? '',
+      Descripcion: data.descripcion ?? '',
+      Estado: data.estado ?? true
+    };
+    return this.request<Role>('/Roles', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  updateRole(id: number, data: Partial<Role>): Promise<Role> {
+    const payload = {
+      Id: id,
+      Nombre: data.nombre ?? '',
+      Descripcion: data.descripcion ?? '',
+      Estado: data.estado ?? true
+    };
+    return this.request<Role>(`/Roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
   deleteRole(id: number): Promise<void> {
     return this.request<void>(`/Roles/${id}`, { method: 'DELETE' });
   }
