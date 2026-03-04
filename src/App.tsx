@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+  import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./components/AuthContext";
+import { Toaster } from "sonner";
 import { ThemeProvider } from "./components/ThemeContext";
+import { AlertProvider, GlobalAlertContainer } from "./components/ui/custom-alert";
 import { Dashboard } from "./components/Dashboard";
 import { ClienteDashboard } from "./components/ClienteDashboard";
 import { LandingPage } from "./components/LandingPage";
@@ -9,12 +11,8 @@ import { RegisterPage } from "./components/RegisterPage";
 import { EmailVerificationPage } from "./components/EmailVerificationPage";
 
 function AppContent() {
-  const { isAuthenticated, isAdmin, isCliente, logout } = useAuth();
+  const { isAuthenticated, isAdmin, isCliente } = useAuth();
   const [publicView, setPublicView] = useState<"landing" | "login" | "register" | "verify">("landing");
-
-  // Estados para forzar cambio de contraseña
-  const [pwdStatus, setPwdStatus] = useState<'OK' | 'FIRST_LOGIN' | 'EXPIRED' | null>(null);
-  const [checkingPwd, setCheckingPwd] = useState(false);
 
   const [resetData, setResetData] = useState<{ email: string; token: string } | null>(null);
   const [verifyCode, setVerifyCode] = useState<string>('');
@@ -22,21 +20,6 @@ function AppContent() {
   useEffect(() => {
     if (isAuthenticated) {
       setPublicView("landing");
-      setCheckingPwd(true);
-
-      const checkPwd = async () => {
-        const { auth } = await import('./services/firebase');
-        const { checkPasswordPolicy } = await import('./services/authUtils');
-
-        // Esperamos a que Firebase actualice auth.currentUser si es necesario
-        // En un hook o contexto onAuthStateChanged esto sería inmediato
-        const status = await checkPasswordPolicy(auth.currentUser);
-        setPwdStatus(status);
-        setCheckingPwd(false);
-      };
-      checkPwd();
-    } else {
-      setPwdStatus(null);
     }
 
     // Solución REAL: Detectar parámetros y ruta de recuperación/verificación
@@ -55,7 +38,7 @@ function AppContent() {
 
       const newUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
-    }
+    } 
     else if ((mode === 'verifyEmail' || (isVerifyPage && mode !== 'resetPassword')) && oobCode) {
       console.log('📧 Detectado oobCode para verificación de email');
       setVerifyCode(oobCode);
@@ -70,7 +53,7 @@ function AppContent() {
   if (!isAuthenticated) {
     if (publicView === "verify") {
       return (
-        <EmailVerificationPage
+        <EmailVerificationPage 
           oobCode={verifyCode}
           onVerificationComplete={() => {
             setVerifyCode('');
@@ -106,25 +89,6 @@ function AppContent() {
     );
   }
 
-  if (checkingPwd) {
-    return (
-      <div className="min-h-screen bg-gray-darkest flex items-center justify-center">
-        <div className="text-white-primary animate-pulse">Validando credenciales Seguras...</div>
-      </div>
-    );
-  }
-
-  if (pwdStatus === 'FIRST_LOGIN' || pwdStatus === 'EXPIRED') {
-    const { ForzarCambioPassword } = require('./components/ForzarCambioPassword');
-    return (
-      <ForzarCambioPassword
-        reason={pwdStatus === 'FIRST_LOGIN' ? 'first_login' : 'expired'}
-        onComplete={() => setPwdStatus('OK')}
-        onCancelLogout={logout}
-      />
-    );
-  }
-
   // Full dashboard for admin users
   if (isAdmin()) {
     return <Dashboard />;
@@ -142,7 +106,23 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppContent />
+        <AlertProvider>
+          <>
+            <AppContent />
+            <GlobalAlertContainer />
+            <Toaster
+              position="bottom-right"
+              duration={8000}
+              closeButton
+              toastOptions={{
+                style: {
+                  fontSize: '0.95rem',
+                  lineHeight: '1.4',
+                },
+              }}
+            />
+          </>
+        </AlertProvider>
       </AuthProvider>
     </ThemeProvider>
   );
