@@ -104,6 +104,8 @@ export function EntregaInsumosPage() {
   const [showInsumoResults, setShowInsumoResults] = useState(false);
   const [barberoSearchTerm, setBarberoSearchTerm] = useState("");
   const [showBarberoResults, setShowBarberoResults] = useState(false);
+  const [barberoSearchFocused, setBarberoSearchFocused] = useState(false);
+  const [insumoSearchFocused, setInsumoSearchFocused] = useState(false);
   const [showEntregaFormErrors, setShowEntregaFormErrors] = useState(false);
   const [entregaValidationAttempt, setEntregaValidationAttempt] = useState(0);
   const [showAddInsumoErrors, setShowAddInsumoErrors] = useState(false);
@@ -119,6 +121,8 @@ export function EntregaInsumosPage() {
   const addProductoRowRef = useRef<HTMLDivElement | null>(null);
   const productosAgregadosRef = useRef<HTMLDivElement | null>(null);
   const numeroEntregas = 21 + entregas.length;
+  const [isProductoDetalleOpen, setIsProductoDetalleOpen] = useState(false);
+  const [productoDetalle, setProductoDetalle] = useState<any | null>(null);
 
   // Función para normalizar texto de búsqueda (quitar tildes, minúsculas)
   const normalizeSearchText = (value: unknown): string => {
@@ -398,16 +402,37 @@ export function EntregaInsumosPage() {
 
     const raw =
       (entrega as any).insumosDetalle ||
+      (entrega as any).InsumosDetalle ||
       (entrega as any).detalleEntregasInsumos ||
+      (entrega as any).DetalleEntregasInsumos ||
       (entrega as any).detalles ||
+      (entrega as any).Detalles ||
       (entrega as any).insumos ||
+      (entrega as any).Insumos ||
       (entrega as any).productos ||
+      (entrega as any).Productos ||
       [];
 
     const list = Array.isArray(raw) ? raw : [];
+    
+    if (list.length > 0) {
+      console.log('🔍 Normalizando detalles de entrega:', { id: entrega.id, rawLength: list.length, firstItem: list[0] });
+    }
 
     return list.map((detalle: any, index: number) => {
-      const producto = detalle?.producto || detalle || {};
+      // DEBUG: Ver estructura del primer elemento para diagnosticar problemas de mapeo
+      if (index === 0) {
+        console.log('🔍 Inspeccionando estructura de detalle:', detalle);
+      }
+
+      // Intentar obtener el ID del producto
+      const productoId = detalle?.productoId ?? detalle?.ProductoId ?? detalle?.producto?.id ?? detalle?.Producto?.Id ?? detalle?.id ?? detalle?.Id;
+      
+      // Buscar información completa del producto en el catálogo global si es posible
+      const productoCatalogo = insumos.find(i => Number(i.id) === Number(productoId));
+      
+      // Objeto producto base (prioridad: catálogo global > objeto anidado > objeto detalle)
+      const producto = productoCatalogo || detalle?.producto || detalle?.Producto || detalle || {};
 
       const categoriaValue =
         producto?.categoria?.nombre ||
@@ -415,6 +440,7 @@ export function EntregaInsumosPage() {
         producto?.categoriaNombre ||
         producto?.CategoriaNombre ||
         producto?.categoria ||
+        producto?.Categoria ||
         detalle?.categoria?.nombre ||
         detalle?.categoria?.Nombre ||
         detalle?.categoriaNombre ||
@@ -428,17 +454,28 @@ export function EntregaInsumosPage() {
         producto?.imagenProduc ||
         producto?.ImagenProduc ||
         producto?.imagenUrl ||
+        producto?.ImagenUrl ||
         detalle?.imagen ||
         detalle?.imagenProduc ||
         detalle?.ImagenProduc ||
         detalle?.imagenUrl ||
+        detalle?.ImagenUrl ||
         '';
 
-      const cantidadValue = Number(detalle?.cantidad ?? producto?.cantidad ?? 0);
+      const cantidadValue = Number(
+        detalle?.cantidad ?? 
+        detalle?.Cantidad ?? 
+        producto?.cantidad ?? 
+        producto?.Cantidad ?? 
+        0
+      );
+      
+      // El precio debe venir preferiblemente del detalle histórico, si no, del producto actual
       const precioValue = Number(
         detalle?.precio ??
         detalle?.Precio ??
         detalle?.precioUnitario ??
+        detalle?.PrecioUnitario ??
         detalle?.precioHistorico ??
         detalle?.PrecioHistorico ??
         producto?.precio ??
@@ -449,7 +486,7 @@ export function EntregaInsumosPage() {
       );
 
       return {
-        id: Number(producto?.id ?? detalle?.id ?? index),
+        id: Number(productoId ?? index),
         nombre: String(producto?.nombre ?? producto?.Nombre ?? detalle?.nombre ?? detalle?.Nombre ?? `Insumo ${index + 1}`),
         categoria: String(categoriaValue || 'Sin categoría'),
         cantidad: Number.isFinite(cantidadValue) ? cantidadValue : 0,
@@ -741,23 +778,24 @@ export function EntregaInsumosPage() {
 
   // Función para ver detalles completos de una entrega consumiendo la API
   const handleViewDetails = async (entrega: EntregaInsumo) => {
+    // 1. Mostrar inmediatamente lo que tenemos para respuesta rápida
+    console.log('👀 Visualizando entrega (datos locales):', entrega);
+    setSelectedEntrega(entrega);
+    setIsDetailDialogOpen(true);
+
     try {
-      // Obtener detalles completos desde la API
+      // 2. Intentar obtener detalles completos en segundo plano para enriquecer la data
       const entregaCompleta = await entregaInsumosService.getEntregaById(entrega.id.toString());
 
       if (entregaCompleta) {
+        console.log('✅ Detalles completos cargados:', entregaCompleta);
+        // 3. Si tenemos éxito, actualizamos con la info completa
         setSelectedEntrega(entregaCompleta);
-      } else {
-        setSelectedEntrega(entrega);
       }
-
-      setIsDetailDialogOpen(true);
     } catch (error) {
-      console.error('❌ Error obteniendo detalles de entrega:', error);
-      // Si falla la API, mostrar los datos locales que tenemos
-      setSelectedEntrega(entrega);
-      setIsDetailDialogOpen(true);
-      toast.error('No se pudieron cargar los detalles completos');
+      console.error('⚠️ No se pudieron cargar detalles adicionales (se mantienen datos locales):', error);
+      // No mostramos error al usuario para no interrumpir la experiencia, 
+      // ya que está viendo la información básica que ya teníamos.
     }
   };
 
@@ -1226,10 +1264,19 @@ export function EntregaInsumosPage() {
                               setShowBarberoResults(true);
                               setNuevaEntrega({ ...nuevaEntrega, barberoSeleccionado: 0 });
                             }}
-                            onFocus={() => setShowBarberoResults(true)}
+                            onFocus={() => {
+                              setBarberoSearchFocused(true);
+                              setShowBarberoResults(true);
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                setBarberoSearchFocused(false);
+                                setShowBarberoResults(false);
+                              }, 120);
+                            }}
                             className={`elegante-input pl-11 w-full ${showEntregaFormErrors && !nuevaEntrega.barberoSeleccionado ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                           />
-                          {showBarberoResults && barberoSearchTerm.trim() !== "" && (
+                          {(barberoSearchFocused && showBarberoResults && barberoSearchTerm.trim() !== "") && (
                             <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-80 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                               {(() => {
                                 const query = normalizeSearchText(barberoSearchTerm);
@@ -1264,6 +1311,15 @@ export function EntregaInsumosPage() {
                                 return filteredResults.map((barbero) => (
                                   <div
                                     key={barbero.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      setNuevaEntrega({ ...nuevaEntrega, barberoSeleccionado: Number(barbero.id ?? 0) });
+                                      setBarberoSearchTerm(
+                                        `${getFullName(barbero.nombre, barbero.apellido) || ""}${barbero.documento ? ` — CC ${barbero.documento}` : ""}`
+                                      );
+                                      setShowBarberoResults(false);
+                                      if (showEntregaFormErrors) setShowEntregaFormErrors(false);
+                                    }}
                                     onClick={() => {
                                       setNuevaEntrega({ ...nuevaEntrega, barberoSeleccionado: Number(barbero.id ?? 0) });
                                       setBarberoSearchTerm(
@@ -1315,7 +1371,16 @@ export function EntregaInsumosPage() {
                                   setShowInsumoResults(true);
                                   setInsumoSeleccionado(0);
                                 }}
-                                onFocus={() => setShowInsumoResults(true)}
+                                onFocus={() => {
+                                  setInsumoSearchFocused(true);
+                                  setShowInsumoResults(true);
+                                }}
+                                onBlur={() => {
+                                  setTimeout(() => {
+                                    setInsumoSearchFocused(false);
+                                    setShowInsumoResults(false);
+                                  }, 120);
+                                }}
                                 className={`elegante-input pl-11 pr-10 w-full ${showAddInsumoErrors && !insumoSeleccionado ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                               />
                               {insumoSearchTerm && (
@@ -1332,7 +1397,7 @@ export function EntregaInsumosPage() {
                                 </button>
                               )}
 
-                              {showInsumoResults && insumoSearchTerm.trim() !== "" && (
+                              {(insumoSearchFocused && showInsumoResults && insumoSearchTerm.trim() !== "") && (
                                 <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                                   {(() => {
                                     const query = normalizeSearchText(insumoSearchTerm);
@@ -1360,6 +1425,13 @@ export function EntregaInsumosPage() {
                                     return filteredResults.map((insumo) => (
                                       <div
                                         key={insumo.id}
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          setInsumoSeleccionado(Number(insumo.id));
+                                          setInsumoSearchTerm(insumo.nombre);
+                                          setShowInsumoResults(false);
+                                          if (showAddInsumoErrors) setShowAddInsumoErrors(false);
+                                        }}
                                         onClick={() => {
                                           setInsumoSeleccionado(Number(insumo.id));
                                           setInsumoSearchTerm(insumo.nombre);
@@ -1407,25 +1479,30 @@ export function EntregaInsumosPage() {
                               className={`elegante-input no-spin ${showAddInsumoErrors && (!cantidadInsumoInput.trim() || !cantidadInsumo || cantidadInsumo <= 0) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                               placeholder="Cantidad"
                               value={cantidadInsumoInput}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                if (v.length <= 10) {
-                                  setCantidadInsumoInput(v);
-                                  if (showAddInsumoErrors) setShowAddInsumoErrors(false);
-                                  if (v.trim() === '') {
-                                    setCantidadInsumo(0);
-                                  } else {
-                                    const n = Number(v);
-                                    if (!Number.isNaN(n)) setCantidadInsumo(Math.max(0, Math.floor(n)));
-                                  }
+                              onKeyDown={(e) => {
+                                if (e.key === '-' || e.key === 'e' || e.key === '+' || e.key === '.') {
+                                  e.preventDefault();
                                 }
                               }}
+                              onPaste={(e) => {
+                                const text = e.clipboardData?.getData('text') || '';
+                                if (/[^\d]/.test(text) || text.length > 2) {
+                                  e.preventDefault();
+                                  const cleaned = text.replace(/\D+/g, '').slice(0, 2);
+                                  setCantidadInsumoInput(cleaned);
+                                  const n = Number(cleaned || 0);
+                                  setCantidadInsumo(Number.isNaN(n) ? 0 : Math.max(0, Math.floor(n)));
+                                  if (showAddInsumoErrors) setShowAddInsumoErrors(false);
+                                }
+                              }}
+                              onChange={(e) => {
+                                const cleaned = e.target.value.replace(/\D+/g, '').slice(0, 2);
+                                setCantidadInsumoInput(cleaned);
+                                const n = Number(cleaned || 0);
+                                setCantidadInsumo(Number.isNaN(n) ? 0 : Math.max(0, Math.floor(n)));
+                                if (showAddInsumoErrors) setShowAddInsumoErrors(false);
+                              }}
                             />
-                            <div className="flex justify-start mt-1">
-                              <span className="text-xs text-gray-500 font-medium">
-                                {cantidadInsumoInput.length}/10 caracteres
-                              </span>
-                            </div>
                             {(() => {
                               const selected = insumos.find(i => Number(i.id) === Number(insumoSeleccionado));
                               const stockDisp = selected ? (selected.stockInsumos ?? selected.stock) : 0;
@@ -1445,10 +1522,7 @@ export function EntregaInsumosPage() {
                                     <p className="text-xs text-red-400">Ingresa una cantidad válida.</p>
                                   )}
                                   {isStockExceeded && (
-                                    <p className="text-xs text-red-500 font-bold animate-pulse mt-1">
-                                      ⚠️ Se está excediendo la cantidad máxima actual de stock para entregas.{` `}
-                                      {maxAdicional >= 0 ? `(máximo adicional permitido: ${maxAdicional})` : ''}
-                                    </p>
+                                    <p className="text-xs text-red-500 font-bold animate-pulse mt-1">Stock maximo excedido ( maximo adicional: {maxAdicional} )</p>
                                   )}
                                 </>
                               );
@@ -1871,71 +1945,89 @@ export function EntregaInsumosPage() {
 
                   return (
                     <div className="space-y-6">
-                      <div>
-                        <h4 className="text-white-primary font-semibold mb-3">Productos agregados</h4>
-                        <div className="space-y-2 max-h-52 overflow-y-auto">
-                          {detalleInsumos.length === 0 ? (
-                            <p className="text-gray-lightest text-center py-4">No hay productos agregados</p>
-                          ) : (
-                            detalleInsumos.map((insumo) => (
-                              <div key={insumo.id} className="bg-gray-darker rounded-lg px-3 py-2.5 border-l-2 border-orange-primary/20">
-                                <div className="flex items-center gap-4 flex-nowrap min-w-0">
-                                  <div className="shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-dark border border-gray-dark flex items-center justify-center">
-                                    <ImageRenderer
-                                      url={insumo.imagen || ''}
-                                      alt={insumo.nombre}
-                                      className="w-full h-full border-0 bg-transparent"
-                                    />
+                      <div className="mt-8">
+                        <div className="bg-gray-darker border border-gray-dark rounded-xl overflow-hidden">
+                          <div className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-orange-primary/10 flex items-center justify-center border border-orange-primary/20">
+                                  <Package className="w-5 h-5 text-orange-primary" />
+                                </div>
+                                <div>
+                                  <h4 className="text-white-primary font-bold text-lg">Resumen</h4>
+                                  <p className="text-xs text-gray-lighter">Productos agregados a la entrega</p>
+                                </div>
+                              </div>
+                              <div className="bg-gray-dark/50 px-3 py-1.5 rounded-full border border-gray-medium">
+                                <span className="text-xs font-medium text-gray-lightest">
+                                  {detalleInsumos.length} {detalleInsumos.length === 1 ? 'producto único' : 'productos únicos'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {detalleInsumos.length === 0 ? (
+                              <div className="text-center py-10 border-2 border-dashed border-gray-dark rounded-xl bg-gray-darkest/30">
+                                <Package className="w-12 h-12 mx-auto mb-3 text-gray-lightest opacity-50" />
+                                <p className="text-gray-lightest text-sm">No hay productos en esta entrega</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-6">
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-wider text-gray-lighter font-semibold mb-3 ml-1"></p>
+                                  <div className="flex flex-wrap gap-3">
+                                    {detalleInsumos.map((item) => (
+                                      <div 
+                                        key={item.id}
+                                        onClick={() => { setProductoDetalle(item); setIsProductoDetalleOpen(true); }}
+                                        className="group relative flex items-center gap-3 bg-gray-darker/50 border border-gray-dark hover:border-orange-primary/30 rounded-xl pr-4 pl-2 py-2 transition-all duration-300 hover:bg-gray-dark/50 cursor-pointer"
+                                      >
+                                        <div className="relative shrink-0">
+                                          <div className="w-10 h-10 rounded-lg bg-gray-dark overflow-hidden flex items-center justify-center">
+                                            {item.imagen ? (
+                                              <ImageRenderer
+                                                url={item.imagen}
+                                                alt={item.nombre}
+                                                className="w-full h-full object-cover"
+                                              />
+                                            ) : (
+                                              <span className="text-[11px] font-bold text-gray-300">
+                                                {String(item.nombre || 'N').trim().charAt(0).toUpperCase()}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-col max-w-[140px]">
+                                          <span className="text-xs font-semibold text-white-primary truncate group-hover:text-orange-primary transition-colors">
+                                            {item.nombre}
+                                          </span>
+                                          <span className="text-[10px] text-gray-lighter truncate">
+                                            {item.categoria}
+                                          </span>
+                                        </div>
+                                        <div className="ml-auto">
+                                          <span className="px-2 py-0.5 rounded-md bg-orange-primary text-black-primary text-[11px] font-bold tabular-nums">
+                                            {item.cantidad}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
+                                </div>
 
-                                  <div className="min-w-0 flex-1 shrink flex flex-col items-center justify-center">
-                                    <span
-                                      className="text-white-primary font-semibold text-base truncate block text-center w-full"
-                                      title={insumo.nombre}
-                                    >
-                                      {insumo.nombre}
-                                    </span>
-                                    <span className="text-[11px] text-gray-400 truncate block text-center w-full">
-                                      {insumo.categoria}
-                                    </span>
-                                  </div>
-
-                                
-
-                                  <div className="flex flex-col gap-0.5 shrink-0">
-                                    <label className="text-[11px] text-gray-400 font-normal">Cantidad</label>
-                                    <Input
-                                      type="number"
-                                      value={String(insumo.cantidad ?? 0)}
-                                      disabled
-                                      readOnly
-                                      className="w-12 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 bg-gray-medium"
-                                    />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-dark">
+                                  <div className="bg-gray-darker/40 rounded-xl p-4 border border-gray-dark flex flex-col justify-between hover:border-gray-medium transition-colors">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+                                      <p className="text-[10px] text-gray-lighter uppercase tracking-wider font-semibold">Total Unidades</p>
+                                    </div>
+                                    <div className="flex items-end gap-1.5">
+                                      <span className="text-3xl font-bold text-white-primary tracking-tight">{totalCantidad}</span>
+                                      <span className="text-xs text-gray-lighter font-medium mb-1.5">unds</span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="text-white-primary font-semibold mb-4">Resumen</h4>
-                        <div className="bg-gray-darker p-4 rounded-lg border border-gray-dark">
-                          <div className="mt-1">
-                            {detalleInsumos.length === 0 ? (
-                              <p className="text-gray-lightest">No hay productos agregados</p>
-                            ) : (
-                              <p className="text-gray-lightest text-sm leading-relaxed">
-                                {detalleInsumos
-                                  .map((i) => `${i.nombre} (${i.cantidad})`)
-                                  .join(', ')}
-                              </p>
                             )}
-                          </div>
-                          <div className="pt-3 mt-3 border-t border-gray-medium flex items-center justify-between">
-                            <span className="text-gray-lightest">Total productos</span>
-                            <span className="text-orange-primary font-semibold text-base tracking-wide">{totalCantidad} unidades</span>
                           </div>
                         </div>
                       </div>
@@ -1971,6 +2063,76 @@ export function EntregaInsumosPage() {
                   Descargar PDF
                 </button>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={isProductoDetalleOpen} onOpenChange={setIsProductoDetalleOpen}>
+          <DialogContent className="bg-gray-darkest border-gray-dark max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-white-primary flex items-center gap-2">
+                <Package className="w-5 h-5 text-orange-primary" />
+                Detalle del Producto
+              </DialogTitle>
+              <DialogDescription className="text-gray-lightest">
+                Información del producto seleccionado
+              </DialogDescription>
+            </DialogHeader>
+            {productoDetalle && (() => {
+              const insumoActual = insumos.find(i => Number(i.id) === Number(productoDetalle.id));
+              const stockVentasActual = Number(insumoActual?.stockVentas ?? 0);
+              const stockInsumosActual = Number(insumoActual?.stockInsumos ?? insumoActual?.stock ?? 0);
+              const cantidadEntrega = Number(productoDetalle.cantidad || 0);
+              return (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-lg bg-gray-darker overflow-hidden flex items-center justify-center border border-gray-dark">
+                      {productoDetalle.imagen ? (
+                        <ImageRenderer url={productoDetalle.imagen} alt={productoDetalle.nombre} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-bold text-gray-300">
+                          {String(productoDetalle.nombre || 'N').trim().charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark mb-2 truncate">
+                        {productoDetalle.nombre}
+                      </div>
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark truncate">
+                        {productoDetalle.categoria || 'Sin categoría'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-white-primary text-xs">Cantidad de entrega</Label>
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
+                        {cantidadEntrega}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-white-primary text-xs">Stock Ventas actual</Label>
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
+                        {stockVentasActual}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-white-primary text-xs">Stock Insumos actual</Label>
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
+                        {stockInsumosActual}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
+              <button
+                onClick={() => setIsProductoDetalleOpen(false)}
+                className="elegante-button-secondary px-6"
+              >
+                Cerrar
+              </button>
             </div>
           </DialogContent>
         </Dialog>

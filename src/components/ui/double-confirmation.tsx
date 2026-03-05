@@ -11,6 +11,8 @@ export interface DoubleConfirmationAction {
   successMessage: string;
   onExecute: () => void | Promise<void>;
   requireInput?: boolean;
+  confirmButtonText?: string;
+  cancelButtonText?: string;
 }
 
 export function useDoubleConfirmation() {
@@ -48,7 +50,9 @@ export function useDoubleConfirmation() {
         {
           title: action.confirmTitle,
           message: action.confirmMessage,
-          requireInput: action.requireInput ?? true
+          requireInput: action.requireInput ?? true,
+          confirmButtonText: action.confirmButtonText,
+          cancelButtonText: action.cancelButtonText
         }
       );
     } else {
@@ -119,6 +123,8 @@ export function useDoubleConfirmation() {
       successTitle?: string;
       successMessage?: string;
       requireInput?: boolean;
+      confirmButtonText?: string;
+      cancelButtonText?: string;
     }
   ) => {
     executeAction({
@@ -129,7 +135,9 @@ export function useDoubleConfirmation() {
       successTitle: options?.successTitle || 'Elemento eliminado exitosamente',
       successMessage: options?.successMessage || `"${itemName}" ha sido eliminado del sistema.`,
       onExecute,
-      requireInput: options?.requireInput ?? true
+      requireInput: options?.requireInput ?? true,
+      confirmButtonText: options?.confirmButtonText,
+      cancelButtonText: options?.cancelButtonText
     });
   }, [executeAction]);
 

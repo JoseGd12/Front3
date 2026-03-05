@@ -26,6 +26,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../ui/alert-dialog";
 import { Label } from "../ui/label";
+import { Switch } from "../ui/switch";
 import { useCustomAlert } from "../ui/custom-alert";
 import { productoService, ApiProducto } from "../../services/productos";
 import ImageRenderer from "../ui/ImageRenderer";
@@ -60,6 +61,8 @@ export function ProductosPage() {
     categoria: '',
     // categoriaId removed
     precioBase: 0,
+    precioVenta: 0,
+    precioCompra: 0,
     stockVentas: 0,
     stockInsumos: 0,
     minCantidad: 0,
@@ -230,7 +233,7 @@ export function ProductosPage() {
         minCantidad: nuevoProducto.minCantidad || 0,
         marca: nuevoProducto.marca || '',
         imagenProduc: nuevoProducto.imagenProduc || '',
-        activo: true
+        activo: (nuevoProducto as any).activo ?? true
       };
 
       console.log('📤 Creando producto con datos:', {
@@ -240,6 +243,11 @@ export function ProductosPage() {
       console.log('📤 Estado completo de nuevoProducto antes de crear:', nuevoProducto);
 
       const productoCreado = await productoService.createProducto(productoData as any);
+      if ((nuevoProducto as any).activo === false && productoCreado && productoCreado.id) {
+        try {
+          await productoService.toggleProductoActivo(Number(productoCreado.id));
+        } catch {}
+      }
 
       console.log('✅ Producto creado, respuesta completa:', productoCreado);
       console.log('✅ URL de imagen en producto creado:', productoCreado.imagenProduc);
@@ -276,6 +284,8 @@ export function ProductosPage() {
         descripcion: '',
         categoria: '',
         precioBase: 0,
+        precioVenta: 0,
+        precioCompra: 0,
         stockVentas: 0,
         stockInsumos: 0,
         minCantidad: 0,
@@ -288,7 +298,7 @@ export function ProductosPage() {
       setIsDialogOpen(false);
       setIsCreateDialogOpen(false);
 
-      created("Producto creado ✔️", `El producto "${productoCreado.nombre}" ha sido agregado exitosamente al inventario con un precio de ${formatCurrency(precioFinal)}.`);
+      created("Producto creado ✔️", `El producto "${productoCreado.nombre}" ha sido agregado exitosamente al inventario.`);
     } catch (err: any) {
       console.error('Error creating product:', err);
       error('Error al crear producto', err.message || 'No se pudo crear el producto. Inténtalo nuevamente.');
@@ -307,6 +317,8 @@ export function ProductosPage() {
       descripcion: producto.descripcion,
       categoria: categoriaVal,
       precioBase: producto.precioBase,
+      precioVenta: (producto as any).precioVenta ?? producto.precioBase ?? producto.precio ?? 0,
+      precioCompra: (producto as any).precioCompra ?? producto.precioBase ?? producto.precio ?? 0,
       stockVentas,
       stockInsumos,
       minCantidad: producto.minCantidad,
@@ -323,12 +335,13 @@ export function ProductosPage() {
   const handleUpdateProducto = () => {
     const isNombreValid = nuevoProducto.nombre.trim() !== '';
     const isCategoriaValid = nuevoProducto.categoria !== '';
-    const isPrecioValid = Number(nuevoProducto.precioBase) >= 0;
+    const ventaOk = String((nuevoProducto as any).precioVenta) !== '' && Number((nuevoProducto as any).precioVenta) >= 0;
+    const compraOk = String((nuevoProducto as any).precioCompra) !== '' && Number((nuevoProducto as any).precioCompra) >= 0;
 
-    if (!isNombreValid || !isCategoriaValid || !isPrecioValid) {
+    if (!isNombreValid || !isCategoriaValid || !ventaOk || !compraOk) {
       setShowProductoFormErrors(true);
       setProductoValidationAttempt(prev => prev + 1);
-      error("Campos obligatorios", "Por favor completa el nombre, la categoría y el precio correctamente.");
+      error("Campos obligatorios", "Por favor completa el nombre, la categoría y los precios correctamente.");
       return;
     }
     setIsEditDialogOpen(true);
@@ -338,7 +351,8 @@ export function ProductosPage() {
     if (!editingProducto) return;
 
     try {
-      const precioFinal = Number(nuevoProducto.precioBase) || 0;
+      const precioVentaFinal = Number((nuevoProducto as any).precioVenta) || 0;
+      const precioCompraFinal = Number((nuevoProducto as any).precioCompra) || 0;
       const stockVentas = Number(nuevoProducto.stockVentas) || 0;
       const stockInsumos = Number(nuevoProducto.stockInsumos) || 0;
 
@@ -349,7 +363,8 @@ export function ProductosPage() {
         descripcion: nuevoProducto.descripcion,
         categoria: nuevoProducto.categoria,
         categoriaId: selectedCat?.id,
-        precioBase: precioFinal,
+        precioVenta: precioVentaFinal,
+        precioCompra: precioCompraFinal,
         stockVentas,
         stockInsumos,
         minCantidad: nuevoProducto.minCantidad,
@@ -386,6 +401,8 @@ export function ProductosPage() {
         descripcion: '',
         categoria: '',
         precioBase: 0,
+        precioVenta: 0,
+        precioCompra: 0,
         stockVentas: 0,
         stockInsumos: 0,
         minCantidad: 0,
@@ -398,7 +415,7 @@ export function ProductosPage() {
       setIsDialogOpen(false);
       setIsEditDialogOpen(false);
 
-      edited("Producto editado ✔️", `El producto "${productoActualizado.nombre}" ha sido actualizado exitosamente.El nuevo precio es ${formatCurrency(precioFinal)}.`);
+      edited("Producto editado ✔️", `El producto "${productoActualizado.nombre}" ha sido actualizado. Venta: ${formatCurrency(precioVentaFinal)} · Compra: ${formatCurrency(precioCompraFinal)}.`);
     } catch (err: any) {
       console.error('Error updating product:', err);
       error('Error al actualizar producto', err.message || 'No se pudo actualizar el producto. Inténtalo nuevamente.');
@@ -598,6 +615,8 @@ export function ProductosPage() {
                           descripcion: '',
                           categoria: '',
                           precioBase: 0, // Se inicializa automáticamente en 0
+                          precioVenta: 0,
+                          precioCompra: 0,
                           stockVentas: 0,
                           stockInsumos: 0,
                           minCantidad: 0, // Se inicializa automáticamente en 0
@@ -615,7 +634,15 @@ export function ProductosPage() {
                       Nuevo Producto
                     </button>
                   </DialogTrigger>
-                  <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogContent
+                    className="bg-gray-darkest border-gray-dark max-w-2xl max-h-[90vh] overflow-y-auto"
+                    onInteractOutside={(e: any) => {
+                      const target = e.target as HTMLElement | null;
+                      if (target?.closest('[data-alert-container="true"]')) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
                     <DialogHeader>
                       <DialogTitle className="text-white-primary flex items-center gap-2">
                         <Package className="w-5 h-5 text-orange-primary" />
@@ -735,7 +762,7 @@ export function ProductosPage() {
                             value={nuevoProducto.nombre}
                             onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
                             placeholder="Ej: Cadena de Rodio"
-                            className={`elegante - input h - 9 text - sm ${showProductoFormErrors && !nuevoProducto.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''} `}
+                            className="elegante-input h-9 text-sm"
                           />
                           {showProductoFormErrors && !nuevoProducto.nombre.trim() && (
                             <p className="text-[10px] text-red-400 mt-1">El nombre es obligatorio</p>
@@ -811,32 +838,58 @@ export function ProductosPage() {
                         />
                       </div>
 
-                      {/* Fila 4: Precio unitario | Stock ventas | Stock insumos | Stock Total - OCUPANDO LA MITAD - Solo se muestra al EDITAR */}
+                      {/* Fila 4: Precios | Stock total | Stock ventas | Stock insumos - Solo se muestra al EDITAR */}
                       {editingProducto && (
                         <div className="w-1/2">
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
                               <Label className="text-white-primary text-xs flex items-center gap-1.5">
                                 <DollarSign className="w-3.5 h-3.5 text-orange-primary" />
-                                Precio unitario *
+                                Precio venta *
                               </Label>
                               <Input
                                 type="text"
                                 inputMode="decimal"
                                 min={0}
                                 step={0.01}
-                                value={(nuevoProducto.precioBase as number | string) === '' ? '' : (nuevoProducto.precioBase ?? '')}
+                                value={(nuevoProducto as any).precioVenta === '' ? '' : (nuevoProducto.precioVenta ?? '')}
                                 onChange={(e) => {
                                   const v = e.target.value;
-                                  setNuevoProducto({ ...nuevoProducto, precioBase: v === '' ? ('' as any) : (isNaN(Number(v)) ? nuevoProducto.precioBase : Number(v)) });
+                                  setNuevoProducto({
+                                    ...nuevoProducto,
+                                    precioVenta: v === '' ? ('' as any) : (isNaN(Number(v)) ? (nuevoProducto as any).precioVenta : Number(v))
+                                  });
                                 }}
-                                className={`elegante - input h - 9 text - sm ${showProductoFormErrors && Number(nuevoProducto.precioBase) < 0 ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''} `}
+                                className="elegante-input h-9 text-sm"
                               />
-                              {showProductoFormErrors && (String(nuevoProducto.precioBase) === '' || Number(nuevoProducto.precioBase) < 0) && (
-                                <p className="text-[10px] text-red-400 mt-1">Precio inválido</p>
+                              {showProductoFormErrors && (String(nuevoProducto.precioVenta) === '' || Number(nuevoProducto.precioVenta) < 0) && (
+                                <p className="text-[10px] text-red-400 mt-1">Precio venta inválido</p>
                               )}
                             </div>
-                            
+                            <div className="space-y-1.5">
+                              <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                                <DollarSign className="w-3.5 h-3.5 text-orange-primary" />
+                                Precio compra *
+                              </Label>
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                min={0}
+                                step={0.01}
+                                value={(nuevoProducto as any).precioCompra === '' ? '' : (nuevoProducto.precioCompra ?? '')}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setNuevoProducto({
+                                    ...nuevoProducto,
+                                    precioCompra: v === '' ? ('' as any) : (isNaN(Number(v)) ? (nuevoProducto as any).precioCompra : Number(v))
+                                  });
+                                }}
+                                className="elegante-input h-9 text-sm"
+                              />
+                              {showProductoFormErrors && (String(nuevoProducto.precioCompra) === '' || Number(nuevoProducto.precioCompra) < 0) && (
+                                <p className="text-[10px] text-red-400 mt-1">Precio compra inválido</p>
+                              )}
+                            </div>
                             <div className="space-y-1.5">
                               <Label className="text-white-primary text-xs flex items-center gap-1.5 opacity-70 font-medium">
                                 <Package className="w-3.5 h-3.5 text-orange-primary" />
@@ -948,7 +1001,46 @@ export function ProductosPage() {
                           </div>
                         </div>
                       )}
+                      {!editingProducto && (
+                        <div className="space-y-2 border-t border-gray-dark pt-4 mt-4">
+                          <Label className="text-white-primary flex items-center gap-2">
+                            Estado
+                          </Label>
+                          <div className="flex items-center space-x-3">
+                            <Switch
+                              checked={!!(nuevoProducto as any).activo}
+                              onCheckedChange={(checked) =>
+                                setNuevoProducto({ ...nuevoProducto, activo: !!checked })
+                              }
+                              className="data-[state=checked]:bg-orange-primary"
+                            />
+                            <span className={`text-sm font-medium ${nuevoProducto.activo ? 'text-orange-primary' : 'text-gray-lightest'}`}>
+                              {nuevoProducto.activo ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
+
+                    {editingProducto && (
+                      <div className="space-y-2 border-t border-gray-dark pt-4 mt-4">
+                        <Label className="text-white-primary flex items-center gap-2">
+                          Estado
+                        </Label>
+                        <div className="flex items-center space-x-3">
+                          <Switch
+                            checked={!!(nuevoProducto as any).activo}
+                            onCheckedChange={(checked) =>
+                              setNuevoProducto({ ...nuevoProducto, activo: !!checked })
+                            }
+                            className="data-[state=checked]:bg-orange-primary"
+                          />
+                          <span className={`text-sm font-medium ${nuevoProducto.activo ? 'text-orange-primary' : 'text-gray-lightest'}`}>
+                            {nuevoProducto.activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
                       <button onClick={() => setIsDialogOpen(false)} className="elegante-button-secondary px-6">
@@ -996,7 +1088,8 @@ export function ProductosPage() {
 
                     <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Nombre</th>
                     <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Stock total</th>
-                    <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Precio</th>
+                    <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Precio venta</th>
+                    <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Precio compra</th>
                     <th className="text-right  py-3 px-4 text-white-primary font-bold text-sm">Stock Insumos</th>
                     <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Stock Ventas</th>
                     <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
@@ -1028,7 +1121,10 @@ export function ProductosPage() {
                           <span className="text-gray-lighter">{stockTotal}</span>
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <span className="text-gray-lighter">{formatearPrecio(producto.precioBase)}</span>
+                          <span className="text-gray-lighter">{formatearPrecio((producto as any).precioVenta ?? producto.precioBase ?? 0)}</span>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="text-gray-lighter">{formatearPrecio((producto as any).precioCompra ?? 0)}</span>
                         </td>
                         <td className="py-4 px-4 text-center">
                           <span className="text-gray-lighter" style={{ paddingLeft: '20px' }}>{stockInsumos}</span>
@@ -1272,15 +1368,33 @@ export function ProductosPage() {
                     </div>
                   </div>
 
-                  {/* Fila 4: Precio unitario | Stock ventas | Stock insumos | Stock Total */}
-                  <div className="grid grid-cols-4 gap-4">
+                  {/* Fila 4: Precios | Stock Total | Stock Ventas | Stock Insumos */}
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <Label className="text-white-primary text-xs flex items-center gap-1.5">
                         <DollarSign className="w-3.5 h-3.5 text-orange-primary" />
-                        Precio unitario
+                        Precio venta
                       </Label>
                       <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
-                        {formatearPrecio(selectedProducto.precioBase ?? 0)}
+                        {formatearPrecio((selectedProducto as any).precioVenta ?? selectedProducto.precioBase ?? 0)}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-orange-primary" />
+                        Precio compra
+                      </Label>
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark">
+                        {formatearPrecio((selectedProducto as any).precioCompra ?? 0)}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5 text-orange-primary" />
+                        Stock Total
+                      </Label>
+                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-orange-primary/20 font-bold text-orange-primary">
+                        {(selectedProducto.stockVentas ?? 0) + (selectedProducto.stockInsumos ?? 0)} unidades
                       </div>
                     </div>
                     <div className="space-y-1.5">
@@ -1299,15 +1413,6 @@ export function ProductosPage() {
                       </Label>
                       <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-gray-dark border-blue-500/10">
                         {(selectedProducto.stockInsumos ?? 0)} unidades
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-white-primary text-xs flex items-center gap-1.5">
-                        <Package className="w-3.5 h-3.5 text-orange-primary" />
-                        Stock Total
-                      </Label>
-                      <div className="elegante-input h-9 text-sm flex items-center px-3 bg-gray-darker border border-orange-primary/20 font-bold text-orange-primary">
-                        {(selectedProducto.stockVentas ?? 0) + (selectedProducto.stockInsumos ?? 0)} unidades
                       </div>
                     </div>
                   </div>

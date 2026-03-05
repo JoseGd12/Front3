@@ -118,6 +118,7 @@ export default function App() {
                 style: {
                   fontSize: '0.95rem',
                   lineHeight: '1.4',
+                  zIndex: 100000
                 },
               }}
             />

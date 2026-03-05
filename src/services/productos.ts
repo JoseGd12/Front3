@@ -16,6 +16,8 @@ export interface ApiProducto {
   } | null;
   precioBase: number;
   precio: number;
+  precioVenta?: number;
+  precioCompra?: number;
   iva: number;
   porcentajeIva: number;
   stockVentas: number;
@@ -128,6 +130,8 @@ class ProductoService {
       categoria: categoriaNormalizada,
       precioBase: Number(data.PrecioBase || data.precioBase || data.precioVenta || data.precioCompra || 0),
       precio: Number(data.Precio || data.precio || data.precioVenta || data.precioCompra || 0),
+      precioVenta: Number(data.PrecioVenta || data.precioVenta || data.Precio || data.precio || 0),
+      precioCompra: Number(data.PrecioCompra || data.precioCompra || data.Precio || data.precio || 0),
       iva: Number(data.Iva || data.iva || 0),
       porcentajeIva: Number(data.PorcentajeIva || data.porcentajeIva || 0),
       stockVentas: Number(data.StockVentas || data.stockVentas || 0),
@@ -195,11 +199,9 @@ class ProductoService {
 
     console.log(`📦 Creando producto - CategoriaID resuelto: ${categoriaId} para categoria:`, productoData.categoria);
 
-    const apiBody = {
+    const apiBody: any = {
       Nombre: productoData.nombre || '',
       Descripcion: productoData.descripcion || '',
-      PrecioVenta: Number(productoData.precioBase) || 0,
-      PrecioCompra: Number(productoData.precioBase) || 0,
       StockVentas: Number(productoData.stockVentas) || 0,
       StockInsumos: Number(productoData.stockInsumos) || 0,
       StockMinimo: Number(productoData.minCantidad) || 0,
@@ -208,6 +210,13 @@ class ProductoService {
       Estado: productoData.activo !== undefined ? !!productoData.activo : true,
       Activo: productoData.activo !== undefined ? !!productoData.activo : true
     };
+    // Solo incluir precios si el frontend los define explícitamente
+    if ((productoData as any).precioVenta !== undefined) {
+      apiBody.PrecioVenta = Number((productoData as any).precioVenta);
+    }
+    if ((productoData as any).precioCompra !== undefined) {
+      apiBody.PrecioCompra = Number((productoData as any).precioCompra);
+    }
 
     const response = await this.request('/Productos', {
       method: 'POST',
@@ -292,8 +301,12 @@ class ProductoService {
       Id: id,
       Nombre: productoData.nombre,
       Descripcion: productoData.descripcion,
-      PrecioVenta: Number(productoData.precioBase),
-      PrecioCompra: Number(productoData.precioBase),
+      PrecioVenta: (productoData as any).precioVenta !== undefined
+        ? Number((productoData as any).precioVenta)
+        : Number(productoData.precioBase),
+      PrecioCompra: (productoData as any).precioCompra !== undefined
+        ? Number((productoData as any).precioCompra)
+        : Number(productoData.precioBase),
       StockVentas: Number(productoData.stockVentas),
       StockInsumos: Number(productoData.stockInsumos),
       StockMinimo: Number(productoData.minCantidad),

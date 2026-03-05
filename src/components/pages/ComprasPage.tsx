@@ -39,6 +39,7 @@ import { insumosService, Insumo } from "../../services/insumosService";
 import { productoService } from "../../services/productos";
 import { apiService, ApiUser } from "../../services/api";
 import ImageRenderer from "../ui/ImageRenderer";
+import jsPDF from "jspdf";
 
 // Función para formatear moneda colombiana con puntos para separar miles
 const formatCurrency = (amount: number): string => {
@@ -122,7 +123,7 @@ const CompraRow = React.memo(({
         <button
           onClick={() => onGenerateReport(compra)}
           className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-          title="Generar reporte"
+          title="Descargar PDF"
         >
           <FileDown className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
         </button>
@@ -134,7 +135,7 @@ const CompraRow = React.memo(({
 export function ComprasPage() {
   const { user } = useAuth();
   const { confirmDeleteAction, DoubleConfirmationContainer } = useDoubleConfirmation();
-  const { created, AlertContainer } = useCustomAlert();
+  const { created, error: showErrorAlert, AlertContainer } = useCustomAlert();
   const [compras, setCompras] = useState<Compra[]>([]);
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -239,6 +240,8 @@ export function ComprasPage() {
   const [showProveedorResults, setShowProveedorResults] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [showProductResults, setShowProductResults] = useState(false);
+  const [productSearchFocused, setProductSearchFocused] = useState(false);
+  const [proveedorSearchFocused, setProveedorSearchFocused] = useState(false);
   const [cantidadProducto, setCantidadProducto] = useState(0);
   const [cantidadProductoInput, setCantidadProductoInput] = useState('');
   const [precioUnitario, setPrecioUnitario] = useState(0);
@@ -353,9 +356,9 @@ export function ComprasPage() {
     initData();
   }, []);
 
-  // Cargar productos cuando se abre el diálogo de crear/editar compra
+  // Cargar productos cuando se abre el diálogo de crear compra
   useEffect(() => {
-    if (isDialogOpen && productos.length === 0) {
+    if (isDialogOpen) {
       loadProductos();
     }
   }, [isDialogOpen]);
@@ -448,116 +451,123 @@ export function ComprasPage() {
   }, [productoSeleccionado, productos]);
 
   const agregarProducto = () => {
-    if (
-      !productoSeleccionado ||
-      cantidadProducto <= 0 ||
-      (stockVentasInput.trim() === '' && stockInsumos !== cantidadProducto) ||
-      (stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto)
-    ) {
-      setShowAddCompraProductoErrors(true);
-      setCompraValidationAttempt((prev) => prev + 1);
-      return;
+    try {
+      if (
+        !productoSeleccionado ||
+        cantidadProducto <= 0 ||
+        (stockVentasInput.trim() === '' && stockInsumos !== cantidadProducto) ||
+        (stockInsumosInput.trim() === '' && stockVentas !== cantidadProducto)
+      ) {
+        setShowAddCompraProductoErrors(true);
+        setCompraValidationAttempt((prev) => prev + 1);
+        return;
+      }
+
+      const producto = productos.find(p => p.id === Number(productoSeleccionado));
+      if (!producto) {
+        setShowAddCompraProductoErrors(true);
+        setCompraValidationAttempt((prev) => prev + 1);
+        return;
+      }
+
+      const sumaDistribucion = stockVentas + stockInsumos;
+      if (sumaDistribucion > cantidadProducto) {
+        setShowAddCompraProductoErrors(true);
+        setCompraValidationAttempt((prev) => prev + 1);
+        const maxVentas = Math.max(0, cantidadProducto - stockInsumos);
+        const maxInsumos = Math.max(0, cantidadProducto - stockVentas);
+        const partes: string[] = [];
+        if (stockVentas > maxVentas) partes.push(`Stock Ventas excede el máximo permitido (${maxVentas}).`);
+        if (stockInsumos > maxInsumos) partes.push(`Stock Entregas excede el máximo permitido (${maxInsumos}).`);
+        const description = partes.length > 0
+          ? partes.join(' ')
+          : `Ventas + Entregas (${sumaDistribucion}) no puede superar la Cantidad Total (${cantidadProducto}).`;
+        toast.error("Error en distribución", { description });
+        return;
+      }
+
+      if (sumaDistribucion !== cantidadProducto) {
+        setShowAddCompraProductoErrors(true);
+        setCompraValidationAttempt((prev) => prev + 1);
+        toast.error("Distribución incompleta", { description: `Faltan ${cantidadProducto - sumaDistribucion} unidades por asignar.` });
+        return;
+      }
+
+      const productosActuales = nuevaCompra.productos || [];
+      const existeProducto = productosActuales.find(p => p.id === producto.id);
+
+      if (existeProducto) {
+        const cantidadActualizada = existeProducto.cantidad + cantidadProducto;
+        const stockVentasActualizado = existeProducto.stockVentas + stockVentas;
+        const stockInsumosActualizado = existeProducto.stockInsumos + stockInsumos;
+        setNuevaCompra({
+          ...nuevaCompra,
+          productos: productosActuales.map(p =>
+            p.id === producto.id
+              ? {
+                ...p,
+                cantidad: cantidadActualizada,
+                precio: precioUnitario,
+                stockVentas: stockVentasActualizado,
+                stockInsumos: stockInsumosActualizado
+              }
+              : p
+          )
+        });
+        setTarjetaInputs((prev) => ({
+          ...prev,
+          [producto.id]: {
+            cantidad: String(cantidadActualizada),
+            stockVentas: String(stockVentasActualizado),
+            stockInsumos: String(stockInsumosActualizado),
+            precio: String(precioUnitario)
+          }
+        }));
+      } else {
+        const cantidadNueva = cantidadProducto;
+        const stockVentasNuevo = stockVentas;
+        const stockInsumosNuevo = stockInsumos;
+        setNuevaCompra({
+          ...nuevaCompra,
+          productos: [...productosActuales, {
+            id: producto.id,
+            nombre: producto.nombre,
+            cantidad: cantidadNueva,
+            precio: precioUnitario,
+            stockVentas: stockVentasNuevo,
+            stockInsumos: stockInsumosNuevo,
+            imagen: (producto as Insumo).imagen ?? (producto as { imagenProduc?: string }).imagenProduc ?? '',
+            categoria: (producto as any).categoria && typeof (producto as any).categoria === 'object'
+              ? ((producto as any).categoria.nombre || '')
+              : ((producto as any).categoria ?? '')
+          }]
+        });
+        setTarjetaInputs((prev) => ({
+          ...prev,
+          [producto.id]: {
+            cantidad: String(cantidadNueva),
+            stockVentas: String(stockVentasNuevo),
+            stockInsumos: String(stockInsumosNuevo),
+            precio: String(precioUnitario)
+          }
+        }));
+      }
+
+      setProductoSeleccionado('');
+      setCantidadProducto(0);
+      setCantidadProductoInput('');
+      setPrecioUnitario(0);
+      setPrecioUnitarioInput('');
+      setStockVentas(0);
+      setStockInsumos(0);
+      setStockVentasInput('');
+      setStockInsumosInput('');
+      setShowAddCompraProductoErrors(false);
+      setShowCompraFormErrors(false);
+    } catch (err) {
+      console.error("❌ Error al agregar producto a la compra:", err);
+      toast.error("Error inesperado", { description: "No se pudo agregar el producto. Intenta nuevamente." });
     }
-
-    const producto = productos.find(p => p.id === Number(productoSeleccionado));
-    if (!producto) {
-      setShowAddCompraProductoErrors(true);
-      setCompraValidationAttempt((prev) => prev + 1);
-      return;
-    }
-
-    const sumaDistribucion = stockVentas + stockInsumos;
-    if (sumaDistribucion > cantidadProducto) {
-      setShowAddCompraProductoErrors(true);
-      setCompraValidationAttempt((prev) => prev + 1);
-      const maxVentas = Math.max(0, cantidadProducto - stockInsumos);
-      const maxInsumos = Math.max(0, cantidadProducto - stockVentas);
-      const partes: string[] = [];
-      if (stockVentas > maxVentas) partes.push(`Stock Ventas excede el máximo permitido (${maxVentas}).`);
-      if (stockInsumos > maxInsumos) partes.push(`Stock Entregas excede el máximo permitido (${maxInsumos}).`);
-      const description = partes.length > 0
-        ? partes.join(' ')
-        : `Ventas + Entregas (${sumaDistribucion}) no puede superar la Cantidad Total (${cantidadProducto}).`;
-      toast.error("Error en distribución", { description });
-      return;
-    }
-
-    if (sumaDistribucion !== cantidadProducto) {
-      setShowAddCompraProductoErrors(true);
-      setCompraValidationAttempt((prev) => prev + 1);
-      toast.error("Distribución incompleta", { description: `Faltan ${cantidadProducto - sumaDistribucion} unidades por asignar.` });
-      return;
-    }
-
-    const productosActuales = nuevaCompra.productos || [];
-    const existeProducto = productosActuales.find(p => p.id === producto.id);
-
-    if (existeProducto) {
-      const cantidadActualizada = existeProducto.cantidad + cantidadProducto;
-      const stockVentasActualizado = existeProducto.stockVentas + stockVentas;
-      const stockInsumosActualizado = existeProducto.stockInsumos + stockInsumos;
-      setNuevaCompra({
-        ...nuevaCompra,
-        productos: productosActuales.map(p =>
-          p.id === producto.id
-            ? {
-              ...p,
-              cantidad: cantidadActualizada,
-              precio: precioUnitario,
-              stockVentas: stockVentasActualizado,
-              stockInsumos: stockInsumosActualizado
-            }
-            : p
-        )
-      });
-      setTarjetaInputs((prev) => ({
-        ...prev,
-        [producto.id]: {
-          cantidad: String(cantidadActualizada),
-          stockVentas: String(stockVentasActualizado),
-          stockInsumos: String(stockInsumosActualizado),
-          precio: String(precioUnitario)
-        }
-      }));
-    } else {
-      const cantidadNueva = cantidadProducto;
-      const stockVentasNuevo = stockVentas;
-      const stockInsumosNuevo = stockInsumos;
-      setNuevaCompra({
-        ...nuevaCompra,
-        productos: [...productosActuales, {
-          id: producto.id,
-          nombre: producto.nombre,
-          cantidad: cantidadNueva,
-          precio: precioUnitario,
-          stockVentas: stockVentasNuevo,
-          stockInsumos: stockInsumosNuevo,
-          imagen: (producto as Insumo).imagen ?? (producto as { imagenProduc?: string }).imagenProduc ?? '',
-          categoria: (producto as Insumo).categoria
-        }]
-      });
-      setTarjetaInputs((prev) => ({
-        ...prev,
-        [producto.id]: {
-          cantidad: String(cantidadNueva),
-          stockVentas: String(stockVentasNuevo),
-          stockInsumos: String(stockInsumosNuevo),
-          precio: String(precioUnitario)
-        }
-      }));
-    }
-
-    setProductoSeleccionado('');
-    setCantidadProducto(0);
-    setCantidadProductoInput('');
-    setPrecioUnitario(0);
-    setPrecioUnitarioInput('');
-    setStockVentas(0);
-    setStockInsumos(0);
-    setStockVentasInput('');
-    setStockInsumosInput('');
-    setShowAddCompraProductoErrors(false);
-    setShowCompraFormErrors(false);
   };
 
   const eliminarProducto = (productId: number) => {
@@ -825,7 +835,6 @@ export function ComprasPage() {
 
   const handleCreateCompra = React.useCallback(async () => {
     if (creatingPurchase) return;
-    setCreatingPurchase(true);
     setShowCompraFormErrors(true);
     setCompraValidationAttempt((prev) => prev + 1);
 
@@ -835,7 +844,10 @@ export function ComprasPage() {
     }
 
     if (!nuevaCompra.proveedorId || !nuevaCompra.metodoPago || !nuevaCompra.fechaFactura || nuevaCompra.productos.length === 0) {
-      toast.error("Por favor completa todos los campos obligatorios y agrega al menos un producto");
+      showErrorAlert(
+        "Campos obligatorios",
+        "Por favor completa la fecha de factura, el método de pago, selecciona un proveedor y agrega al menos un producto."
+      );
       return;
     }
 
@@ -877,6 +889,7 @@ export function ComprasPage() {
       }))
     };
 
+    setCreatingPurchase(true);
     try {
       await compraService.createCompra(compraRequest);
 
@@ -899,12 +912,10 @@ export function ComprasPage() {
       setStockInsumosInput('');
       setPorcentajeDescuentoInput('');
 
-      // Recargar compras y productos para reflejar los cambios de stock
+      // Recargar compras y productos (usando fuente consistente de insumos) para reflejar cambios de stock
       await Promise.all([
         loadCompras().catch(() => { }),
-        productoService.getProductos()
-          .then(data => setProductos(data as any))
-          .catch(() => setProductos([]))
+        loadProductos().catch(() => { })
       ]);
     } catch (error) {
       toast.error("Error al crear compra", { description: "Hubo un problema al guardar la compra o actualizar el stock." });
@@ -972,9 +983,195 @@ export function ComprasPage() {
         confirmMessage: `¿Estás seguro de que deseas anular la compra?`,
         successTitle: "Compra anulada ✔️",
         successMessage: `La compra ha sido anulada exitosamente.`,
-        requireInput: false
+        requireInput: false,
+        confirmButtonText: "Anular"
       }
     );
+  };
+
+  const generatePurchasePDF = async (compra: Compra) => {
+    try {
+      let detalles = (compra as any).detalles || [];
+      if (!detalles || detalles.length === 0) {
+        try {
+          const toastId = toast.loading("Obteniendo detalles de la compra...");
+          detalles = await compraService.getDetallesPorCompra(compra.id);
+          toast.dismiss(toastId);
+        } catch {
+          toast.error("No se pudieron cargar los detalles de la compra.");
+          return;
+        }
+      }
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const vMargin = 40; // margen superior/inferior
+      const hMargin = 28; // margen lateral reducido
+      let y = vMargin;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(28);
+      doc.setTextColor(216, 176, 129);
+      doc.text("BARBERÍA ELEGANTE", pageWidth / 2, y, { align: "center" });
+      y += 28;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(20);
+      doc.setTextColor(60, 60, 60);
+      doc.text("Reporte de Compra", pageWidth / 2, y, { align: "center" });
+      y += 18;
+      doc.setFontSize(10);
+      doc.text(`Fecha de generación: ${formatDate(new Date())}`, pageWidth / 2, y, { align: "center" });
+      y += 24;
+      doc.setDrawColor(216, 176, 129);
+      doc.line(hMargin, y, pageWidth - hMargin, y);
+      y += 14;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(60, 60, 60);
+      doc.text("Información General", hMargin, y);
+      y += 10;
+      const info = [
+        ["ID de Compra", String((compra.numeroCompra || "").toString().replace(/^(FC|CPR)-?/i, "") || compra.id)],
+        ["N factura", String((compra.numeroFactura || "N/A").toString().replace(/^(FC|CPR)-?/i, ""))],
+        ["Estado", String(compra.estado || "N/A")],
+        ["Proveedor", String((compra as any).proveedorNombre || "N/A")],
+        ["Responsable", String((compra as any).responsableNombre || "N/A")],
+        ["Fecha de Registro", formatDate((compra as any).fecha)],
+        ["Fecha de Factura", (compra as any).fechaFactura ? formatDate((compra as any).fechaFactura) : "N/A"],
+        ["Método de Pago", String((compra as any).metodoPago || "N/A")]
+      ];
+      const col1X = hMargin;
+      const col2X = pageWidth / 2;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      for (const [label, value] of info) {
+        if (y > pageHeight - vMargin - 60) {
+          doc.addPage();
+          y = vMargin;
+        }
+        doc.setTextColor(102, 102, 102);
+        doc.text(`${label}:`, col1X, y);
+        doc.setTextColor(33, 33, 33);
+        doc.text(String(value), col1X + 120, y);
+        y += 16;
+      }
+      y += 4;
+      doc.setDrawColor(216, 176, 129);
+      doc.line(hMargin, y, pageWidth - hMargin, y);
+      y += 14;
+      if (Array.isArray(detalles) && detalles.length > 0) {
+        // se omite el título "Productos" para un diseño más limpio
+        y += 6;
+        const headers = ["Producto", "Cantidad", "P. Unitario", "Subtotal"];
+        const colWidths = [pageWidth * 0.40, pageWidth * 0.15, pageWidth * 0.20, pageWidth * 0.15];
+        const colsX = [
+          hMargin,
+          hMargin + colWidths[0],
+          hMargin + colWidths[0] + colWidths[1],
+          hMargin + colWidths[0] + colWidths[1] + colWidths[2]
+        ];
+        const colRights = [
+          colsX[0] + colWidths[0],
+          colsX[1] + colWidths[1],
+          colsX[2] + colWidths[2],
+          colsX[3] + colWidths[3]
+        ];
+        const headerHeight = 24;
+        const rowHeight = 26;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(255, 255, 255);
+        // Encabezado de tabla con color de marca
+        doc.setFillColor(216, 176, 129);
+        doc.rect(hMargin, y - 14, pageWidth - hMargin * 2, headerHeight, "F");
+        doc.text(headers[0], colsX[0] + 8, y);
+        doc.text(headers[1], colRights[1] - 8, y, { align: "right" });
+        doc.text(headers[2], colRights[2] - 8, y, { align: "right" });
+        doc.text(headers[3], colRights[3] - 8, y, { align: "right" });
+        y += headerHeight;
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(33, 33, 33);
+        let altRow = false;
+        for (const d of detalles) {
+          if (y > pageHeight - vMargin - rowHeight) {
+            doc.addPage();
+            y = vMargin;
+          }
+          if (altRow) {
+            doc.setFillColor(248, 242, 236);
+            doc.rect(hMargin, y - 16, pageWidth - hMargin * 2, rowHeight, "F");
+          }
+          const nombre = String((d as any).productoNombre || (d as any).nombre || "Producto");
+          const cantidad = Number((d as any).cantidad || 0);
+          const punit = Number((d as any).precioUnitario || (d as any).precio || 0);
+          const subtotal = Number((d as any).subtotal || cantidad * punit || 0);
+          const cantidadStr = String(cantidad);
+          doc.text(nombre, colsX[0] + 8, y);
+          doc.text(cantidadStr, colRights[1] - 8, y, { align: "right" });
+          doc.text(`$ ${formatCurrency(punit)}`, colRights[2] - 8, y, { align: "right" });
+          doc.text(`$ ${formatCurrency(subtotal)}`, colRights[3] - 8, y, { align: "right" });
+          y += rowHeight;
+          altRow = !altRow;
+        }
+      }
+      y += 8;
+      if (y > pageHeight - vMargin - 80) {
+        doc.addPage();
+        y = vMargin;
+      }
+      doc.setDrawColor(216, 176, 129);
+      doc.line(hMargin, y, pageWidth - hMargin, y);
+      y += 14;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(60, 60, 60);
+      doc.text("Resumen Financiero", hMargin, y);
+      y += 12;
+      const subtotalNum = Number((compra as any).subtotal || 0);
+      const ivaNum = Number((compra as any).iva || 0);
+      const descuentoNum = Number((compra as any).descuento || 0);
+      const totalNum = Number((compra as any).total || subtotalNum + ivaNum - descuentoNum);
+      const totals = [
+        ["Subtotal", `$ ${formatCurrency(subtotalNum)}`],
+        ["IVA", `$ ${formatCurrency(ivaNum)}`],
+        ["Descuento", `- $ ${formatCurrency(descuentoNum)}`],
+        ["TOTAL", `$ ${formatCurrency(totalNum)}`]
+      ];
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      totals.forEach(([k, v], idx) => {
+        if (y > pageHeight - vMargin - 60) {
+          doc.addPage();
+          y = vMargin;
+        }
+        const isFinal = idx === totals.length - 1;
+        if (isFinal) {
+          doc.setDrawColor(216, 176, 129);
+          doc.line(hMargin, y - 6, pageWidth - hMargin, y - 6);
+        }
+        doc.setTextColor(102, 102, 102);
+        doc.text(`${k}:`, hMargin, y);
+        doc.setTextColor(isFinal ? 216 : 33, isFinal ? 176 : 33, isFinal ? 129 : 33);
+        doc.setFont(isFinal ? "bold" : "normal");
+        doc.text(String(v), pageWidth - hMargin - 140, y);
+        y += 16;
+      });
+      // Línea divisoria y pie de página coherente con Ventas
+      if (y < pageHeight - vMargin - 40) {
+        y = pageHeight - vMargin - 40;
+      }
+      doc.setDrawColor(216, 176, 129);
+      doc.line(hMargin, y, pageWidth - hMargin, y);
+      y += 20;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(102, 102, 102);
+      doc.text("Documento generado automáticamente por el Sistema de Gestión - Barbería Elegante", pageWidth / 2, y, { align: "center" });
+      const filename = `Reporte_Compra_${(compra as any).numeroCompra || compra.id}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+      toast.success("PDF generado exitosamente");
+    } catch {
+      toast.error("Error al generar PDF");
+    }
   };
 
   const generatePurchaseReport = async (compra: Compra) => {
@@ -1190,7 +1387,16 @@ export function ComprasPage() {
                     Nueva Compra
                   </button>
                 </DialogTrigger>
-                <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogContent
+                  className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto"
+                  onInteractOutside={(e: any) => {
+                    const target = e.target as HTMLElement | null;
+                    // Si el clic se originó dentro de una alerta interna, NO cerrar el modal
+                    if (target?.closest('[data-alert-container="true"]')) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
                   <DialogHeader>
                     <DialogTitle className="text-white-primary flex items-center gap-2">
                       <Receipt className="w-5 h-5 text-orange-primary" />
@@ -1279,10 +1485,19 @@ export function ComprasPage() {
                               setProveedorSearchTerm(e.target.value);
                               setShowProveedorResults(true);
                             }}
-                            onFocus={() => setShowProveedorResults(true)}
+                            onFocus={() => {
+                              setProveedorSearchFocused(true);
+                              setShowProveedorResults(true);
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                setProveedorSearchFocused(false);
+                                setShowProveedorResults(false);
+                              }, 120);
+                            }}
                             className={`elegante-input pl-11 w-full ${showCompraFormErrors && !nuevaCompra.proveedorId ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                           />
-                          {showProveedorResults && proveedorSearchTerm.trim() !== "" && (
+                          {(proveedorSearchFocused && showProveedorResults && proveedorSearchTerm.trim() !== "") && (
                             <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-80 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                               {(() => {
                                 const query = normalizeSearchText(proveedorSearchTerm);
@@ -1311,6 +1526,17 @@ export function ComprasPage() {
                                 return filteredResults.map((proveedor) => (
                                   <div
                                     key={proveedor.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      setNuevaCompra({
+                                        ...nuevaCompra,
+                                        proveedorId: Number(proveedor.id ?? 0)
+                                      });
+                                      setProveedorSearchTerm(
+                                        `${proveedor.nombre || ""}${proveedor.nit ? ` — NIT ${proveedor.nit}` : ""}`
+                                      );
+                                      setShowProveedorResults(false);
+                                    }}
                                     onClick={() => {
                                       setNuevaCompra({
                                         ...nuevaCompra,
@@ -1380,17 +1606,27 @@ export function ComprasPage() {
                           </Label>
                           <div className="relative">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
-                            <Input
+                          <Input
                               placeholder="Escribe para buscar un producto..."
                               value={productSearchTerm}
                               onChange={(e) => {
                                 setProductSearchTerm(e.target.value);
                                 setShowProductResults(true);
                               }}
-                              onFocus={() => setShowProductResults(true)}
+                            onFocus={() => {
+                              setProductSearchFocused(true);
+                              setShowProductResults(true);
+                            }}
+                            onBlur={() => {
+                              // Pequeño retraso para permitir seleccionar un ítem antes de cerrar
+                              setTimeout(() => {
+                                setProductSearchFocused(false);
+                                setShowProductResults(false);
+                              }, 120);
+                            }}
                               className={`elegante-input pl-11 w-full ${showProductoSelectorError ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                             />
-                            {showProductResults && productSearchTerm.trim() !== "" && (
+                            {(productSearchFocused && showProductResults && productSearchTerm.trim() !== "") && (
                               <div className="absolute z-50 w-full mt-2 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200">
                                 {(() => {
                                   const query = normalizeSearchText(productSearchTerm);
@@ -1420,6 +1656,13 @@ export function ComprasPage() {
                                   return filteredResults.map((producto) => (
                                     <div
                                       key={producto.id}
+                                      onMouseDown={(e) => {
+                                        // Seleccionar antes de que el input pierda el foco
+                                        e.preventDefault();
+                                        setProductoSeleccionado(producto.id.toString());
+                                        setProductSearchTerm(producto.nombre);
+                                        setShowProductResults(false);
+                                      }}
                                       onClick={() => {
                                         setProductoSeleccionado(producto.id.toString());
                                         setProductSearchTerm(producto.nombre);
@@ -1471,19 +1714,28 @@ export function ComprasPage() {
                           <Input
                             type="number"
                             value={cantidadProductoInput}
+                            onKeyDown={(e) => {
+                              if (e.key === '-' || e.key === 'e' || e.key === '+' || e.key === '.') {
+                                e.preventDefault();
+                              }
+                            }}
+                            onPaste={(e) => {
+                              const text = e.clipboardData?.getData('text') || '';
+                              if (/[^\d]/.test(text) || text.length > 2) {
+                                e.preventDefault();
+                                const cleaned = text.replace(/\D+/g, '').slice(0, 2);
+                                handleCantidadProductoInputChange(cleaned);
+                              }
+                            }}
                             onChange={(e) => {
-                              if (e.target.value.length <= 10) {
-                                handleCantidadProductoInputChange(e.target.value);
+                              const val = e.target.value.replace(/\D+/g, '').slice(0, 2);
+                              if (val.length <= 2) {
+                                handleCantidadProductoInputChange(val);
                               }
                             }}
                             className={`elegante-input no-spin ${showCantidadProductoError ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                             min="1"
                           />
-                          <div className="flex justify-start mt-1">
-                            <span className="text-xs text-gray-500 font-medium">
-                              {cantidadProductoInput.length}/10 caracteres
-                            </span>
-                          </div>
                           {showCantidadProductoError && (
                             <p className="text-xs text-red-400">Este campo es obligatorio.</p>
                           )}
@@ -1630,7 +1882,7 @@ export function ComprasPage() {
                                         }
                                       }}
                                       onPaste={(e) => {
-                                        const text = (e.clipboardData || window.Clipboard).getData('text');
+                                        const text = e.clipboardData?.getData('text') || '';
                                         if (/[^\d]/.test(text)) {
                                           e.preventDefault();
                                           const cleaned = text.replace(/\D+/g, '');
@@ -1658,7 +1910,7 @@ export function ComprasPage() {
                                         }
                                       }}
                                       onPaste={(e) => {
-                                        const text = (e.clipboardData || window.Clipboard).getData('text');
+                                        const text = e.clipboardData?.getData('text') || '';
                                         if (/[^\d]/.test(text)) {
                                           e.preventDefault();
                                           const cleaned = text.replace(/\D+/g, '');
@@ -1686,7 +1938,7 @@ export function ComprasPage() {
                                         }
                                       }}
                                       onPaste={(e) => {
-                                        const text = (e.clipboardData || window.Clipboard).getData('text');
+                                        const text = e.clipboardData?.getData('text') || '';
                                         if (/[^\d]/.test(text)) {
                                           e.preventDefault();
                                           const cleaned = text.replace(/\D+/g, '');
@@ -1836,7 +2088,7 @@ export function ComprasPage() {
                         compra={compra as any}
                         onAnular={handleAnularCompra}
                         onViewDetails={handleViewDetails}
-                        onGenerateReport={generatePurchaseReport}
+                        onGenerateReport={generatePurchasePDF}
                         getEstadoColor={getEstadoColor}
                       />
                     )) : (

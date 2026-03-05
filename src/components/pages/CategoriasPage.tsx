@@ -66,11 +66,14 @@ export function CategoriasPage() {
   const [showCategoriaFormErrors, setShowCategoriaFormErrors] = useState(false);
   const [categoriaValidationAttempt, setCategoriaValidationAttempt] = useState(0);
   const shakeClass = categoriaValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
+  const [duplicateNombreCreate, setDuplicateNombreCreate] = useState(false);
+  const [duplicateNombreEdit, setDuplicateNombreEdit] = useState(false);
+  const normalizeText = (s: string) => (s || '').trim().toLowerCase();
 
   // Cargar categorías desde la API
-  const loadCategorias = async () => {
+  const loadCategorias = async (silent: boolean = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [categoriasData, productosData] = await Promise.all([
         categoriaService.getCategorias().catch(err => {
           console.error('❌ Error cargando categorías:', err);
@@ -87,7 +90,7 @@ export function CategoriasPage() {
       console.error('Error cargando datos:', error);
       setError('Error al cargar la información');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -112,7 +115,7 @@ export function CategoriasPage() {
 
   const validateForm = (form: any, isEdit: boolean = false) => {
     if (!form.nombre || form.nombre.trim().length === 0) {
-      setError('El nombre de la categoría es obligatorio');
+      setError('');
       return false;
     }
 
@@ -126,16 +129,17 @@ export function CategoriasPage() {
       return false;
     }
 
-    // Verificar si el nombre ya existe
-    const nombreExiste = categorias.some(c =>
-      c.nombre.toLowerCase() === form.nombre.toLowerCase() &&
-      (!isEdit || c.id !== selectedCategoria?.id)
-    );
-
-    if (nombreExiste) {
-      setError('Ya existe una categoría con este nombre');
-      return false;
-    }
+    const targetName = normalizeText(form.nombre);
+    const nombreExiste = categorias.some(c => {
+      const same = normalizeText(c.nombre) === targetName;
+      if (isEdit) {
+        return same && c.id !== selectedCategoria?.id;
+      }
+      return same;
+    });
+    if (isEdit) setDuplicateNombreEdit(nombreExiste);
+    else setDuplicateNombreCreate(nombreExiste);
+    if (nombreExiste) return false;
 
     return true;
   };
@@ -144,15 +148,28 @@ export function CategoriasPage() {
     if (!validateForm(nuevaCategoria)) {
       setShowCategoriaFormErrors(true);
       setCategoriaValidationAttempt(prev => prev + 1);
+      if (!nuevaCategoria.nombre.trim()) {
+        showAlertError("Campos obligatorios", "Por favor completa el nombre de la categoría.");
+      } else if (duplicateNombreCreate) {
+        showAlertError("Nombre duplicado", "Ya existe una categoría con este nombre.");
+      }
       return;
     }
 
     try {
-      await categoriaService.createCategoria({
+      const creada = await categoriaService.createCategoria({
         nombre: nuevaCategoria.nombre,
         descripcion: nuevaCategoria.descripcion,
         estado: nuevaCategoria.estado
       });
+      if (creada && nuevaCategoria.estado === false) {
+        const idCreada = (creada as any)?.id ?? (creada as any)?.Id;
+        if (idCreada) {
+          try {
+            await categoriaService.updateCategoriaStatus(Number(idCreada), false);
+          } catch {}
+        }
+      }
 
       await loadCategorias(); // Recargar las categorías
 
@@ -190,6 +207,11 @@ export function CategoriasPage() {
     if (!selectedCategoria || !validateForm(editCategoria, true)) {
       setShowCategoriaFormErrors(true);
       setCategoriaValidationAttempt(prev => prev + 1);
+      if (!editCategoria.nombre.trim()) {
+        showAlertError("Campos obligatorios", "Por favor completa el nombre de la categoría.");
+      } else if (duplicateNombreEdit) {
+        showAlertError("Nombre duplicado", "Ya existe una categoría con este nombre.");
+      }
       return;
     }
 
@@ -254,7 +276,7 @@ export function CategoriasPage() {
   const handleToggleStatus = async (categoria: Categoria) => {
     try {
       await categoriaService.updateCategoriaStatus(categoria.id, !categoria.estado);
-      await loadCategorias(); // Recargar las categorías
+      await loadCategorias(true);
       edited(categoria.nombre, `Categoría ${!categoria.estado ? 'activada' : 'desactivada'} exitosamente`);
     } catch (error) {
       console.error('Error cambiando estado:', error);
@@ -304,6 +326,7 @@ export function CategoriasPage() {
                       setError('');
                       setShowCategoriaFormErrors(false);
                       setCategoriaValidationAttempt(0);
+                      setDuplicateNombreCreate(false);
                     }}
                   >
                     <Plus className="w-4 h-4" />
@@ -336,13 +359,22 @@ export function CategoriasPage() {
                         const v = e.target.value;
                         setNuevaCategoria({ ...nuevaCategoria, nombre: v });
                         if (showCategoriaFormErrors && v.trim()) setShowCategoriaFormErrors(false);
+                        const norm = normalizeText(v);
+                        if (!norm) {
+                          setDuplicateNombreCreate(false);
+                        } else {
+                          const dup = categorias.some(c => normalizeText(c.nombre) === norm);
+                          setDuplicateNombreCreate(dup);
+                        }
                       }}
-                        placeholder="Ej: Cuidado Capilar"
-                      className={`elegante-input ${showCategoriaFormErrors && !nuevaCategoria.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                      placeholder="Ej: Cuidado Capilar"
+                      className="elegante-input"
                     />
-                    {showCategoriaFormErrors && !nuevaCategoria.nombre.trim() && (
+                    {showCategoriaFormErrors && !nuevaCategoria.nombre.trim() ? (
                       <p className="text-xs text-red-400">Este campo es obligatorio.</p>
-                    )}
+                    ) : (nuevaCategoria.nombre.trim() && duplicateNombreCreate) ? (
+                      <p className="text-xs text-red-400">Ya existe una categoría con este nombre.</p>
+                    ) : null}
                     </div>
                     <div className="space-y-2">
                       <Label className="text-white-primary">Descripción</Label>
@@ -375,9 +407,10 @@ export function CategoriasPage() {
                   <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
                     <button onClick={() => {
                       setIsDialogOpen(false);
-                    setError('');
-                    setShowCategoriaFormErrors(false);
-                    setCategoriaValidationAttempt(0);
+                      setError('');
+                      setShowCategoriaFormErrors(false);
+                      setCategoriaValidationAttempt(0);
+                      setDuplicateNombreCreate(false);
                     }} className="elegante-button-secondary">
                       Cancelar
                     </button>
@@ -639,13 +672,25 @@ export function CategoriasPage() {
                     const v = e.target.value;
                     setEditCategoria({ ...editCategoria, nombre: v });
                     if (showCategoriaFormErrors && v.trim()) setShowCategoriaFormErrors(false);
+                    const norm = normalizeText(v);
+                    if (!norm) {
+                      setDuplicateNombreEdit(false);
+                    } else {
+                      const dup = categorias.some(c => {
+                        const same = normalizeText(c.nombre) === norm;
+                        return selectedCategoria ? same && c.id !== selectedCategoria.id : same;
+                      });
+                      setDuplicateNombreEdit(dup);
+                    }
                   }}
                   placeholder="Ej: Cuidado Capilar"
-                  className={`elegante-input ${showCategoriaFormErrors && !editCategoria.nombre.trim() ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                  className="elegante-input"
                 />
-                {showCategoriaFormErrors && !editCategoria.nombre.trim() && (
+                {showCategoriaFormErrors && !editCategoria.nombre.trim() ? (
                   <p className="text-xs text-red-400">Este campo es obligatorio.</p>
-                )}
+                ) : (editCategoria.nombre.trim() && duplicateNombreEdit) ? (
+                  <p className="text-xs text-red-400">Ya existe una categoría con este nombre.</p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label className="text-white-primary">Descripción</Label>
@@ -682,6 +727,7 @@ export function CategoriasPage() {
                 setSelectedCategoria(null);
                 setShowCategoriaFormErrors(false);
                 setCategoriaValidationAttempt(0);
+                setDuplicateNombreEdit(false);
               }} className="elegante-button-secondary">
                 Cancelar
               </button>
@@ -700,9 +746,7 @@ export function CategoriasPage() {
           <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl">
             <DialogHeader>
               <DialogTitle className="text-white-primary">Detalle de Categoría</DialogTitle>
-              <DialogDescription className="text-gray-lightest">
-                {selectedCategoria?.id} - {selectedCategoria?.nombre}
-              </DialogDescription>
+              
             </DialogHeader>
             {selectedCategoria && (
               <div className="space-y-6 pt-4">

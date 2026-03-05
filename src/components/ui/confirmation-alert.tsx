@@ -246,6 +246,8 @@ export function useConfirmationAlert() {
       title?: string;
       message?: string;
       requireInput?: boolean;
+      confirmButtonText?: string;
+      cancelButtonText?: string;
       onCancel?: () => void;
     }
   ) => {
@@ -257,8 +259,8 @@ export function useConfirmationAlert() {
       {
         itemName,
         requireInput: options?.requireInput ?? true,
-        confirmButtonText: 'Eliminar',
-        cancelButtonText: 'Cancelar',
+        confirmButtonText: options?.confirmButtonText || 'Eliminar',
+        cancelButtonText: options?.cancelButtonText || 'Cancelar',
         onCancel: options?.onCancel
       }
     );

@@ -135,12 +135,82 @@ class CategoriaService {
     try {
       await this.request(`/Categorias/${id}/estado`, {
         method: 'PUT',
-        body: JSON.stringify({ estado: estado }),
+        body: JSON.stringify({ Estado: estado }),
       });
       console.log(`✅ Estado de categoría ${id} actualizado a ${estado}`);
+      return;
     } catch (error: any) {
-      console.error(`❌ Error actualizando estado de categoría ${id}:`, error);
-      throw error;
+      console.warn(`❌ Error actualizando estado de categoría ${id} (PUT /Categorias), probando fallbacks...`, error);
+    }
+    try {
+      await this.request(`/Categorias/${id}/estado`, {
+        method: 'PUT',
+        body: JSON.stringify({ estado: estado }),
+      });
+      console.log(`✅ Estado de categoría ${id} actualizado a ${estado} (fallback PUT con 'estado')`);
+      return;
+    } catch (e1) {
+      console.warn(`❌ Falló PUT /Categorias/${id}/estado con 'estado', probando POST...`, e1);
+    }
+    try {
+      await this.request(`/Categorias/${id}/estado`, {
+        method: 'POST',
+        body: JSON.stringify({ Estado: estado }),
+      });
+      console.log(`✅ Estado de categoría ${id} actualizado (fallback POST con 'Estado')`);
+      return;
+    } catch (e2) {
+      console.warn(`❌ Falló POST /Categorias/${id}/estado con 'Estado', probando POST con ambos...`, e2);
+    }
+    try {
+      await this.request(`/Categorias/${id}/estado`, {
+        method: 'POST',
+        body: JSON.stringify({ estado: estado, Estado: estado }),
+      });
+      console.log(`✅ Estado de categoría ${id} actualizado (fallback POST con ambos campos)`);
+      return;
+    } catch (e3) {
+      console.warn(`❌ Falló POST /Categorias/${id}/estado con ambos campos, probando rutas en minúscula...`, e3);
+    }
+    try {
+      await this.request(`/categorias/${id}/estado`, {
+        method: 'PUT',
+        body: JSON.stringify({ Estado: estado }),
+      });
+      console.log(`✅ Estado de categoría ${id} actualizado (fallback PUT /categorias)`);
+      return;
+    } catch (e4) {
+      console.warn(`❌ Falló PUT /categorias/${id}/estado, probando POST /categorias...`, e4);
+    }
+    try {
+      await this.request(`/categorias/${id}/estado`, {
+        method: 'POST',
+        body: JSON.stringify({ Estado: estado, estado: estado }),
+      });
+      console.log(`✅ Estado de categoría ${id} actualizado (fallback POST /categorias)`);
+      return;
+    } catch (e5) {
+      console.warn(`❌ Falló POST /categorias/${id}/estado, intentando actualización completa...`, e5);
+    }
+    try {
+      const existing = await this.getCategoriaById(id);
+      if (existing) {
+        const mapped = {
+          Id: id,
+          Nombre: existing.nombre,
+          Descripcion: existing.descripcion || null,
+          Estado: estado
+        };
+        await this.request(`/Categorias/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(mapped),
+        });
+        console.log(`✅ Estado de categoría ${id} actualizado (fallback PUT /Categorias con entidad completa)`);
+        return;
+      }
+    } catch (e6) {
+      console.error(`❌ Error actualizando estado de categoría ${id} tras múltiples intentos:`, e6);
+      throw e6;
     }
   }
 

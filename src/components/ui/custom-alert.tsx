@@ -132,6 +132,7 @@ export function CustomAlert({
 
   return (
     <div
+      data-alert-container="true"
       className={`relative elegante-card ${styles.bgColor} border-2 ${styles.borderColor} w-80 max-w-[92vw] shadow-lg transition-all duration-700 ease-out will-change-transform will-change-opacity transform ${
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
@@ -228,6 +229,7 @@ export function useCustomAlert() {
     if (ctx) return null;
     return (
       <div
+        data-alert-root="true"
         className="fixed z-alert flex flex-col items-end gap-3 pointer-events-none"
         style={{
           bottom: `max(env(safe-area-inset-bottom), 24px)`,
@@ -240,6 +242,7 @@ export function useCustomAlert() {
         {alerts.map((alert) => (
           <div key={alert.id} className="pointer-events-auto">
             <CustomAlert
+              // Marca cada alerta para facilitar detección de clic externo
               isOpen={true}
               onClose={() => removeAlert(alert.id)}
               type={alert.type}
@@ -271,6 +274,7 @@ export function GlobalAlertContainer() {
   if (!ctx) return null;
   return (
     <div
+      data-alert-root="true"
       className="fixed z-alert flex flex-col items-end gap-3 pointer-events-none"
       style={{
         bottom: `max(env(safe-area-inset-bottom), 24px)`,
