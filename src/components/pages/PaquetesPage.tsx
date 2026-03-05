@@ -42,7 +42,8 @@ export function PaquetesPage() {
   const [detallePaquete, setDetallePaquete] = useState<any[]>([]);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterCategoria, setFilterCategoria] = useState("all");
+  const [filterEstado, setFilterEstado] = useState("all");
+  const [viewMode, setViewMode] = useState<'list' | 'create' | 'edit'>('list');
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(8);
@@ -166,8 +167,15 @@ export function PaquetesPage() {
   const filteredPaquetes = paquetes.filter(paquete => {
     const matchesSearch = paquete.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       paquete.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategoria = filterCategoria === "all" || paquete.categoria === filterCategoria;
-    return matchesSearch && matchesCategoria;
+    
+    let matchesEstado = true;
+    if (filterEstado === "activos") {
+      matchesEstado = paquete.activo === true;
+    } else if (filterEstado === "inactivos") {
+      matchesEstado = paquete.activo === false;
+    }
+
+    return matchesSearch && matchesEstado;
   });
 
   const totalPages = Math.ceil(filteredPaquetes.length / itemsPerPage);
@@ -299,6 +307,7 @@ export function PaquetesPage() {
       setNuevoPaquete({ ...estadoInicialPaquete });
       setServiciosAgregados([]);
       setIsDialogOpen(false);
+      setViewMode('list');
       setPrecioInput('');
       setPorcentajeInput('');
       setHoraInput('');
@@ -348,7 +357,8 @@ export function PaquetesPage() {
     setMinutosInput(m > 0 ? String(m) : '');
 
     setServiciosAgregados(serviciosConPrecio);
-    setIsDialogOpen(true);
+    // setIsDialogOpen(true); // Ya no usamos dialog para editar
+    setViewMode('edit');
   };
 
   const handleUpdatePaquete = async () => {
@@ -381,7 +391,7 @@ export function PaquetesPage() {
     const tempPaqueteData = { ...nuevoPaquete, nombre: nombreTrim };
 
     // Cerrar el modal temporalmente para evitar conflictos de z-index
-    setIsDialogOpen(false);
+    // setIsDialogOpen(false); // No necesario en vista completa
 
     confirmCreateAction(
       `${nombrePaquete}`,
@@ -409,6 +419,7 @@ export function PaquetesPage() {
           setEditingPaquete(null);
           setNuevoPaquete({ ...estadoInicialPaquete });
           setServiciosAgregados([]);
+          setViewMode('list');
 
           edited("Paquete actualizado exitosamente ✔️", `El paquete "${nombrePaquete}" ha sido actualizado correctamente con la nueva información.`);
         } catch (error) {
@@ -429,25 +440,16 @@ export function PaquetesPage() {
     const nombrePaquete = paquete.nombre;
     const nuevoEstado = !paquete.activo;
 
-    confirmCreateAction(
-      `${nombrePaquete}`,
-      async () => {
-        try {
-          await apiService.updatePaqueteStatus(paquete.id, nuevoEstado);
-          await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
-          edited(`Paquete ${nuevoEstado ? 'activado' : 'desactivado'} ✔️`, `El paquete "${nombrePaquete}" ha sido ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente.`);
-        } catch (error) {
-          console.error('Error updating paquete status:', error);
-        }
-      },
-      {
-        confirmTitle: `${nuevoEstado ? 'Activar' : 'Desactivar'} Paquete`,
-        confirmMessage: `¿Estás seguro de que deseas ${nuevoEstado ? 'activar' : 'desactivar'} el paquete "${nombrePaquete}"?`,
-        successTitle: `Paquete ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente ✔`,
-        successMessage: `El paquete "${nombrePaquete}" ha sido ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente.`,
-        requireInput: false
+    // Ejecutar directamente sin confirmación
+    (async () => {
+      try {
+        await apiService.updatePaqueteStatus(paquete.id, nuevoEstado);
+        await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
+        edited(`Paquete ${nuevoEstado ? 'activado' : 'desactivado'} ✔️`, `El paquete "${nombrePaquete}" ha sido ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente.`);
+      } catch (error) {
+        console.error('Error updating paquete status:', error);
       }
-    );
+    })();
   };
 
   const handleEliminarPaquete = (paquete: Paquete) => {
@@ -495,228 +497,228 @@ export function PaquetesPage() {
       </header>
 
       <main className="flex-1 overflow-auto p-8 bg-black-primary">
-        {/* Sección Principal */}
-        <div className="elegante-card">
-          {/* Barra de Controles */}
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-dark">
-            <div className="flex flex-wrap items-center gap-4">
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <button
-                    className="elegante-button-primary gap-2 flex items-center"
-                    onClick={() => {
-                      setEditingPaquete(null);
-                      setNuevoPaquete({ ...estadoInicialPaquete });
-                      setServiciosAgregados([]);
-                      setServicioSeleccionado('');
-                      setPrecioInput('');
-                      setPorcentajeInput('');
-                      setHoraInput('');
-                      setMinutosInput('');
-                    }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Nuevo Paquete
-                  </button>
-                </DialogTrigger>
-              </Dialog>
+        {/* Vista Lista de Paquetes */}
+        {viewMode === 'list' && (
+          <div className="elegante-card">
+            {/* Barra de Controles */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-dark">
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  className="elegante-button-primary gap-2 flex items-center"
+                  onClick={() => {
+                    setEditingPaquete(null);
+                    setNuevoPaquete({ ...estadoInicialPaquete });
+                    setServiciosAgregados([]);
+                    setServicioSeleccionado('');
+                    setPrecioInput('');
+                    setPorcentajeInput('');
+                    setHoraInput('');
+                    setMinutosInput('');
+                    setViewMode('create');
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                  Nuevo Paquete
+                </button>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
-                <Input
-                  placeholder="Buscar paquetes..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="elegante-input pl-11 w-80"
-                />
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
+                  <Input
+                    placeholder="Buscar paquetes..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="elegante-input pl-11 w-80"
+                  />
+                </div>
+
+                <select
+                  value={filterEstado}
+                  onChange={(e) => setFilterEstado(e.target.value)}
+                  className="elegante-input"
+                >
+                  <option value="all">Todos los estados</option>
+                  <option value="activos">Activos</option>
+                  <option value="inactivos">Inactivos</option>
+                </select>
               </div>
 
-              <select
-                value={filterCategoria}
-                onChange={(e) => setFilterCategoria(e.target.value)}
-                className="elegante-input"
-              >
-                <option value="all">Todas las categorías</option>
-                {categorias.map((categoria) => (
-                  <option key={categoria} value={categoria}>{categoria}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-lightest">
-                Mostrando {displayedPaquetes.length} de {filteredPaquetes.length} paquetes
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-lightest">
+                  Mostrando {displayedPaquetes.length} de {filteredPaquetes.length} paquetes
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="overflow-x-auto">
-            {loading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
-                <h3 className="text-lg font-semibold text-white-primary mb-2">Cargando paquetes...</h3>
-                <p className="text-gray-lightest">Por favor espera un momento</p>
-              </div>
-            ) : (
-              <>
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-dark">
-                      <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Nombre</th>
-                      <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Paquete</th>
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Servicios</th>
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Duración</th>
-                      <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Precio</th>
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
-                      <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedPaquetes.map((paquete) => (
-                      <tr key={paquete.id} className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
-                        <td className="py-4 px-4">
-                          <span className="text-gray-lighter">{paquete.nombre}</span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-orange-primary rounded-lg flex items-center justify-center shrink-0">
-                              <Package className="w-5 h-5 text-black-primary" />
-                            </div>
-                            <span className="text-gray-lighter text-sm" title={(() => {
-                              const nombres = serviciosPorPaqueteId.get(paquete.id) ?? paquete.servicios ?? [];
-                              return Array.isArray(nombres) ? nombres.join(', ') : String(nombres);
-                            })()}>
-                              {(() => {
-                                const nombres = serviciosPorPaqueteId.get(paquete.id) ?? paquete.servicios ?? [];
-                                const list = Array.isArray(nombres) ? nombres : [];
-                                const text = list.length > 0 ? list.join(', ') : paquete.nombre;
-                                return text || paquete.nombre;
-                              })()}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <span className="text-gray-lighter">{paquete.servicios.length} servicios</span>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <span className="text-gray-lighter">{paquete.duracion} min</span>
-                        </td>
-                        <td className="py-4 px-4 text-right">
-                          <span className="text-gray-lighter">${(paquete.precio ?? 0).toLocaleString('es-CO')}</span>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <span className="px-3 py-1 rounded-full text-xs bg-gray-medium text-gray-lighter">
-                            {paquete.activo ? 'Activo' : 'Inactivo'}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleToggleEstadoPaquete(paquete)}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title={paquete.activo ? "Desactivar paquete" : "Activar paquete"}
-                            >
-                              {paquete.activo ? (
-                                <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
-                              ) : (
-                                <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedPaquete(paquete);
-                                setIsDetailDialogOpen(true);
-                                loadDetallePaquete(paquete.id); // Cargar detalles del paquete
-                              }}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title="Ver Detalle"
-                            >
-                              <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
-                            </button>
-                            <button
-                              onClick={() => handleEditPaquete(paquete)}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title="Editar"
-                            >
-                              <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
-                            </button>
-                            <button
-                              onClick={() => handleEliminarPaquete(paquete)}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title="Eliminar"
-                            >
-                              <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
-                            </button>
-                          </div>
-                        </td>
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-primary mx-auto mb-4"></div>
+                  <h3 className="text-lg font-semibold text-white-primary mb-2">Cargando paquetes...</h3>
+                  <p className="text-gray-lightest">Por favor espera un momento</p>
+                </div>
+              ) : (
+                <>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-dark">
+                        <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Nombre</th>
+                        <th className="text-left py-3 px-4 text-white-primary font-bold text-sm">Paquete</th>
+                        <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Servicios</th>
+                        <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Duración</th>
+                        <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Precio</th>
+                        <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Estado</th>
+                        <th className="text-right py-3 px-4 text-white-primary font-bold text-sm">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {displayedPaquetes.map((paquete) => (
+                        <tr key={paquete.id} className="border-b border-gray-dark hover:bg-gray-darker transition-colors">
+                          <td className="py-4 px-4">
+                            <span className="text-gray-lighter">{paquete.nombre}</span>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-orange-primary rounded-lg flex items-center justify-center shrink-0">
+                                <Package className="w-5 h-5 text-black-primary" />
+                              </div>
+                              <span className="text-gray-lighter text-sm" title={(() => {
+                                const nombres = serviciosPorPaqueteId.get(paquete.id) ?? paquete.servicios ?? [];
+                                return Array.isArray(nombres) ? nombres.join(', ') : String(nombres);
+                              })()}>
+                                {(() => {
+                                  const nombres = serviciosPorPaqueteId.get(paquete.id) ?? paquete.servicios ?? [];
+                                  const list = Array.isArray(nombres) ? nombres : [];
+                                  const text = list.length > 0 ? list.join(', ') : paquete.nombre;
+                                  return text || paquete.nombre;
+                                })()}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="text-gray-lighter">{paquete.servicios.length} servicios</span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="text-gray-lighter">{paquete.duracion} min</span>
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            <span className="text-gray-lighter">${(paquete.precio ?? 0).toLocaleString('es-CO')}</span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="px-3 py-1 rounded-full text-xs bg-gray-medium text-gray-lighter">
+                              {paquete.activo ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleToggleEstadoPaquete(paquete)}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title={paquete.activo ? "Desactivar paquete" : "Activar paquete"}
+                              >
+                                {paquete.activo ? (
+                                  <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
+                                ) : (
+                                  <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedPaquete(paquete);
+                                  setIsDetailDialogOpen(true);
+                                  loadDetallePaquete(paquete.id); // Cargar detalles del paquete
+                                }}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title="Ver Detalle"
+                              >
+                                <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
+                              </button>
+                              <button
+                                onClick={() => handleEditPaquete(paquete)}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title="Editar"
+                              >
+                                <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
+                              </button>
+                              <button
+                                onClick={() => handleEliminarPaquete(paquete)}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
 
-                {displayedPaquetes.length === 0 && !loading && (
-                  <div className="text-center py-8">
-                    <Gift className="w-16 h-16 text-gray-medium mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-white-primary mb-2">No se encontraron paquetes</h3>
-                    <p className="text-gray-lightest">Intenta con otros términos de búsqueda</p>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Paginación */}
-          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
-            <div className="text-sm text-gray-lightest">
-              Página {currentPage} de {totalPages}
+                  {displayedPaquetes.length === 0 && !loading && (
+                    <div className="text-center py-8">
+                      <Gift className="w-16 h-16 text-gray-medium mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-white-primary mb-2">No se encontraron paquetes</h3>
+                      <p className="text-gray-lightest">Intenta con otros términos de búsqueda</p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4 text-gray-lightest" />
-              </button>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 text-gray-lightest" />
-              </button>
+
+            {/* Paginación */}
+            <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-dark">
+              <div className="text-sm text-gray-lightest">
+                Página {currentPage} de {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-lightest" />
+                </button>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-dark hover:bg-gray-darker disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-lightest" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Dialog de Creación/Edición */}
-        <Dialog open={isDialogOpen} onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) {
-            setEditingPaquete(null);
-            setNuevoPaquete({ ...estadoInicialPaquete });
-            setServiciosAgregados([]);
-            setServicioSeleccionado('');
-            setPrecioInput('');
-            setPorcentajeInput('');
-            setHoraInput('');
-            setMinutosInput('');
-          }
-        }}>
-          <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-white-primary flex items-center gap-2">
-                <Package className="w-5 h-5 text-orange-primary" />
-                {editingPaquete ? 'Editar Paquete' : 'Crear Nuevo Paquete'}
-              </DialogTitle>
-              <DialogDescription className="text-gray-lightest">
-                {editingPaquete ? 'Modifica la información del paquete seleccionado' : 'Crea una nueva combinación de servicios con descuentos especiales'}
-              </DialogDescription>
-            </DialogHeader>
+        {/* Vista Crear/Editar Paquete (Pantalla Completa) */}
+        {(viewMode === 'create' || viewMode === 'edit') && (
+          <div className="elegante-card max-w-4xl mx-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6 pb-6 border-b border-gray-dark">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setViewMode('list');
+                    setEditingPaquete(null);
+                    setNuevoPaquete({ ...estadoInicialPaquete });
+                  }}
+                  className="p-2 rounded-lg hover:bg-gray-darker text-gray-lightest transition-colors"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <div>
+                  <h2 className="text-xl font-semibold text-white-primary flex items-center gap-2">
+                    <Package className="w-6 h-6 text-orange-primary" />
+                    {viewMode === 'edit' ? 'Editar Paquete' : 'Crear Nuevo Paquete'}
+                  </h2>
+                  <p className="text-sm text-gray-lightest mt-1">
+                    {viewMode === 'edit' ? 'Modifica la información del paquete seleccionado' : 'Configura una nueva combinación de servicios'}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-            <div className="space-y-6 pt-4">
+            <div className="space-y-6">
               {/* Nombre y Descripción */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
                   <Label className="text-white-primary flex items-center gap-2">
                     <Package className="w-4 h-4 text-orange-primary" />
@@ -729,6 +731,10 @@ export function PaquetesPage() {
                     className="elegante-input"
                   />
                 </div>
+              </div>
+
+              {/* Precio y Descuento */}
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-white-primary flex items-center gap-2">
                     <DollarSign className="w-4 h-4 text-orange-primary" />
@@ -756,58 +762,6 @@ export function PaquetesPage() {
                       {precioInput.length}/15 caracteres
                     </span>
                   </div>
-                </div>
-              </div>
-
-              {/* Duración y Descuento */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-white-primary flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-orange-primary" />
-                    Duración (minutos)
-                  </Label>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={horaInput}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const h = Math.max(0, parseInt(val, 10) || 0);
-                          const m = Math.max(0, parseInt(minutosInput, 10) || 0);
-                          setHoraInput(val);
-                          setNuevoPaquete({ ...nuevoPaquete, duracion: h * 60 + m });
-                        }}
-                        placeholder="0"
-                        className="elegante-input no-spin"
-                      />
-                      <span className="text-gray-lightest text-sm whitespace-nowrap">h</span>
-                    </div>
-                    <div className="flex-1 flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={59}
-                        step={1}
-                        value={minutosInput}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const m = Math.max(0, Math.min(59, parseInt(val, 10) || 0));
-                          const h = Math.max(0, parseInt(horaInput, 10) || 0);
-                          setMinutosInput(val);
-                          setNuevoPaquete({ ...nuevoPaquete, duracion: h * 60 + m });
-                        }}
-                        placeholder="0"
-                        className="elegante-input no-spin"
-                      />
-                      <span className="text-gray-lightest text-sm whitespace-nowrap">min</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Total: {(nuevoPaquete.duracion || 0)} min
-                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-white-primary flex items-center gap-2">
@@ -848,64 +802,130 @@ export function PaquetesPage() {
                 />
               </div>
 
-              {/* Gestión de Servicios: primero Agregar servicio */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-white-primary flex items-center gap-2">
+              {/* Sección de Servicios mejorada UI/UX - Versión Compacta */}
+              <div className="space-y-3 bg-gray-darker p-3 rounded-xl border border-gray-dark/50">
+                <div className="flex items-center justify-between">
+                  <Label className="text-white-primary flex items-center gap-2 text-base font-medium">
                     <Scissors className="w-4 h-4 text-orange-primary" />
-                    Agregar servicio
+                    Configuración de Servicios
                   </Label>
-                  <div className="flex flex-col sm:flex-row gap-3">
+                  <span className="text-[10px] text-gray-lightest bg-gray-dark px-2 py-0.5 rounded-full">
+                    {serviciosAgregados.length} servicios
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 items-center">
+                  <div className="flex-1 w-full">
                     <select
                       value={servicioSeleccionado}
                       onChange={(e) => setServicioSeleccionado(e.target.value)}
-                      className="elegante-input flex-1"
+                      className="elegante-input w-full h-9 text-sm"
                     >
-                      <option value="">Selecciona un servicio</option>
+                      <option value="">-- Seleccionar servicio --</option>
                       {serviciosDisponibles.map((servicio, index) => (
                         <option key={index} value={servicio.nombre}>
                           {servicio.nombre} - ${(servicio.precio ?? 0).toLocaleString('es-CO')}
                         </option>
                       ))}
                     </select>
-                    <button
-                      onClick={() => {
-                        agregarServicio();
-                      }}
-                      className="elegante-button-primary px-4 py-2"
-                      disabled={!servicioSeleccionado}
-                    >
-                      Agregar Servicio
-                    </button>
                   </div>
+                  <button
+                    onClick={() => {
+                      agregarServicio();
+                    }}
+                    className={`h-9 px-4 rounded-lg font-medium text-sm transition-all flex items-center gap-1.5 ${!servicioSeleccionado
+                        ? 'bg-gray-dark text-gray-light cursor-not-allowed opacity-50'
+                        : 'bg-orange-primary text-black-primary hover:bg-orange-secondary hover:shadow-lg hover:shadow-orange-primary/20 transform hover:-translate-y-0.5'
+                      }`}
+                    disabled={!servicioSeleccionado}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Añadir
+                  </button>
                 </div>
 
-                {/* Lista de servicios agregados */}
-                {serviciosAgregados.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-lg font-semibold text-white-primary mb-2">Servicios agregados</h4>
-                    <div className="space-y-3 max-h-48 overflow-y-auto">
-                      {serviciosAgregados.map((servicio, index) => (
-                        <div key={index} className="flex items-center justify-between bg-gray-darker p-4 rounded-xl border border-gray-dark">
-                          <span className="text-white-primary font-semibold">{servicio.nombre}</span>
-                          <span className="text-white-primary font-medium">
-                            ${(servicio.precio ?? 0).toLocaleString('es-CO')}
-                          </span>
-                          <button
-                            onClick={() => eliminarServicio(servicio.nombre)}
-                            className="ml-3 p-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors shrink-0"
-                            title="Eliminar servicio"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                {/* Lista de servicios agregados con mejor diseño */}
+                {serviciosAgregados.length > 0 ? (
+                  <div className="mt-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar grid grid-cols-2 gap-2 auto-rows-min">
+                    {serviciosAgregados.map((servicio, index) => (
+                      <div key={index} className="group flex items-center justify-between bg-black-primary p-2 rounded-lg border border-gray-dark hover:border-gray-light transition-all h-fit">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div className="w-6 h-6 rounded-full bg-gray-dark flex items-center justify-center text-gray-lightest text-[10px] font-bold shrink-0">
+                            {index + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-white-primary font-medium text-sm truncate" title={servicio.nombre}>{servicio.nombre}</p>
+                            <p className="text-[10px] text-gray-lightest truncate">Base: ${(servicio.precio ?? 0).toLocaleString('es-CO')}</p>
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                        <button
+                          onClick={() => eliminarServicio(servicio.nombre)}
+                          className="p-1.5 rounded-full text-gray-light hover:bg-red-500/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
+                          title="Eliminar servicio del paquete"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 p-4 border border-dashed border-gray-dark rounded-lg flex flex-col items-center justify-center text-gray-light bg-black-primary/30">
+                    <Scissors className="w-5 h-5 mb-1 opacity-20" />
+                    <p className="text-xs text-gray-500">Selecciona un servicio arriba para comenzar</p>
                   </div>
                 )}
               </div>
 
-              {/* Sección de “Servicios seleccionados” oculta para simplificar el formulario */}
+              {/* Duración (Moved here) */}
+              <div className="space-y-2 bg-gray-darker p-4 rounded-xl border border-gray-dark/50">
+                <Label className="text-white-primary flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-orange-primary" />
+                  Duración Total (minutos)
+                </Label>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={horaInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const h = Math.max(0, parseInt(val, 10) || 0);
+                        const m = Math.max(0, parseInt(minutosInput, 10) || 0);
+                        setHoraInput(val);
+                        setNuevoPaquete({ ...nuevoPaquete, duracion: h * 60 + m });
+                      }}
+                      placeholder="0"
+                      className="elegante-input no-spin text-center"
+                    />
+                    <span className="text-gray-lightest text-sm font-medium">horas</span>
+                  </div>
+                  <div className="flex-1 flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      step={1}
+                      value={minutosInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const m = Math.max(0, Math.min(59, parseInt(val, 10) || 0));
+                        const h = Math.max(0, parseInt(horaInput, 10) || 0);
+                        setMinutosInput(val);
+                        setNuevoPaquete({ ...nuevoPaquete, duracion: h * 60 + m });
+                      }}
+                      placeholder="0"
+                      className="elegante-input no-spin text-center"
+                    />
+                    <span className="text-gray-lightest text-sm font-medium">min</span>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-dark rounded-lg border border-gray-medium/30">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Total</p>
+                    <p className="text-orange-primary font-bold text-lg">{(nuevoPaquete.duracion || 0)} min</p>
+                  </div>
+                </div>
+              </div>
 
               {/* Resumen de Totales */}
               {nuevoPaquete.precio > 0 && (
@@ -936,7 +956,7 @@ export function PaquetesPage() {
               <div className="flex justify-end space-x-4 pt-4 border-t border-gray-dark">
                 <button
                   onClick={() => {
-                    setIsDialogOpen(false);
+                    setViewMode('list');
                     setEditingPaquete(null);
                     setNuevoPaquete({ ...estadoInicialPaquete });
                     setServiciosAgregados([]);
@@ -956,8 +976,8 @@ export function PaquetesPage() {
                 </button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+          </div>
+        )}
 
 
 

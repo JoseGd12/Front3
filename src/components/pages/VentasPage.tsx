@@ -26,6 +26,7 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { Checkbox } from "../ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Label } from "../ui/label";
 import { toast } from "sonner";
@@ -187,22 +188,13 @@ export function VentasPage() {
   const VALOR_SIN_BARBERO = "sin-barbero";
   const [barberoSeleccionado, setBarberoSeleccionado] = useState<string>(VALOR_TODOS_BARBEROS);
 
-  const enriquecerVentaConCliente = (venta: Venta, clientes: Array<ClienteAPI | any>): Venta => {
-    if (!venta || !clientes || clientes.length === 0) return venta;
-
-    const clientesById = new Map<number, any>();
-    const clientesByDocumento = new Map<string, any>();
-
-    clientes.forEach((c: any) => {
-      const idNum = Number(c?.id ?? c?.Id);
-      if (!Number.isNaN(idNum) && idNum > 0) {
-        clientesById.set(idNum, c);
-      }
-      const doc = String(c?.documento ?? c?.Documento ?? '').trim();
-      if (doc) {
-        clientesByDocumento.set(doc, c);
-      }
-    });
+  // Versión optimizada que recibe los Map ya construidos
+  const enriquecerVentaConClienteOptimizado = (
+    venta: Venta, 
+    clientesById: Map<number, any>, 
+    clientesByDocumento: Map<string, any>
+  ): Venta => {
+    if (!venta) return venta;
 
     const clienteId = Number(venta.clienteId);
     const documentoActual = String(venta.clienteDocumento || '').trim();
@@ -280,9 +272,24 @@ export function VentasPage() {
         saldoAFavor: saldoPorCliente.get(Number(cliente.id)) || 0
       }));
 
+      // Optimización: Crear mapas de clientes una sola vez fuera del bucle de ventas
+      const clientesById = new Map<number, any>();
+      const clientesByDocumento = new Map<string, any>();
+
+      clientesConSaldo.forEach((c: any) => {
+        const idNum = Number(c?.id ?? c?.Id);
+        if (!Number.isNaN(idNum) && idNum > 0) {
+          clientesById.set(idNum, c);
+        }
+        const doc = String(c?.documento ?? c?.Documento ?? '').trim();
+        if (doc) {
+          clientesByDocumento.set(doc, c);
+        }
+      });
+
       setClientesCatalogo(clientesConSaldo);
       const ventasEnriquecidas = (ventasData || []).map((venta: Venta) =>
-        enriquecerVentaConCliente(venta, clientesConSaldo)
+        enriquecerVentaConClienteOptimizado(venta, clientesById, clientesByDocumento)
       );
       setVentas(ventasEnriquecidas);
       setServicios((serviciosData || []).filter(s => s.estado === true));
@@ -730,22 +737,22 @@ export function VentasPage() {
       (selectedVenta as any).SaldoAFavorUsado ??
       (selectedVenta as any).saldoAFavorUsado ??
       (selectedVenta as any).SaldoAFavor ??
-      (selectedVenta as any).saldoAFavorUsado ??
       (selectedVenta as any).saldoAFavor ??
       0
     );
     if (explicit > 0) return explicit;
+
     const subtotal = Number(selectedVenta.subtotal || 0);
     const iva = Number((selectedVenta as any).iva || 0);
     const descuento = Number(selectedVenta.descuento || 0);
     const total = Number(selectedVenta.total || 0);
-    const candidates = [
-      subtotal - total,
-      subtotal + iva - descuento - total
-    ].filter(v => Number.isFinite(v) && v > 0) as number[];
-    if (candidates.length === 0) return 0;
-    const best = Math.max(...candidates);
-    return Math.max(0, Math.min(best, subtotal));
+    
+    // El saldo usado es la diferencia entre lo que debería costar (Subtotal + IVA - Descuento) y lo que se cobró (Total)
+    const shouldBe = subtotal + iva - descuento;
+    const diff = shouldBe - total;
+    
+    // Retornar la diferencia si es positiva (tolerancia por decimales)
+    return diff > 0.01 ? diff : 0;
   }, [selectedVenta]);
 
 
@@ -809,16 +816,7 @@ export function VentasPage() {
     const subtotal = calcularSubtotal();
     const iva = calcularIva(subtotal);
     const descuento = calcularDescuento(subtotal);
-    const totalVenta = subtotal + iva - descuento;
-
-    if (nuevaVenta.usarSaldoAFavor) {
-      const cliente = clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId));
-      const saldoDisponible = cliente?.saldoAFavor || 0;
-      const montoAUsar = Math.min(totalVenta, saldoDisponible);
-      return Math.max(0, totalVenta - montoAUsar);
-    }
-
-    return Math.max(0, totalVenta);
+    return Math.max(0, subtotal + iva - descuento);
   };
 
   const calcularIva = (subtotal: number) => {
@@ -1146,7 +1144,17 @@ export function VentasPage() {
       // Cargar detalles completos de la venta
       const ventaConDetalles = await ventaService.getVentaById(venta.id);
       if (ventaConDetalles) {
-        const ventaEnriquecida = enriquecerVentaConCliente(ventaConDetalles, clientesCatalogo);
+        // Optimización: Crear mapas de clientes una sola vez
+        const clientesById = new Map<number, any>();
+        const clientesByDocumento = new Map<string, any>();
+        clientesCatalogo.forEach((c: any) => {
+          const idNum = Number(c?.id ?? c?.Id);
+          if (!Number.isNaN(idNum) && idNum > 0) clientesById.set(idNum, c);
+          const doc = String(c?.documento ?? c?.Documento ?? '').trim();
+          if (doc) clientesByDocumento.set(doc, c);
+        });
+
+        const ventaEnriquecida = enriquecerVentaConClienteOptimizado(ventaConDetalles, clientesById, clientesByDocumento);
         setSelectedVenta({
           ...ventaEnriquecida,
           // Fallback: si el endpoint de detalle no trae productos/servicios, conservar los ya cargados en la tabla.
@@ -1191,6 +1199,14 @@ export function VentasPage() {
       return;
     }
 
+    // Validar Barbero si hay servicios
+    if (tieneServicios && !nuevaVenta.barberoId) {
+      toast.error("El barbero es obligatorio cuando se agregan servicios", {
+        description: "Por favor selecciona un barbero para continuar."
+      });
+      return;
+    }
+
     // Validar que los productos tengan IDs válidos
     const productosInvalidos = productosActuales.filter(p => !p.id || isNaN(parseInt(p.id)));
     if (productosInvalidos.length > 0) {
@@ -1219,7 +1235,19 @@ export function VentasPage() {
       const subtotal = calcularSubtotal();
       const iva = calcularIva(subtotal);
       const descuento = calcularDescuento(subtotal);
-      const total = calcularTotal();
+      
+      // Calcular el monto usado de saldo a favor si aplica
+      let montoSaldoUsado = 0;
+      if (nuevaVenta.usarSaldoAFavor && nuevaVenta.clienteId) {
+        const clienteSel = clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId));
+        const saldoDisponible = clienteSel?.saldoAFavor || 0;
+        const totalSinSaldo = subtotal + iva - descuento;
+        montoSaldoUsado = Math.min(totalSinSaldo, saldoDisponible);
+      }
+
+      // El total a pagar debe disminuir si se usa saldo a favor
+      const total = calcularTotal() - montoSaldoUsado;
+
       const productosTexto = productosActuales.length > 0
         ? productosActuales.map(p => `${p.nombre} (x${p.cantidad})`).join(', ')
         : 'Ninguno';
@@ -2058,9 +2086,6 @@ export function VentasPage() {
                                 <SelectItem value="Efectivo">Efectivo</SelectItem>
                                 <SelectItem value="Tarjeta">Tarjeta</SelectItem>
                                 <SelectItem value="Transferencia">Transferencia</SelectItem>
-                                <SelectItem value="Saldo">
-                                  Saldo {(!nuevaVenta.clienteId || (clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0) <= 0) ? '— no disponible' : ''}
-                                </SelectItem>
                               </SelectContent>
                             </Select>
                             {showVentaFormErrors && !nuevaVenta.metodoPago && (
@@ -2083,6 +2108,36 @@ export function VentasPage() {
                                 </p>
                               </div>
                             </div>
+                            
+                            {/* Checkbox para usar saldo - Estilo Mejorado */}
+                            {(clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0) > 0 && (
+                              <div 
+                                className={`flex items-center space-x-3 px-4 py-2 rounded-lg border transition-all cursor-pointer ${
+                                  nuevaVenta.usarSaldoAFavor 
+                                    ? 'bg-blue-500/10 border-blue-500/30' 
+                                    : 'bg-gray-dark border-gray-medium/30 hover:bg-gray-dark/80'
+                                }`}
+                                onClick={() => setNuevaVenta({ ...nuevaVenta, usarSaldoAFavor: !nuevaVenta.usarSaldoAFavor })}
+                              >
+                                <Checkbox 
+                                  id="usar-saldo" 
+                                  checked={nuevaVenta.usarSaldoAFavor}
+                                  onCheckedChange={(checked) => {
+                                      setNuevaVenta({ ...nuevaVenta, usarSaldoAFavor: checked === true });
+                                  }}
+                                  className={`border-2 ${nuevaVenta.usarSaldoAFavor ? 'border-blue-400 bg-blue-500 text-white' : 'border-gray-400'}`}
+                                  checkClassName="stroke-[3.5] w-3 h-3"
+                                />
+                                <label 
+                                  htmlFor="usar-saldo" 
+                                  className={`text-sm font-semibold leading-none cursor-pointer select-none ${
+                                    nuevaVenta.usarSaldoAFavor ? 'text-blue-400' : 'text-gray-light'
+                                  }`}
+                                >
+                                  Usar saldo en esta venta
+                                </label>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -2315,11 +2370,11 @@ export function VentasPage() {
                         <div className="space-y-4">
                           <h3 className="text-lg font-semibold text-white-primary">Agregar Servicios</h3>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {/* Barbero (opcional) */}
+                            {/* Barbero */}
                             <div className="space-y-2">
                               <Label className="text-white-primary flex items-center gap-2">
                                 <User className="w-4 h-4 text-orange-primary" />
-                                Barbero (opcional)
+                                Barbero {serviciosAgregados.length > 0 ? "*" : "(opcional)"}
                               </Label>
                               <Select
                                 value={nuevaVenta.barberoId?.toString() || VALOR_SIN_BARBERO}
@@ -2337,8 +2392,8 @@ export function VentasPage() {
                                   }
                                 }}
                               >
-                                <SelectTrigger className="elegante-input bg-gray-darker border-gray-dark">
-                                  <SelectValue placeholder="Sin barbero asignado" />
+                                <SelectTrigger className={`elegante-input bg-gray-darker border-gray-dark ${serviciosAgregados.length > 0 && !nuevaVenta.barberoId ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}>
+                                  <SelectValue placeholder={serviciosAgregados.length > 0 ? "Selecciona un barbero" : "Sin barbero asignado"} />
                                 </SelectTrigger>
                                 <SelectContent className="bg-gray-darkest border border-gray-dark text-white-primary">
                                   <SelectItem value={VALOR_SIN_BARBERO}>Sin barbero</SelectItem>
@@ -2759,12 +2814,23 @@ export function VentasPage() {
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
           <DialogContent className="bg-gray-darkest border-gray-dark max-w-4xl max-h-[90vh] overflow-y-auto text-white-primary">
             {loadingDetails ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-primary mx-auto mb-3"></div>
-                  <p className="text-gray-lightest text-sm">Cargando detalles...</p>
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-white-primary flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-orange-primary" />
+                    Cargando...
+                  </DialogTitle>
+                  <DialogDescription className="text-gray-lightest">
+                    Por favor espera mientras cargamos los detalles.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-primary mx-auto mb-3"></div>
+                    <p className="text-gray-lightest text-sm">Cargando detalles...</p>
+                  </div>
                 </div>
-              </div>
+              </>
             ) : selectedVenta ? (
               <>
                 <DialogHeader>

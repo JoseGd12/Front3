@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { agendamientoService } from "../../services/agendamientoService";
+import { ventaService } from "../../services/ventaService";
+import { useAuth } from "../AuthContext";
 import { barberosService } from "../../services/barberosService";
 import { servicioService } from "../../services/servicioService";
 import { clientesService } from "../../services/clientesService";
@@ -40,6 +42,7 @@ const formatearPrecio = (precio: number): string => {
 };
 
 export function AgendamientoPage() {
+  const { user } = useAuth();
   const { success, error, AlertContainer } = useCustomAlert();
   const [citas, setCitas] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -471,7 +474,62 @@ export function AgendamientoPage() {
         if (ventaInfo) {
           success("Cita completada", `Se creó la venta #${ventaInfo.id || ventaInfo.Id} por $${(ventaInfo.total || ventaInfo.Total || 0).toLocaleString('es-CO')}.`);
         } else {
-          success("Cita completada", "La venta fue generada automáticamente.");
+          try {
+            const cita = citas.find(c => c.id === citaId);
+            if (cita && user) {
+              const allVentas = await ventaService.getVentas();
+              const nextNumeroVenta = allVentas.length + 1;
+              
+              const ventaData: any = {
+                numeroVenta: nextNumeroVenta,
+                clienteId: cita.clienteId,
+                usuarioId: Number(user.id),
+                clienteDocumento: '', 
+                fecha: new Date().toISOString().split('T')[0],
+                servicios: cita.servicioNombre || 'Servicio de cita',
+                productos: 'Ninguno',
+                subtotal: cita.precio,
+                iva: 0,
+                descuento: 0,
+                total: cita.precio,
+                barberoId: cita.barberoId,
+                barberoNombre: cita.barberoNombre,
+                estado: 'Completada',
+                metodoPago: 'Efectivo', 
+                garantiaMeses: 0,
+                productosDetalle: [],
+                serviciosDetalle: []
+              };
+
+              if (cita.paqueteId) {
+                ventaData.serviciosDetalle.push({
+                  id: `PAQ-${cita.paqueteId}`,
+                  nombre: cita.paqueteNombre || 'Paquete',
+                  precio: cita.precio,
+                  cantidad: 1
+                });
+              } else if (cita.servicioId) {
+                ventaData.serviciosDetalle.push({
+                  id: `SERV-${cita.servicioId}`,
+                  nombre: cita.servicioNombre || 'Servicio',
+                  precio: cita.precio,
+                  cantidad: 1
+                });
+              }
+
+              if (ventaData.serviciosDetalle.length > 0) {
+                const nuevaVenta = await ventaService.createVenta(ventaData);
+                success("Cita completada", `Se generó la venta #${nuevaVenta.numeroVenta || nextNumeroVenta} manualmente.`);
+              } else {
+                success("Cita completada", "No se pudo generar venta automática (faltan detalles de servicio).");
+              }
+            } else {
+              success("Cita completada", "No se pudo generar la venta automática (cita no encontrada o usuario no autenticado).");
+            }
+          } catch (e) {
+            console.error("Error creando venta manual:", e);
+            success("Cita completada", "Pero hubo un error al generar la venta automática.");
+          }
         }
       } else {
         success("Estado actualizado", "El estado de la cita ha sido modificado.");
