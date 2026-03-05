@@ -748,18 +748,15 @@ export function ComprasPage() {
     const producto = productosActuales.find(p => p.id === productId);
     if (!producto) return;
 
-    // Asegurar que stockVentas + stockInsumos = cantidad
-    const stockInsumos = producto.cantidad - nuevoStock;
-    if (stockInsumos < 0) {
-      toast.error("El stock de ventas no puede ser mayor que la cantidad total");
-      return;
-    }
+    const cantidadTotal = Math.max(0, Math.floor(producto.cantidad));
+    const clampedVentas = Math.max(0, Math.min(Math.floor(nuevoStock), cantidadTotal));
+    const clampedInsumos = cantidadTotal - clampedVentas;
 
     setNuevaCompra({
       ...nuevaCompra,
       productos: productosActuales.map(p =>
         p.id === productId
-          ? { ...p, stockVentas: nuevoStock, stockInsumos: stockInsumos }
+          ? { ...p, stockVentas: clampedVentas, stockInsumos: clampedInsumos }
           : p
       )
     });
@@ -767,8 +764,8 @@ export function ComprasPage() {
       ...prev,
       [productId]: {
         ...prev[productId],
-        stockVentas: String(nuevoStock),
-        stockInsumos: String(stockInsumos)
+        stockVentas: String(clampedVentas),
+        stockInsumos: String(clampedInsumos)
       }
     }));
   };
@@ -779,18 +776,15 @@ export function ComprasPage() {
     const producto = productosActuales.find(p => p.id === productId);
     if (!producto) return;
 
-    // Asegurar que stockVentas + stockInsumos = cantidad
-    const stockVentas = producto.cantidad - nuevoStock;
-    if (stockVentas < 0) {
-      toast.error("El stock de insumos no puede ser mayor que la cantidad total");
-      return;
-    }
+    const cantidadTotal = Math.max(0, Math.floor(producto.cantidad));
+    const clampedInsumos = Math.max(0, Math.min(Math.floor(nuevoStock), cantidadTotal));
+    const clampedVentas = cantidadTotal - clampedInsumos;
 
     setNuevaCompra({
       ...nuevaCompra,
       productos: productosActuales.map(p =>
         p.id === productId
-          ? { ...p, stockInsumos: nuevoStock, stockVentas: stockVentas }
+          ? { ...p, stockInsumos: clampedInsumos, stockVentas: clampedVentas }
           : p
       )
     });
@@ -798,8 +792,8 @@ export function ComprasPage() {
       ...prev,
       [productId]: {
         ...prev[productId],
-        stockInsumos: String(nuevoStock),
-        stockVentas: String(stockVentas)
+        stockInsumos: String(clampedInsumos),
+        stockVentas: String(clampedVentas)
       }
     }));
   };
@@ -1630,8 +1624,23 @@ export function ComprasPage() {
                                       type="number"
                                       min={1}
                                       value={getTarjetaInput(producto, 'cantidad')}
-
-                                      onChange={(e) => actualizarTarjetaInput(producto.id, 'cantidad', e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === '-' || e.key === 'e' || e.key === '+' || e.key === '.') {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      onPaste={(e) => {
+                                        const text = (e.clipboardData || window.Clipboard).getData('text');
+                                        if (/[^\d]/.test(text)) {
+                                          e.preventDefault();
+                                          const cleaned = text.replace(/\D+/g, '');
+                                          actualizarTarjetaInput(producto.id, 'cantidad', cleaned);
+                                        }
+                                      }}
+                                      onChange={(e) => {
+                                        const cleaned = e.target.value.replace(/\D+/g, '');
+                                        actualizarTarjetaInput(producto.id, 'cantidad', cleaned);
+                                      }}
                                       className="w-12 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5"
                                     />
                                   </div>
@@ -1643,8 +1652,23 @@ export function ComprasPage() {
                                       type="number"
                                       min={0}
                                       value={getTarjetaInput(producto, 'stockVentas')}
-
-                                      onChange={(e) => actualizarTarjetaInput(producto.id, 'stockVentas', e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === '-' || e.key === 'e' || e.key === '+') {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      onPaste={(e) => {
+                                        const text = (e.clipboardData || window.Clipboard).getData('text');
+                                        if (/[^\d]/.test(text)) {
+                                          e.preventDefault();
+                                          const cleaned = text.replace(/\D+/g, '');
+                                          actualizarTarjetaInput(producto.id, 'stockVentas', cleaned);
+                                        }
+                                      }}
+                                      onChange={(e) => {
+                                        const cleaned = e.target.value.replace(/-/g, '');
+                                        actualizarTarjetaInput(producto.id, 'stockVentas', cleaned);
+                                      }}
                                       className="w-12 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 border-green-500/20"
                                     />
                                   </div>
@@ -1656,8 +1680,23 @@ export function ComprasPage() {
                                       type="number"
                                       min={0}
                                       value={getTarjetaInput(producto, 'stockInsumos')}
-
-                                      onChange={(e) => actualizarTarjetaInput(producto.id, 'stockInsumos', e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === '-' || e.key === 'e' || e.key === '+') {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      onPaste={(e) => {
+                                        const text = (e.clipboardData || window.Clipboard).getData('text');
+                                        if (/[^\d]/.test(text)) {
+                                          e.preventDefault();
+                                          const cleaned = text.replace(/\D+/g, '');
+                                          actualizarTarjetaInput(producto.id, 'stockInsumos', cleaned);
+                                        }
+                                      }}
+                                      onChange={(e) => {
+                                        const cleaned = e.target.value.replace(/-/g, '');
+                                        actualizarTarjetaInput(producto.id, 'stockInsumos', cleaned);
+                                      }}
                                       className="w-12 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 border-blue-500/20"
                                     />
                                   </div>
