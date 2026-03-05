@@ -444,6 +444,31 @@ export function VentasPage() {
   const showCantidadProductoError = mustSetCantidadProducto || (showAddProductoErrors && cantidadProducto <= 0);
   const showServicioSelectorError = (mustChooseServicio && !servicioSeleccionado) || (showAddServicioErrors && !servicioSeleccionado);
 
+  const canUseSaldoPago = (): boolean => {
+    const cliente = clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId));
+    const saldoDisponible = cliente?.saldoAFavor || 0;
+    const subtotal = calcularSubtotal();
+    const descuento = calcularDescuento(subtotal);
+    const totalSinSaldo = subtotal + calcularIva(subtotal) - descuento;
+    return saldoDisponible > 0 && saldoDisponible >= totalSinSaldo;
+  };
+
+  const handleMetodoPagoChange = (value: string) => {
+    if (value === 'Saldo') {
+      if (!nuevaVenta.clienteId) {
+        toast.error("Selecciona un cliente para usar Saldo");
+        return;
+      }
+      if (!canUseSaldoPago()) {
+        toast.error("Saldo insuficiente para cubrir el total");
+        return;
+      }
+      setNuevaVenta({ ...nuevaVenta, metodoPago: 'Saldo', usarSaldoAFavor: true });
+      return;
+    }
+    setNuevaVenta({ ...nuevaVenta, metodoPago: value, usarSaldoAFavor: false });
+  };
+
   const isStockExceeded = useMemo(() => {
     if (!productoSeleccionado || cantidadProducto <= 0) return false;
     const producto = productosAPI.find(p => p.id.toString() === productoSeleccionado);
@@ -607,9 +632,14 @@ export function VentasPage() {
 
   const devolucionesVentaActual = useMemo(() => {
     if (!selectedVenta) return [];
-    const ventaIdNum = Number(selectedVenta.id);
+    const ventaIdCandidates = [
+      Number(selectedVenta.id),
+      Number(String((selectedVenta as any).numeroVenta || '').replace(/\D/g, ''))
+    ].filter(v => Number.isFinite(v) && v > 0);
     return devoluciones.filter(d => {
-      const matchId = Number(d.ventaId) === ventaIdNum;
+      const devVentaRaw = (d as any).ventaId ?? (d as any).VentaId ?? (d as any).numeroVenta ?? (d as any).NumeroVenta ?? d.ventaId;
+      const devVentaNum = Number(String(devVentaRaw || '').replace(/\D/g, ''));
+      const matchId = ventaIdCandidates.some(v => v === devVentaNum);
       const estado = (d.estado || '').toLowerCase().trim();
       const noAnulada = estado !== 'anulada' && estado !== 'anulado';
       const motivoDet = String((d as any).motivoDetalle || '').toLowerCase();
@@ -794,6 +824,14 @@ export function VentasPage() {
   const calcularIva = (subtotal: number) => {
     return 0;
   };
+
+  useEffect(() => {
+    if (nuevaVenta.metodoPago === 'Saldo') {
+      if (!canUseSaldoPago()) {
+        setNuevaVenta(prev => ({ ...prev, metodoPago: '', usarSaldoAFavor: false }));
+      }
+    }
+  }, [nuevaVenta.clienteId, nuevaVenta.productos, serviciosAgregados, nuevaVenta.porcentajeDescuento]);
 
   const agregarProducto = () => {
     if (!productoSeleccionado || cantidadProducto <= 0) {
@@ -1195,6 +1233,9 @@ export function VentasPage() {
         ? barberosAPI.find(b => b.id === Number(nuevaVenta.barberoId))
         : null;
 
+      const metodoPagoFinal = (nuevaVenta.metodoPago === 'Saldo')
+        ? 'Saldo'
+        : (nuevaVenta.usarSaldoAFavor ? `${nuevaVenta.metodoPago} (Saldo aplicado)` : nuevaVenta.metodoPago);
       const ventaData = {
         numeroVenta,
         clienteId: nuevaVenta.clienteId,
@@ -1210,7 +1251,7 @@ export function VentasPage() {
         barberoId: nuevaVenta.barberoId ?? undefined,
         barberoNombre: nuevaVenta.barberoNombre || 'Sin asignar',
         estado: 'Completada',
-        metodoPago: nuevaVenta.usarSaldoAFavor ? `${nuevaVenta.metodoPago} (Saldo aplicado)` : nuevaVenta.metodoPago,
+        metodoPago: metodoPagoFinal,
         garantiaMeses: nuevaVenta.garantiaMeses,
         productosDetalle: productosActuales,
         serviciosDetalle: tieneServicios
@@ -2009,7 +2050,7 @@ export function VentasPage() {
                               <CreditCard className="w-4 h-4 text-orange-primary" />
                               Método de Pago *
                             </Label>
-                            <Select value={nuevaVenta.metodoPago} onValueChange={(value) => setNuevaVenta({ ...nuevaVenta, metodoPago: value })}>
+                            <Select value={nuevaVenta.metodoPago} onValueChange={handleMetodoPagoChange}>
                               <SelectTrigger className={`elegante-input ${showVentaFormErrors && !nuevaVenta.metodoPago ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}>
                                 <SelectValue placeholder="Selecciona el método de pago" />
                               </SelectTrigger>
@@ -2017,6 +2058,9 @@ export function VentasPage() {
                                 <SelectItem value="Efectivo">Efectivo</SelectItem>
                                 <SelectItem value="Tarjeta">Tarjeta</SelectItem>
                                 <SelectItem value="Transferencia">Transferencia</SelectItem>
+                                <SelectItem value="Saldo">
+                                  Saldo {(!nuevaVenta.clienteId || (clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0) <= 0) ? '— no disponible' : ''}
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                             {showVentaFormErrors && !nuevaVenta.metodoPago && (
@@ -2039,18 +2083,6 @@ export function VentasPage() {
                                 </p>
                               </div>
                             </div>
-                            {(clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0) > 0 && (
-                              <div className="flex items-center gap-2">
-                                <Label htmlFor="usar-saldo" className="text-sm text-gray-lightest cursor-pointer">Usar saldo en esta venta</Label>
-                                <input
-                                  id="usar-saldo"
-                                  type="checkbox"
-                                  checked={nuevaVenta.usarSaldoAFavor}
-                                  onChange={(e) => setNuevaVenta({ ...nuevaVenta, usarSaldoAFavor: e.target.checked })}
-                                  className="w-5 h-5 rounded border-gray-dark bg-gray-dark text-orange-primary focus:ring-orange-primary transition-colors cursor-pointer"
-                                />
-                              </div>
-                            )}
                           </div>
                         )}
 
@@ -2965,13 +2997,56 @@ export function VentasPage() {
                     </div>
                   </div>
 
+                  {devolucionesVentaActual.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-md font-medium text-white-primary">Devoluciones Asociadas:</h4>
+                        <span className="text-[11px] text-gray-lightest">
+                          Total Devuelto: <span className="text-orange-primary font-semibold">${formatCurrency(totalMontoDevuelto)}</span>
+                        </span>
+                      </div>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {devolucionesVentaActual.map((dev) => (
+                          <div key={`dev-${dev.id}`} className="bg-gray-darker rounded-lg px-3 py-2.5 border border-gray-dark">
+                            <div className="flex items-center gap-4 flex-nowrap min-w-0">
+                              <div className="shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-dark border border-gray-dark flex items-center justify-center">
+                                <ImageRenderer
+                                  url={dev.productoImagen}
+                                  alt={dev.producto}
+                                  className="w-full h-full border-0 bg-transparent"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1 shrink">
+                                <span className="text-white-primary font-semibold text-sm truncate block" title={dev.producto}>
+                                  {dev.producto}
+                                </span>
+                                <div className="text-[11px] text-gray-lightest">
+                                  {dev.fecha} {dev.hora ? `• ${dev.hora}` : ''}
+                                  {dev.motivoDetalle ? ` • ${dev.motivoDetalle}` : ''}
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-0.5 shrink-0 text-right">
+                                <span className="text-[11px] text-gray-400">Cantidad</span>
+                                <span className="text-xs text-white-primary tabular-nums">{dev.cantidad}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5 shrink-0 text-right">
+                                <span className="text-[11px] text-gray-400">Monto</span>
+                                <span className="text-xs text-orange-primary font-semibold tabular-nums">
+                                  ${formatCurrency(dev.monto)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   
 
                   <div className="bg-gray-darker p-4 rounded-xl border border-gray-dark space-y-3">
                     {/* Subtotal Original */}
                     <div className="flex justify-between text-gray-lightest">
-                      <span>Subtotal Original:</span>
-                      <span className="font-medium">${formatCurrency(selectedVenta.subtotal)}</span>
                     </div>
 
                     {/* Saldo a Favor Usado - Estilo Verde */}

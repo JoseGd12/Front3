@@ -34,6 +34,15 @@ export function UserFormDialog({ editingUser, onCreateUser, onUpdateUser, onClos
     status: 'active',
     imagenUrl: ''
   });
+  const formatDateLocal = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const todayLocal = new Date();
+  const maxBirthDate = formatDateLocal(todayLocal);
+  const minBirthDate = formatDateLocal(new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate()));
 
   useEffect(() => {
     if (editingUser) {
@@ -81,9 +90,26 @@ export function UserFormDialog({ editingUser, onCreateUser, onUpdateUser, onClos
   };
 
   const handleSubmit = () => {
-    if (!formData.nombres || !formData.apellidos || !formData.documento || !formData.correo || !formData.celular || !formData.rol) {
-      error("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombres, apellidos, documento, correo, celular y rol.");
+    if (!formData.nombres || !formData.apellidos || !formData.documento || !formData.correo || !formData.celular || !formData.rol || !formData.fechaNacimiento) {
+      error("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombres, apellidos, documento, correo, celular, fecha de nacimiento y rol.");
       return;
+    }
+    if (formData.fechaNacimiento) {
+      const birth = new Date(formData.fechaNacimiento);
+      const today = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      if (isNaN(birth.getTime())) {
+        error("Fecha de nacimiento inválida", "Ingresa una fecha válida en formato AAAA-MM-DD.");
+        return;
+      }
+      if (birth > today) {
+        error("Fecha de nacimiento inválida", "No puedes seleccionar una fecha futura.");
+        return;
+      }
+      if (birth < min) {
+        error("Fecha de nacimiento inválida", "No se admiten edades mayores a 70 años.");
+        return;
+      }
     }
 
     if (editingUser) {
@@ -256,12 +282,14 @@ export function UserFormDialog({ editingUser, onCreateUser, onUpdateUser, onClos
         {/* Fecha de Nacimiento y Rol */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <Label htmlFor="fechaNacimiento" className="text-white-primary">Fecha de Nacimiento</Label>
+            <Label htmlFor="fechaNacimiento" className="text-white-primary">Fecha de Nacimiento *</Label>
             <Input
               id="fechaNacimiento"
               type="date"
               value={formData.fechaNacimiento}
               onChange={(e) => updateField('fechaNacimiento', e.target.value)}
+              min={minBirthDate}
+              max={maxBirthDate}
               className="elegante-input"
             />
           </div>

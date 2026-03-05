@@ -820,10 +820,32 @@ export function EntregaInsumosPage() {
             e.id === entrega.id ? { ...e, estado: 'Anulado' } : e
           ));
 
-          // Devolver stock de insumos al inventario
-          // Usar el campo correcto según la API: detalleEntregasInsumos
+          // Devolver stock de insumos al inventario (registrar en backend)
           const detalles = (entrega as any).detalleEntregasInsumos || entrega.insumosDetalle || [];
-          console.log('🔄 Devolviendo stock para detalles:', detalles);
+          console.log('🔄 Registrando devolución de insumos en backend para detalles:', detalles);
+
+          try {
+            if (detalles.length > 0 && user?.id) {
+              const devolucionDetalles = detalles.map((d: any) => ({
+                productoId: Number(d.productoId ?? d.ProductoId ?? d.id ?? 0),
+                cantidad: Number(d.cantidad ?? d.Cantidad ?? 0),
+                precioHistorico: Number(d.precio ?? d.Precio ?? d.precioUnitario ?? d.PrecioUnitario ?? Number.NaN)
+              })).filter((d: any) => d.productoId > 0 && d.cantidad > 0);
+
+              if (devolucionDetalles.length > 0) {
+                const barberoIdNum = Number((entrega as any).barberoId ?? (entrega as any).BarberoId ?? 0);
+                const usuarioIdNum = Number(user.id);
+                const { devolucionService } = await import('../../services/devolucionService');
+                await devolucionService.createDevolucionInsumosBarbero({
+                  barberoId: barberoIdNum,
+                  usuarioId: usuarioIdNum,
+                  detalles: devolucionDetalles
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('⚠️ No se pudo registrar la devolución de insumos en backend:', e);
+          }
 
           const nuevosInsumos = insumos.map(insumo => {
             const detalleDevuelto = detalles.find((d: any) => d.productoId === insumo.id);

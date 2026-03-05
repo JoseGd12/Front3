@@ -31,6 +31,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../ui/alert-dialog";
 import { useCustomAlert } from "../ui/custom-alert";
 import { useDoubleConfirmation } from "../ui/double-confirmation";
@@ -38,6 +39,8 @@ import { useAuth } from "../AuthContext";
 import { notifyEntityCreated } from "../../services/notificationService";
 import { AppRole } from "../../services/authSyncService";
 import { firebaseAuthService } from "../../services/firebase";
+import { apiService } from "../../services/api";
+import { barberosService } from "../../services/barberosService";
 
 // Tipos de documento
 const TIPOS_DOCUMENTO = [
@@ -139,6 +142,33 @@ export function ClientesPage() {
   const [showEditValidation, setShowEditValidation] = useState(false);
   const [clienteGeneratedPassword, setClienteGeneratedPassword] = useState('');
   const [createInFirebase, setCreateInFirebase] = useState(true);
+  const [usuariosAll, setUsuariosAll] = useState<any[]>([]);
+  const [barberosAll, setBarberosAll] = useState<any[]>([]);
+  const formatDateLocal = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const todayLocal = new Date();
+  const maxBirthDateEight = formatDateLocal(new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate()));
+  const minBirthDate = formatDateLocal(new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate()));
+  const edadCreateCliente = (() => {
+    if (!createForm.fechaNacimiento) return null;
+    const d = new Date(createForm.fechaNacimiento);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate());
+    return Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+  })();
+  const isTooYoungCreateCliente = (edadCreateCliente ?? 1000) < 8;
+  const isDocDuplicateCreateCliente = (() => {
+    const docVal = String(createForm.numeroDocumento || '').trim();
+    if (!docVal) return false;
+    const existeCliente = clientes.some(c => String(c.numeroDocumento || '').trim() === docVal);
+    const existeUsuario = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+    const existeBarbero = barberosAll.some((b: any) => String(b.documento || '').trim() === docVal);
+    return existeCliente || existeUsuario || existeBarbero;
+  })();
 
   const generateClientePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -157,9 +187,11 @@ export function ClientesPage() {
   const loadClientes = async () => {
     try {
       setLoading(true);
-      const [data, devsData] = await Promise.all([
+      const [data, devsData, usuariosData, barberosData] = await Promise.all([
         clientesService.getClientes(),
-        devolucionService.getDevoluciones().catch(() => [])
+        devolucionService.getDevoluciones().catch(() => []),
+        apiService.getUsuarios().catch(() => []),
+        barberosService.getBarberos().catch(() => [])
       ]);
 
       // Guardar devoluciones para otros usos (historial en modal)
@@ -194,6 +226,8 @@ export function ClientesPage() {
         };
       });
       setClientes(mappedData);
+      setUsuariosAll(usuariosData || []);
+      setBarberosAll((barberosData || []).map((b: any) => barberosService.mapApiToComponent(b)));
     } catch (err: unknown) {
       console.error('Error cargando clientes:', err);
       const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
@@ -294,14 +328,13 @@ export function ClientesPage() {
       return false;
     }
 
-    // Verificar si el documento ya existe
-    const documentoExiste = clientes.some(c =>
-      c.numeroDocumento === form.numeroDocumento &&
-      c.tipoDocumento === form.tipoDocumento
-    );
+    const docVal = String(form.numeroDocumento || '').trim();
+    const documentoExisteCliente = clientes.some(c => String(c.numeroDocumento || '').trim() === docVal);
+    const documentoExisteUsuario = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+    const documentoExisteBarbero = barberosAll.some((b: any) => String(b.documento || '').trim() === docVal);
 
-    if (documentoExiste) {
-      error('Documento duplicado', 'Ya existe un cliente registrado con este tipo y número de documento.');
+    if (documentoExisteCliente || documentoExisteUsuario || documentoExisteBarbero) {
+      error('Documento duplicado', 'Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).');
       return false;
     }
 
@@ -313,12 +346,25 @@ export function ClientesPage() {
       return false;
     }
 
-    // Validar fecha de nacimiento no sea futura
     if (form.fechaNacimiento) {
-      const year = new Date(form.fechaNacimiento).getFullYear();
-      const currentYear = new Date().getFullYear();
-      if (year > currentYear) {
-        error('Fecha de nacimiento inválida', 'No es posible registrar un cliente con una fecha posterior a la fecha actual.');
+      const birth = new Date(form.fechaNacimiento);
+      const cutoff = new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      const edad = Math.floor((cutoff.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) + 8;
+      if (isNaN(birth.getTime())) {
+        error('Fecha de nacimiento inválida', 'Ingresa una fecha válida en formato AAAA-MM-DD.');
+        return false;
+      }
+      if (birth > cutoff) {
+        error('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
+        return false;
+      }
+      if (birth < min) {
+        error('Fecha de nacimiento inválida', 'No se admiten edades mayores a 70 años.');
+        return false;
+      }
+      if (edad < 8) {
+        error('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
         return false;
       }
     }
@@ -560,15 +606,16 @@ export function ClientesPage() {
       return false;
     }
 
-    // Verificar si el documento ya existe (excepto el cliente actual)
-    const documentoExiste = clientes.some(c =>
+    const docVal = String(form.numeroDocumento || '').trim();
+    const documentoExisteCliente = clientes.some(c =>
       c.id !== selectedCliente?.id &&
-      c.numeroDocumento === form.numeroDocumento &&
-      c.tipoDocumento === form.tipoDocumento
+      String(c.numeroDocumento || '').trim() === docVal
     );
+    const documentoExisteUsuario = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+    const documentoExisteBarbero = barberosAll.some((b: any) => String(b.documento || '').trim() === docVal);
 
-    if (documentoExiste) {
-      error('Documento duplicado', 'Ya existe otro cliente registrado con este tipo y número de documento.');
+    if (documentoExisteCliente || documentoExisteUsuario || documentoExisteBarbero) {
+      error('Documento duplicado', 'Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).');
       return false;
     }
 
@@ -580,12 +627,25 @@ export function ClientesPage() {
       return false;
     }
 
-    // Validar fecha de nacimiento no sea futura
     if (form.fechaNacimiento) {
-      const year = new Date(form.fechaNacimiento).getFullYear();
-      const currentYear = new Date().getFullYear();
-      if (year > currentYear) {
-        error('Fecha de nacimiento inválida', 'No es posible registrar un cliente con una fecha posterior a la fecha actual.');
+      const birth = new Date(form.fechaNacimiento);
+      const cutoff = new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      const edad = Math.floor((cutoff.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) + 8;
+      if (isNaN(birth.getTime())) {
+        error('Fecha de nacimiento inválida', 'Ingresa una fecha válida en formato AAAA-MM-DD.');
+        return false;
+      }
+      if (birth > cutoff) {
+        error('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
+        return false;
+      }
+      if (birth < min) {
+        error('Fecha de nacimiento inválida', 'No se admiten edades mayores a 70 años.');
+        return false;
+      }
+      if (edad < 8) {
+        error('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
         return false;
       }
     }
@@ -851,34 +911,17 @@ export function ClientesPage() {
               </div>
 
               {/* Filtros de Estado */}
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'all'
-                    ? 'bg-orange-primary text-black-primary'
-                    : 'bg-gray-darker text-gray-lightest hover:bg-gray-dark border border-gray-dark'
-                    }`}
-                >
-                  Todos
-                </button>
-                <button
-                  onClick={() => setStatusFilter('active')}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'active'
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-darker text-gray-lightest hover:bg-gray-dark border border-gray-dark'
-                    }`}
-                >
-                  Activos
-                </button>
-                <button
-                  onClick={() => setStatusFilter('inactive')}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'inactive'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-darker text-gray-lightest hover:bg-gray-dark border border-gray-dark'
-                    }`}
-                >
-                  Inactivos
-                </button>
+              <div className="flex items-center">
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+                  <SelectTrigger className="w-48 elegante-input">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-darkest border-gray-dark">
+                    <SelectItem value="all" className="text-white-primary">Todos</SelectItem>
+                    <SelectItem value="active" className="text-white-primary">Activos</SelectItem>
+                    <SelectItem value="inactive" className="text-white-primary">Inactivos</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -1288,10 +1331,15 @@ export function ClientesPage() {
                 </Label>
                 <Input
                   value={editForm.numeroDocumento}
-                  onChange={(e) => setEditForm({ ...editForm, numeroDocumento: e.target.value })}
+                  onChange={(e) => {
+                    const numeric = e.target.value.replace(/\D/g, '');
+                    setEditForm({ ...editForm, numeroDocumento: numeric });
+                  }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={CLIENTE_LIMITS.numeroDocumento}
                   className={`elegante-input w-full ${showEditValidation && !editForm.numeroDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-                  placeholder="Número de documento"
+                  placeholder="Número de documento (solo números)"
                 />
                 {showEditValidation && !editForm.numeroDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
@@ -1326,12 +1374,14 @@ export function ClientesPage() {
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-orange-primary" />
-                  Fecha de Nacimiento
+                  Fecha de Nacimiento *
                 </Label>
                 <Input
                   type="date"
                   value={editForm.fechaNacimiento}
                   onChange={(e) => setEditForm({ ...editForm, fechaNacimiento: e.target.value })}
+                  min={minBirthDate}
+                  max={maxBirthDateEight}
                   className={`elegante-input w-full ${showEditValidation && !editForm.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 />
                 {showEditValidation && !editForm.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
@@ -1505,12 +1555,18 @@ export function ClientesPage() {
                 </Label>
                 <Input
                   value={createForm.numeroDocumento}
-                  onChange={(e) => setCreateForm({ ...createForm, numeroDocumento: e.target.value })}
+                  onChange={(e) => {
+                    const numeric = e.target.value.replace(/\D/g, '');
+                    setCreateForm({ ...createForm, numeroDocumento: numeric });
+                  }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={CLIENTE_LIMITS.numeroDocumento}
                   className={`elegante-input w-full ${showCreateValidation && !createForm.numeroDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-                  placeholder="Número de documento"
+                  placeholder="Número de documento (solo números)"
                 />
                 {showCreateValidation && !createForm.numeroDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+                {isDocDuplicateCreateCliente && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
               </div>
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
@@ -1543,15 +1599,18 @@ export function ClientesPage() {
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-orange-primary" />
-                  Fecha de Nacimiento
+                  Fecha de Nacimiento *
                 </Label>
                 <Input
                   type="date"
                   value={createForm.fechaNacimiento}
                   onChange={(e) => setCreateForm({ ...createForm, fechaNacimiento: e.target.value })}
+                  min={minBirthDate}
+                  max={maxBirthDateEight}
                   className={`elegante-input w-full ${showCreateValidation && !createForm.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 />
                 {showCreateValidation && !createForm.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+                {!!edadCreateCliente && <p className={`text-xs ${isTooYoungCreateCliente ? 'text-red-400' : 'text-gray-lightest'}`}>Edad: {edadCreateCliente} años{isTooYoungCreateCliente ? ' (mínimo 8)' : ''}</p>}
               </div>
             </div>
 
@@ -1641,6 +1700,7 @@ export function ClientesPage() {
               <button
                 onClick={handleCreateCliente}
                 className="elegante-button-primary"
+                disabled={!createForm.numeroDocumento || !createForm.nombre || !createForm.apellido || !createForm.email || !createForm.fechaNacimiento || isDocDuplicateCreateCliente || isTooYoungCreateCliente}
               >
                 Crear Cliente
               </button>

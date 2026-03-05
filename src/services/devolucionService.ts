@@ -17,6 +17,11 @@ export interface Devolucion {
     usuarioId: number;
     responsableNombre?: string;
     observaciones?: string;
+    barberoId?: number;
+    barberoNombre?: string;
+    entregaId?: number;
+    entregaEstado?: string;
+    entregaFecha?: string;
 }
 
 export interface CreateDevolucionRequest {
@@ -70,6 +75,35 @@ class DevolucionService {
         }
     }
 
+  async createDevolucionInsumosBarbero(input: {
+      barberoId: number;
+      usuarioId: number;
+      detalles: Array<{ productoId: number; cantidad: number; precioHistorico?: number }>;
+  }): Promise<{ id?: number; cantidadTotal?: number; valorTotal?: number; estado?: string }> {
+      try {
+          const payload = {
+              BarberoId: input.barberoId,
+              UsuarioId: input.usuarioId,
+              Detalles: input.detalles.map(d => ({
+                  ProductoId: d.productoId,
+                  Cantidad: d.cantidad,
+                  // El backend tolera null; si no enviamos, usará PrecioVenta
+                  PrecioHistorico: d.precioHistorico ?? null
+              }))
+          };
+          console.log('📤 Registrando devolución de insumos desde barbero:', payload);
+          const resp = await this.request('/Devoluciones/insumos/barbero', {
+              method: 'POST',
+              body: JSON.stringify(payload)
+          });
+          const text = await resp.text();
+          return text ? JSON.parse(text) : {};
+      } catch (error) {
+          console.error('Error creando devolución de insumos de barbero:', error);
+          throw error;
+      }
+  }
+
     private async normalizeDevolucionData(data: any): Promise<Devolucion> {
         if (!data) return {} as Devolucion;
 
@@ -77,6 +111,8 @@ class DevolucionService {
         const producto = data.producto || data.Producto;
         const usuario = data.usuario || data.Usuario;
         const cliente = data.cliente || data.Cliente;
+        const barbero = data.barbero || data.Barbero;
+        const entrega = data.entrega || data.Entrega;
 
         return {
             id: Number(data.id || data.Id),
@@ -107,7 +143,14 @@ class DevolucionService {
             responsableNombre: usuario
                 ? (usuario.nombre || usuario.Nombre || 'Responsable')
                 : 'Responsable',
-            observaciones: data.observaciones || data.Observaciones || ''
+            observaciones: data.observaciones || data.Observaciones || '',
+            barberoId: barbero ? Number(barbero.id || barbero.Id || 0) : (data.barberoId || data.BarberoId || undefined),
+            barberoNombre: barbero
+                ? (barbero.nombre || barbero.Nombre || barbero.usuario?.nombre || barbero.Usuario?.Nombre || 'Barbero')
+                : (data.barberoNombre || data.BarberoNombre || undefined),
+            entregaId: entrega ? Number(entrega.id || entrega.Id || 0) : (data.entregaId || data.EntregaId || undefined),
+            entregaEstado: entrega ? (entrega.estado || entrega.Estado || '') : (data.entregaEstado || data.EntregaEstado || ''),
+            entregaFecha: entrega ? (entrega.fecha || entrega.Fecha || '') : (data.entregaFecha || data.EntregaFecha || '')
         };
     }
 
@@ -174,6 +217,28 @@ class DevolucionService {
             console.error(`Error al actualizar estado de Devolucion ${id}:`, error);
             throw error;
         }
+    }
+
+    async getEntregasDevolucionesResumen(filters: { barberoId?: number; entregaId?: number; desde?: string; hasta?: string }): Promise<any[]> {
+        const params = new URLSearchParams();
+        if (filters.barberoId) params.append('barberoId', String(filters.barberoId));
+        if (filters.entregaId) params.append('entregaId', String(filters.entregaId));
+        if (filters.desde) params.append('desde', filters.desde);
+        if (filters.hasta) params.append('hasta', filters.hasta);
+        const resp = await this.request(`/EntregasInsumos/devoluciones/resumen?${params.toString()}`);
+        const data = await resp.json();
+        return Array.isArray(data) ? data : [];
+    }
+
+    async getEntregasDevoluciones(filters: { barberoId?: number; entregaId?: number; desde?: string; hasta?: string }): Promise<any[]> {
+        const params = new URLSearchParams();
+        if (filters.barberoId) params.append('barberoId', String(filters.barberoId));
+        if (filters.entregaId) params.append('entregaId', String(filters.entregaId));
+        if (filters.desde) params.append('desde', filters.desde);
+        if (filters.hasta) params.append('hasta', filters.hasta);
+        const resp = await this.request(`/EntregasInsumos/devoluciones?${params.toString()}`);
+        const data = await resp.json();
+        return Array.isArray(data) ? data : [];
     }
 
     async createDevolucionBatch(input: {

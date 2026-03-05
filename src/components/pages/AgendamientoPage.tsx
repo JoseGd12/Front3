@@ -49,6 +49,7 @@ export function AgendamientoPage() {
   const [paquetesList, setPaquetesList] = useState<any[]>([]);
   const [barberosList, setBarberosList] = useState<any[]>([]);
   const [clientesList, setClientesList] = useState<any[]>([]);
+  const [horariosList, setHorariosList] = useState<any[]>([]);
 
   const [currentWeek, setCurrentWeek] = useState(0);
 
@@ -78,6 +79,7 @@ export function AgendamientoPage() {
       setServiciosList(serviciosData.filter(s => s.estado === true));
       setClientesList(clientesData.filter(c => c.estado === true));
       setPaquetesList(paquetesData.filter(p => p.activo === true));
+      setHorariosList(horariosData || []);
     } catch (err) {
       console.error("Error al cargar datos:", err);
       // Fallback a los datos estáticos si hay error (opcional, pero mejor mostrar error)
@@ -199,13 +201,26 @@ export function AgendamientoPage() {
     }
   };
 
-  // Verifica disponibilidad del barbero en la fecha/hora/duración seleccionadas
+  // Verifica disponibilidad del barbero en la fecha/hora/duración seleccionadas y horario laboral
   const isBarberoDisponible = (barberoId: number): boolean => {
     if (!nuevaCita.fecha || !nuevaCita.hora) return true;
     const durNueva = Number(nuevaCita.duracion || 60);
     const [hhStr, mmStr = '0'] = String(nuevaCita.hora).split(':');
     const startNueva = (parseInt(hhStr || '0', 10) * 60) + (parseInt(mmStr || '0', 10));
     const endNueva = startNueva + durNueva;
+
+    const fechaObj = new Date(`${nuevaCita.fecha}T00:00:00`);
+    const dayIndex = fechaObj.getDay(); // 0=Domingo..6=Sábado
+    const diaStr = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][dayIndex];
+    const horariosBarbero = horariosList.filter((h: any) => Number(h.barberoId) === Number(barberoId) && String(h.dia) === diaStr && h.estado === true);
+    const dentroHorario = horariosBarbero.some((h: any) => {
+      const [hIniH, hIniM] = String(h.horaInicio || '00:00').split(':').map((x: string) => parseInt(x || '0', 10));
+      const [hFinH, hFinM] = String(h.horaFin || '23:59').split(':').map((x: string) => parseInt(x || '0', 10));
+      const startH = hIniH * 60 + hIniM;
+      const endH = hFinH * 60 + hFinM;
+      return startNueva >= startH && endNueva <= endH;
+    });
+    if (!dentroHorario) return false;
 
     return !citas.some((cita: any) => {
       if (cita.fecha !== nuevaCita.fecha) return false;
@@ -302,6 +317,11 @@ export function AgendamientoPage() {
     }
     setShowFormErrors(false);
 
+    if (!isBarberoDisponible(nuevaCita.barberoId)) {
+      error("Barbero no disponible", "La hora seleccionada está fuera del horario o se solapa con otra cita.");
+      return;
+    }
+
     try {
       await agendamientoService.createAgendamiento({
         clienteId: nuevaCita.clienteId,
@@ -375,6 +395,11 @@ export function AgendamientoPage() {
     }
     setShowFormErrors(false);
 
+    if (!isBarberoDisponible(nuevaCita.barberoId)) {
+      error("Barbero no disponible", "La hora seleccionada está fuera del horario o se solapa con otra cita.");
+      return;
+    }
+
     try {
       await agendamientoService.updateAgendamiento(selectedCita.id, {
         clienteId: nuevaCita.clienteId,
@@ -437,13 +462,23 @@ export function AgendamientoPage() {
   // Cambiar estado de cita
   const handleChangeEstado = async (citaId: number, nuevoEstado: string) => {
     try {
-      await agendamientoService.updateAgendamientoStatus(citaId, nuevoEstado);
+      const result = await agendamientoService.updateAgendamientoStatus(citaId, nuevoEstado);
       setCitas(citas.map(cita =>
         cita.id === citaId ? { ...cita, estado: nuevoEstado } : cita
       ));
-      success("Estado actualizado", "El estado de la cita ha sido modificado.");
-    } catch (err) {
-      error("Error al actualizar estado", "No se pudieron guardar los cambios.");
+      if (String(nuevoEstado).toLowerCase() === 'completada') {
+        const ventaInfo = result && (result.venta || result.Venta || null);
+        if (ventaInfo) {
+          success("Cita completada", `Se creó la venta #${ventaInfo.id || ventaInfo.Id} por $${(ventaInfo.total || ventaInfo.Total || 0).toLocaleString('es-CO')}.`);
+        } else {
+          success("Cita completada", "La venta fue generada automáticamente.");
+        }
+      } else {
+        success("Estado actualizado", "El estado de la cita ha sido modificado.");
+      }
+    } catch (err: any) {
+      const msg = err?.message ? String(err.message).replace("Error 400: ", "").replace("Error 500: ", "") : "No se pudieron guardar los cambios.";
+      error("Error al actualizar estado", msg);
     }
   };
 
@@ -1103,6 +1138,13 @@ export function AgendamientoPage() {
                   >
                     Volver a Lista
                   </button>
+                      <button
+                        onClick={() => handleChangeEstado(selectedCita.id, 'Completada')}
+                        className="elegante-button-primary"
+                        title="Marcar como Completada y generar venta"
+                      >
+                        Completar Cita
+                      </button>
                   <button
                     onClick={() => handleEditCita(selectedCita)}
                     className="elegante-button-primary"

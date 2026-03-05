@@ -253,12 +253,18 @@ class AgendamientoService {
         return this.mapApiToComponent(result);
     }
 
-    async updateAgendamientoStatus(id: number, estado: string): Promise<void> {
-        // El backend ahora usa un objeto CambioEstadoInput
-        await this.request(`/Agendamientos/${id}/estado`, {
+    async updateAgendamientoStatus(id: number, estado: string): Promise<any> {
+        const response = await this.request(`/Agendamientos/${id}/estado`, {
             method: 'PATCH',
             body: JSON.stringify({ estado })
         });
+        const text = await response.text();
+        try {
+            const data = text ? JSON.parse(text) : {};
+            return data;
+        } catch {
+            return { message: 'Estado actualizado', estadoActual: estado, agendamientoId: id };
+        }
     }
 }
 

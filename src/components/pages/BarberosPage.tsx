@@ -13,10 +13,12 @@ import {
   Upload, ToggleRight, ToggleLeft, X, Loader2, KeyRound
 } from "lucide-react";
 import { useCustomAlert } from "../ui/custom-alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { barberosService, Barbero, CreateBarberoData } from "../../services/barberosService";
 import { notifyEntityCreated } from "../../services/notificationService";
 import ImageRenderer from "../ui/ImageRenderer";
 import { apiService } from "../../services/api";
+import { clientesService } from "../../services/clientesService";
 import { useAuth } from "../AuthContext";
 import { firebaseAuthService } from "../../services/firebase";
 
@@ -73,6 +75,33 @@ export function BarberosPage() {
   const [generatedPassword, setGeneratedPassword] = useState('');
   const [isCreateConfirmOpen, setIsCreateConfirmOpen] = useState(false);
   const [createInFirebase, setCreateInFirebase] = useState(true);
+  const formatDateLocal = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const todayLocal = new Date();
+  const maxBirthDateEight = formatDateLocal(new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate()));
+  const minBirthDate = formatDateLocal(new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate()));
+  const [usuariosAll, setUsuariosAll] = useState<any[]>([]);
+  const [clientesAll, setClientesAll] = useState<any[]>([]);
+  const edadNewBarbero = React.useMemo(() => {
+    if (!newBarbero.fechaNacimiento) return null;
+    const d = new Date(newBarbero.fechaNacimiento);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate());
+    return Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+  }, [newBarbero.fechaNacimiento]);
+  const isTooYoungNewBarbero = (edadNewBarbero ?? 1000) < 8;
+  const isDocDuplicateNewBarbero = React.useMemo(() => {
+    const docVal = String(newBarbero.documento || '').trim();
+    if (!docVal) return false;
+    const existeEnBarberos = barberos.some(b => String(b.documento || '').trim() === docVal);
+    const existeEnUsuarios = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+    const existeEnClientes = clientesAll.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+    return existeEnBarberos || existeEnUsuarios || existeEnClientes;
+  }, [newBarbero.documento, barberos, usuariosAll, clientesAll]);
 
   const generatePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -91,9 +120,15 @@ export function BarberosPage() {
   const loadBarberos = async () => {
     try {
       setLoading(true);
-      const data = await barberosService.getBarberos();
+      const [data, usuariosData, clientesData] = await Promise.all([
+        barberosService.getBarberos(),
+        apiService.getUsuarios().catch(() => []),
+        clientesService.getClientes().catch(() => [])
+      ]);
       const mappedData = data.map((barbero: any) => barberosService.mapApiToComponent(barbero));
       setBarberos(mappedData);
+      setUsuariosAll(usuariosData || []);
+      setClientesAll(clientesData || []);
     } catch (err: unknown) {
       console.error('Error cargando barberos:', err);
       const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
@@ -175,6 +210,36 @@ export function BarberosPage() {
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(newBarbero.correo)) {
+      return false;
+    }
+    if (newBarbero.fechaNacimiento) {
+      const birth = new Date(newBarbero.fechaNacimiento);
+      const cutoff = new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      const edad = Math.floor((cutoff.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) + 8;
+      if (isNaN(birth.getTime())) {
+        errorAlert("Fecha de nacimiento inválida", "Ingresa una fecha válida en formato AAAA-MM-DD.");
+        return false;
+      }
+      if (birth > cutoff) {
+        errorAlert("Edad mínima no válida", "Debe tener al menos 8 años de edad.");
+        return false;
+      }
+      if (birth < min) {
+        errorAlert("Fecha de nacimiento inválida", "No se admiten edades mayores a 70 años.");
+        return false;
+      }
+      if (edad < 8) {
+        errorAlert("Edad mínima no válida", "Debe tener al menos 8 años de edad.");
+        return false;
+      }
+    }
+    const docVal = String(newBarbero.documento || '').trim();
+    const existeEnBarberos = barberos.some(b => String(b.documento || '').trim() === docVal);
+    const existeEnUsuarios = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+    const existeEnClientes = clientesAll.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+    if (existeEnBarberos || existeEnUsuarios || existeEnClientes) {
+      errorAlert("Documento duplicado", "Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).");
       return false;
     }
     return true;
@@ -263,6 +328,36 @@ export function BarberosPage() {
     setShowBarberoFormErrors(true);
     if (!editingBarbero || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.correo || !newBarbero.telefono) {
       errorAlert("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombre, apellido, documento, correo y teléfono.");
+      return;
+    }
+    if (newBarbero.fechaNacimiento) {
+      const birth = new Date(newBarbero.fechaNacimiento);
+      const cutoff = new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      const edad = Math.floor((cutoff.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) + 8;
+      if (isNaN(birth.getTime())) {
+        errorAlert("Fecha de nacimiento inválida", "Ingresa una fecha válida en formato AAAA-MM-DD.");
+        return;
+      }
+      if (birth > cutoff) {
+        errorAlert("Edad mínima no válida", "Debe tener al menos 8 años de edad.");
+        return;
+      }
+      if (birth < min) {
+        errorAlert("Fecha de nacimiento inválida", "No se admiten edades mayores a 70 años.");
+        return;
+      }
+      if (edad < 8) {
+        errorAlert("Edad mínima no válida", "Debe tener al menos 8 años de edad.");
+        return;
+      }
+    }
+    const docVal = String(newBarbero.documento || '').trim();
+    const existeEnBarberos = barberos.some(b => b.id !== editingBarbero.id && String(b.documento || '').trim() === docVal);
+    const existeEnUsuarios = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+    const existeEnClientes = clientesAll.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+    if (existeEnBarberos || existeEnUsuarios || existeEnClientes) {
+      errorAlert("Documento duplicado", "Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).");
       return;
     }
 
@@ -426,38 +521,16 @@ export function BarberosPage() {
             </div>
             <div className="flex items-center gap-3">
               <Filter className="w-4 h-4 text-gray-lightest" />
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("all")}
-                  className={`${filterStatus === "all"
-                    ? "px-4 py-2 rounded-lg bg-orange-primary text-black-primary font-medium"
-                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
-                  }`}
-                >
-                  Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("active")}
-                  className={`${filterStatus === "active"
-                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
-                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
-                  }`}
-                >
-                  Activos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("inactive")}
-                  className={`${filterStatus === "inactive"
-                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
-                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
-                  }`}
-                >
-                  Inactivos
-                </button>
-              </div>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-48 elegante-input">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-darkest border-gray-dark">
+                  <SelectItem value="all" className="text-white-primary">Todos</SelectItem>
+                  <SelectItem value="active" className="text-white-primary">Activos</SelectItem>
+                  <SelectItem value="inactive" className="text-white-primary">Inactivos</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -692,12 +765,18 @@ export function BarberosPage() {
                 </Label>
                 <Input
                   value={newBarbero.documento}
-                  onChange={(e) => setNewBarbero({ ...newBarbero, documento: e.target.value })}
+                  onChange={(e) => {
+                    const numeric = e.target.value.replace(/\D/g, '');
+                    setNewBarbero({ ...newBarbero, documento: numeric });
+                  }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={BARBERO_LIMITS.documento}
                   className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.documento.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-                  placeholder="Número de documento"
+                  placeholder="Número de documento (solo números)"
                 />
                 {showBarberoFormErrors && !newBarbero.documento.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+              {isDocDuplicateNewBarbero && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
               </div>
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
@@ -730,15 +809,18 @@ export function BarberosPage() {
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-orange-primary" />
-                  Fecha de Nacimiento
+                  Fecha de Nacimiento *
                 </Label>
                 <Input
                   type="date"
                   value={newBarbero.fechaNacimiento}
                   onChange={(e) => setNewBarbero({ ...newBarbero, fechaNacimiento: e.target.value })}
+                  min={minBirthDate}
+                  max={maxBirthDateEight}
                   className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 />
                 {showBarberoFormErrors && !newBarbero.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+              {!!edadNewBarbero && <p className={`text-xs ${isTooYoungNewBarbero ? 'text-red-400' : 'text-gray-lightest'}`}>Edad: {edadNewBarbero} años{isTooYoungNewBarbero ? ' (mínimo 8)' : ''}</p>}
               </div>
             </div>
 
@@ -841,6 +923,7 @@ export function BarberosPage() {
             <button
               onClick={editingBarbero ? handleUpdateBarbero : handleCreateClick}
               className="elegante-button-primary"
+              disabled={!newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.correo || !newBarbero.fechaNacimiento || isDocDuplicateNewBarbero || isTooYoungNewBarbero}
             >
               {editingBarbero ? 'Actualizar' : 'Crear Barbero'}
             </button>

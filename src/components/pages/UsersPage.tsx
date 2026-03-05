@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../ui/alert-dialog";
 import {
@@ -139,8 +140,43 @@ export function UsersPage() {
   const [userPreviewUrl, setUserPreviewUrl] = useState<string>('');
   const [createInFirebase, setCreateInFirebase] = useState(true);
   const [showUserFormErrors, setShowUserFormErrors] = useState(false);
+  const [clientesCatalogo, setClientesCatalogo] = useState<any[]>([]);
+  const [barberosCatalogo, setBarberosCatalogo] = useState<any[]>([]);
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const formatDateLocal = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const todayLocal = new Date();
+  const maxBirthDateEight = formatDateLocal(new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate()));
+  const minBirthDate = formatDateLocal(new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate()));
+  const isValidBirthDate = (dateStr: string) => {
+    if (!dateStr) return true;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const maxAllowed = new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate());
+    const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+    return d >= min && d <= maxAllowed;
+  };
+  const edadNewUser = React.useMemo(() => {
+    if (!newUser.fechaNacimiento) return null;
+    const d = new Date(newUser.fechaNacimiento);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate());
+    return Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+  }, [newUser.fechaNacimiento]);
+  const isTooYoungNewUser = (edadNewUser ?? 1000) < 8;
+  const isDocDuplicateCreateUser = React.useMemo(() => {
+    const docVal = String(newUser.documento || '').trim();
+    if (!docVal) return false;
+    const existeEnUsuarios = users.some((u: any) => String(u.documento || '').trim() === docVal);
+    const existeEnClientes = clientesCatalogo.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+    const existeEnBarberos = barberosCatalogo.some((b: any) => String((b as any).documento || '').trim() === docVal);
+    return existeEnUsuarios || existeEnClientes || existeEnBarberos;
+  }, [newUser.documento, users, clientesCatalogo, barberosCatalogo]);
 
   // Cargar usuarios y roles desde la API
   const loadInitialData = async () => {
@@ -151,7 +187,11 @@ export function UsersPage() {
       const roles = await rolesApiService.getRolesWithModules();
       setAvailableRoles(roles);
 
-      const apiUsers = await apiService.getUsuarios();
+      const [apiUsers, clientesList, barberosList] = await Promise.all([
+        apiService.getUsuarios(),
+        clientesService.getClientes().catch(() => []),
+        barberosService.getBarberos().catch(() => [])
+      ]);
 
       // Mapear usuarios usando la función interna que conoce los roles
       const mappedUsers = apiUsers.map((apiUser) => ({
@@ -174,6 +214,8 @@ export function UsersPage() {
       }));
 
       setUsers(mappedUsers);
+      setClientesCatalogo(clientesList || []);
+      setBarberosCatalogo((barberosList || []).map((b: any) => barberosService.mapApiToComponent(b)));
     } catch (error: any) {
       console.error('Error loading initial data:', error);
       toast.error('Error al cargar datos del sistema');
@@ -313,10 +355,36 @@ export function UsersPage() {
 
   const handleCreateUser = async () => {
     setShowUserFormErrors(true);
-    if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol) {
+    if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento) {
       return;
     }
     if (!isValidEmail(newUser.correo)) {
+      return;
+    }
+    if (newUser.fechaNacimiento) {
+      const birth = new Date(newUser.fechaNacimiento);
+      const cutoff = new Date(todayLocal.getFullYear() - 8, todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      const edad = Math.floor((cutoff.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) + 8;
+      if (birth > cutoff) {
+        showError('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
+        return;
+      }
+      if (birth < min) {
+        showError('Fecha de nacimiento inválida', 'No se admiten edades mayores a 70 años.');
+        return;
+      }
+      if (edad < 8) {
+        showError('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
+        return;
+      }
+    }
+    const docVal = String(newUser.documento || '').trim();
+    const existeEnUsuarios = users.some((u: any) => String(u.documento || '').trim() === docVal);
+    const existeEnClientes = clientesCatalogo.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+    const existeEnBarberos = barberosCatalogo.some((b: any) => String((b as any).documento || '').trim() === docVal);
+    if (existeEnUsuarios || existeEnClientes || existeEnBarberos) {
+      showError('Documento duplicado', 'Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).');
       return;
     }
 
@@ -465,10 +533,36 @@ export function UsersPage() {
 
   const handleUpdateUser = async () => {
     setShowUserFormErrors(true);
-    if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol) {
+    if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento) {
       return;
     }
     if (!isValidEmail(newUser.correo)) {
+      return;
+    }
+    if (newUser.fechaNacimiento) {
+      const birth = new Date(newUser.fechaNacimiento);
+      const today = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate());
+      const min = new Date(todayLocal.getFullYear() - 70, todayLocal.getMonth(), todayLocal.getDate());
+      const edad = Math.floor((today.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+      if (birth > today) {
+        showError('Fecha de nacimiento inválida', 'No puedes seleccionar una fecha futura.');
+        return;
+      }
+      if (birth < min) {
+        showError('Fecha de nacimiento inválida', 'No se admiten edades mayores a 70 años.');
+        return;
+      }
+      if (edad < 8) {
+        showError('Edad mínima no válida', 'Debe tener al menos 8 años de edad.');
+        return;
+      }
+    }
+    const docVal = String(newUser.documento || '').trim();
+    const existeEnUsuarios = users.some((u: any) => u.id !== editingUser.id && String(u.documento || '').trim() === docVal);
+    const existeEnClientes = clientesCatalogo.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+    const existeEnBarberos = barberosCatalogo.some((b: any) => String((b as any).documento || '').trim() === docVal);
+    if (existeEnUsuarios || existeEnClientes || existeEnBarberos) {
+      showError('Documento duplicado', 'Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).');
       return;
     }
 
@@ -784,11 +878,17 @@ export function UsersPage() {
                         </Label>
                         <Input
                           value={newUser.documento}
-                          onChange={(e) => setNewUser({ ...newUser, documento: e.target.value })}
+                          onChange={(e) => {
+                            const numeric = e.target.value.replace(/\D/g, '');
+                            setNewUser({ ...newUser, documento: numeric });
+                          }}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           className={`elegante-input w-full ${showUserFormErrors && !newUser.documento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-                          placeholder="Número de documento"
+                          placeholder="Número de documento (solo números)"
                         />
                         {showUserFormErrors && !newUser.documento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+                        {isDocDuplicateCreateUser && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -819,15 +919,18 @@ export function UsersPage() {
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-orange-primary" />
-                          Fecha de Nacimiento
+                          Fecha de Nacimiento *
                         </Label>
                         <Input
                           type="date"
                           value={newUser.fechaNacimiento}
                           onChange={(e) => setNewUser({ ...newUser, fechaNacimiento: e.target.value })}
+                          min={minBirthDate}
+                          max={maxBirthDateEight}
                           className={`elegante-input w-full ${showUserFormErrors && !newUser.fechaNacimiento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                         />
                         {showUserFormErrors && !newUser.fechaNacimiento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+                        {!!edadNewUser && <p className={`text-xs ${isTooYoungNewUser ? 'text-red-400' : 'text-gray-lightest'}`}>Edad: {edadNewUser} años{isTooYoungNewUser ? ' (mínimo 8)' : ''}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -923,6 +1026,7 @@ export function UsersPage() {
                       <button
                         onClick={editingUser ? handleUpdateUser : handleCreateUser}
                         className="elegante-button-primary"
+                        disabled={!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento || isDocDuplicateCreateUser || isTooYoungNewUser}
                       >
                         {editingUser ? 'Actualizar Usuario' : 'Crear Usuario'}
                       </button>
@@ -940,37 +1044,17 @@ export function UsersPage() {
                   className="elegante-input pl-11 w-80"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("all")}
-                  className={`${filterStatus === "all"
-                    ? "px-4 py-2 rounded-lg bg-orange-primary text-black-primary font-medium"
-                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
-                  }`}
-                >
-                  Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("true")}
-                  className={`${filterStatus === "true"
-                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
-                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
-                  }`}
-                >
-                  Activos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("false")}
-                  className={`${filterStatus === "false"
-                    ? "px-4 py-2 rounded-lg bg-gray-700/60 text-white-primary border border-gray-600"
-                    : "px-4 py-2 rounded-lg bg-gray-darker text-gray-lightest border border-gray-dark hover:bg-gray-dark"
-                  }`}
-                >
-                  Inactivos
-                </button>
+              <div className="flex items-center">
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-48 elegante-input">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-darkest border-gray-dark">
+                    <SelectItem value="all" className="text-white-primary">Todos</SelectItem>
+                    <SelectItem value="true" className="text-white-primary">Activos</SelectItem>
+                    <SelectItem value="false" className="text-white-primary">Inactivos</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
