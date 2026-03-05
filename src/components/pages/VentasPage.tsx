@@ -2557,32 +2557,7 @@ export function VentasPage() {
                       />
                     </div>
 
-                    {/* Filtro de barbero */}
-                    <div className="flex items-center gap-2">
-                      <Label className="text-gray-lightest text-sm flex items-center gap-1">
-                        <User className="w-4 h-4 text-orange-primary" />
-                        Barbero
-                      </Label>
-                      <Select
-                        value={barberoSeleccionado}
-                        onValueChange={(value) => {
-                          setBarberoSeleccionado(value);
-                          setCurrentPage(1);
-                        }}
-                      >
-                        <SelectTrigger className="w-52 elegante-input bg-gray-darker border-gray-dark">
-                          <SelectValue placeholder="Todos los barberos" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-gray-darkest border border-gray-dark text-white-primary">
-                          <SelectItem value={VALOR_TODOS_BARBEROS}>Todos</SelectItem>
-                          {barberosDisponibles.map((barbero) => (
-                            <SelectItem key={barbero} value={barbero}>
-                              {barbero}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {/* Filtro de barbero eliminado */}
                   </div>
 
                   {/* Lado derecho: resumen de comisiones + contador */}
