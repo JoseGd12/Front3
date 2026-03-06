@@ -209,10 +209,10 @@ class ProveedorService {
       personaContacto: apiData.personaContacto || apiData.PersonaContacto || "",
       apellidos: apiData.apellidos || apiData.Apellidos || "",
       // Contacto adicional (Natural)
-      tipoDocumentoContactoAdicional: apiData.tipoDocumentoContactoAdicional || "",
-      documentoContactoAdicional: apiData.documentoContactoAdicional || "",
-      telefonoContactoAdicional: apiData.telefonoContactoAdicional || "",
-      correoContactoAdicional: apiData.correoContactoAdicional || ""
+      tipoDocumentoContactoAdicional: apiData.tipoDocumentoContactoAdicional || apiData.TipoDocumentoContactoAdicional || "",
+      documentoContactoAdicional: apiData.documentoContactoAdicional || apiData.DocumentoContactoAdicional || "",
+      telefonoContactoAdicional: apiData.telefonoContactoAdicional || apiData.TelefonoContacto || apiData.telefonoContacto || "",
+      correoContactoAdicional: apiData.correoContactoAdicional || apiData.CorreoContacto || apiData.correoContacto || ""
     };
   }
 
@@ -236,7 +236,21 @@ class ProveedorService {
       }
 
       // Mapear los datos de la API al formato del frontend usando el mapeador genérico
-      return data.map(item => this.mapFromApi(item));
+      const mapped = data.map(item => this.mapFromApi(item));
+      
+      // LOG DE DIAGNÓSTICO PARA CAMPOS DE CONTACTO
+      if (mapped.length > 0) {
+        const sample = mapped[0];
+        console.log('🔍 Diagnóstico Proveedor [0]:', {
+          id: sample.id,
+          nombre: sample.nombre,
+          telefonoContactoAdicional: sample.telefonoContactoAdicional,
+          correoContactoAdicional: sample.correoContactoAdicional,
+          raw: data[0]
+        });
+      }
+      
+      return mapped;
     } catch (error) {
       console.error('❌ Error obteniendo proveedores:', error);
       throw error;
@@ -254,7 +268,7 @@ class ProveedorService {
       const text = await response.text();
       const data = text ? JSON.parse(text) : null;
       console.log(`✅ Proveedor ${id} obtenido:`, data);
-      return data;
+      return data ? this.mapFromApi(data) : null;
     } catch (error) {
       console.error(`❌ Error obteniendo proveedor ${id}:`, error);
       return null;
@@ -263,27 +277,27 @@ class ProveedorService {
 
   // Mapeo específico para crear Proveedor Jurídico (JSON de envío)
   private mapToApiFormatJson(data: Partial<Proveedor>): any {
+    // Unificación al nuevo contrato de la API (ver FRONT_GUIA_PROVEEDORES_COMPRAS.md)
+    const tipo = data.tipoProveedor || 'Juridico';
+    const tipoIdent = data.tipoIdentificacion || (tipo === 'Natural' ? 'CC' : 'NIT');
+    const correoContacto = data.correoContactoAdicional || '';
+    const telefonoContacto = data.telefonoContactoAdicional || '';
+
     return {
-      nombre: data.nombre,
-      nit: data.nit,
-      tipoProveedor: data.tipoProveedor || 'Juridico',
-      TipoProveedor: data.tipoProveedor || 'Juridico',
-      correo: data.correo || "",
-      telefono: data.numero || data.telefono || "", // Asegurar que no sea null
-      direccion: data.direccion || "",
-      razonSocial: data.razonSocial || "",
-      representanteLegal: data.representanteLegal || "",
-      numeroIdentificacionRepLegal: data.numeroIdentificacionRepLegal || "",
-      cargoRepLegal: data.cargoRepLegal || "",
-      ciudad: data.ciudad || "",
-      departamento: data.departamento || "",
-      documentoRepresentante: data.documentoRepresentante || "",
-      telefonoRepresentante: data.telefonoRepresentante || "",
-      correoRepresentante: data.correoRepresentante || "",
-      sectorEconomico: data.sectorEconomico || "",
-      anosOperacion: data.anosOperacion || 0,
-      paginaWeb: data.paginaWeb || "",
-      estado: true
+      TipoProveedor: tipo,
+      Nombre: data.nombre || '',
+      NIT: data.nit || data.numeroIdentificacion || '',
+      Correo: data.correo || '',
+      Telefono: data.numero || data.telefono || '',
+      Direccion: data.direccion || '',
+      Contacto: data.contacto || data.personaContacto || '',
+      NumeroIdentificacion: data.numeroIdentificacion || data.nit || '',
+      TipoIdentificacion: tipoIdent,
+      // Enviar en ambos formatos para asegurar compatibilidad
+      CorreoContacto: correoContacto,
+      correoContacto: correoContacto,
+      TelefonoContacto: telefonoContacto,
+      telefonoContacto: telefonoContacto
     };
   }
 
@@ -293,10 +307,8 @@ class ProveedorService {
         throw new Error("El tipoProveedor es obligatorio (Natural o Juridico)");
       }
 
-      const esNatural = proveedorData.tipoProveedor === 'Natural';
-      const endpoint = esNatural ? '/Proveedores/natural' : '/Proveedores/juridico';
-
-      const apiBody = esNatural ? this.mapNatural(proveedorData) : this.mapToApiFormatJson(proveedorData);
+      const endpoint = '/Proveedores';
+      const apiBody = this.mapToApiFormatJson(proveedorData);
 
       console.log('🔵 Creando proveedor - Endpoint:', endpoint);
       console.log('🔵 Body enviado:', apiBody);
@@ -306,7 +318,8 @@ class ProveedorService {
         body: JSON.stringify(apiBody),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : {};
       console.log('✅ Proveedor creado:', result);
 
       return this.mapFromApi(result);
@@ -318,8 +331,13 @@ class ProveedorService {
 
   async actualizarProveedor(id: number, proveedorData: Partial<Proveedor>): Promise<Proveedor> {
     try {
-      const apiBody = this.mapToApiFormat(proveedorData);
-      apiBody.Id = id;
+      // Usar el mismo contrato unificado de creación, incluyendo Id y Estado si aplica
+      const base = this.mapToApiFormatJson(proveedorData);
+      const apiBody = {
+        Id: id,
+        ...base,
+        Estado: proveedorData.estado !== undefined ? !!proveedorData.estado : undefined
+      };
 
       const response = await this.request(`/Proveedores/${id}`, {
         method: 'PUT',
@@ -327,9 +345,8 @@ class ProveedorService {
       });
 
       const text = await response.text();
-      if (!text) return { ...proveedorData, id } as Proveedor;
-
-      return JSON.parse(text);
+      const result = text ? JSON.parse(text) : { Id: id, ...apiBody };
+      return this.mapFromApi(result);
     } catch (error) {
       console.error('Error actualizando proveedor:', error);
       throw error;

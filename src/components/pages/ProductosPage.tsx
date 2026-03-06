@@ -1062,8 +1062,18 @@ export function ProductosPage() {
                     placeholder="Buscar productos y accesorios..."
                     value={searchTerm}
                     onChange={(e) => handleSearchChange(e.target.value)}
-                    className="elegante-input pl-11 w-80"
+                    className="elegante-input pl-11 pr-8 w-80"
                   />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => handleSearchChange('')}
+                      title="Limpiar búsqueda"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-darker text-gray-lighter hover:text-gray-lightest transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
                 <select

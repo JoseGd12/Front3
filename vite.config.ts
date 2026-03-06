@@ -20,7 +20,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_TARGET || 'https://edwisbarbers.somee.com',
+        target: 'http://edwisbarbers.somee.com',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
@@ -37,7 +37,7 @@ export default defineConfig({
         },
       },
       '/assets': {
-        target: process.env.VITE_API_TARGET || 'https://edwisbarbers.somee.com',
+        target: 'https://edwisbarbers.somee.com',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,

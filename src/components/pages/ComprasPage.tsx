@@ -47,6 +47,22 @@ const formatCurrency = (amount: number): string => {
   return amount.toLocaleString('es-CO');
 };
 
+const getPrecioCompra = (p: any): number => {
+  const candidates = [p?.precioCompra, p?.PrecioCompra, p?.precio_compra];
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && !Number.isNaN(n)) return n;
+  }
+  return 0;
+};
+
+const getCategoriaNombre = (p: any): string => {
+  const c = p?.categoria;
+  if (typeof c === 'string') return c;
+  if (c && typeof c === 'object') return String(c.nombre || c.Nombre || '');
+  return String(p?.categoriaNombre || p?.CategoriaNombre || '');
+};
+
 const normalizeSearchText = (value: unknown): string => {
   return String(value ?? '')
     .normalize('NFD')
@@ -311,8 +327,8 @@ export function ComprasPage() {
 
   const loadProductos = async () => {
     try {
-      const productosData = await insumosService.getInsumos();
-      setProductos(productosData.filter(p => p.activo === true));
+      const productosData = await productoService.getProductos();
+      setProductos((productosData as any[]).filter((p: any) => p.activo === true) as any);
     } catch (error) {
       toast.error("Error al cargar productos", { description: "No se pudieron obtener los productos." });
       console.error(error);
@@ -440,10 +456,20 @@ export function ComprasPage() {
   useEffect(() => {
     if (productoSeleccionado) {
       const prod = productos.find(p => p.id === Number(productoSeleccionado));
-      if (prod) {
-        setPrecioUnitario(prod.precio);
-        setPrecioUnitarioInput(String(prod.precio ?? ''));
-      }
+      (async () => {
+        let pc = 0;
+        if (prod) {
+          pc = getPrecioCompra(prod as any);
+        }
+        if (!pc || pc <= 0) {
+          try {
+            const full = await productoService.getProductoById(Number(productoSeleccionado));
+            pc = getPrecioCompra(full as any);
+          } catch {}
+        }
+        setPrecioUnitario(pc || 0);
+        setPrecioUnitarioInput(String(pc || 0));
+      })();
     } else {
       setPrecioUnitario(0);
       setPrecioUnitarioInput('');
@@ -1642,7 +1668,7 @@ export function ComprasPage() {
                                       const searchableText = normalizeSearchText([
                                         p.id,
                                         p.nombre,
-                                        p.categoria,
+                                      getCategoriaNombre(p),
                                         (p as any).stock,
                                         (p as any).stockVentas,
                                         (p as any).stockInsumos,
@@ -1683,8 +1709,8 @@ export function ComprasPage() {
                                           <p className="text-white-primary font-medium text-sm group-hover:text-orange-secondary transition-colors">
                                             {producto.nombre}
                                           </p>
-                                          <p className="text-[10px] text-gray-lightest">${formatCurrency((producto as any).precioBase ?? (producto as any).precio ?? 0)}</p>
-                                          <p className="text-[10px] text-gray-400">{String((producto as any).categoria || 'Sin categoría')}</p>
+                                          <p className="text-[10px] text-gray-lightest">${formatCurrency(getPrecioCompra(producto as any))}</p>
+                                          <p className="text-[10px] text-gray-400">{getCategoriaNombre(producto) || 'Sin categoría'}</p>
                                         </div>
                                         <div className="text-right">
                                           <div className="flex flex-col items-end gap-1">
@@ -1789,11 +1815,6 @@ export function ComprasPage() {
                               min="0"
                               max={cantidadProducto}
                             />
-                            <div className="flex justify-start mt-1">
-                              <span className="text-xs text-gray-500 font-medium">
-                                {stockVentasInput.length}/10 caracteres
-                              </span>
-                            </div>
                             {showStockVentasError && (
                               <p className="text-xs text-red-400">Este campo es obligatorio.</p>
                             )}
@@ -1832,11 +1853,6 @@ export function ComprasPage() {
                               min="0"
                               max={cantidadProducto}
                             />
-                            <div className="flex justify-start mt-1">
-                              <span className="text-xs text-gray-500 font-medium">
-                                {stockInsumosInput.length}/10 caracteres
-                              </span>
-                            </div>
                             {showStockInsumosError && (
                               <p className="text-xs text-red-400">Este campo es obligatorio.</p>
                             )}
@@ -1993,12 +2009,24 @@ export function ComprasPage() {
                                   <div className="flex flex-col gap-0.5 shrink-0">
                                     <label className="text-[11px] text-gray-400 font-normal">Precio unit.</label>
                                     <Input
-                                      type="number"
-                                      min={0}
-                                      step={100}
+                                      type="text"
+                                      inputMode="numeric"
                                       value={getTarjetaInput(producto, 'precio')}
-
-                                      onChange={(e) => actualizarTarjetaInput(producto.id, 'precio', e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === '-' || e.key === '+' || e.key === 'e' || e.key === 'E' || e.key === '.') {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      onPaste={(e) => {
+                                        const text = e.clipboardData?.getData('text') || '';
+                                        const cleaned = text.replace(/\D+/g, '').slice(0, 6);
+                                        e.preventDefault();
+                                        actualizarTarjetaInput(producto.id, 'precio', cleaned);
+                                      }}
+                                      onChange={(e) => {
+                                        const cleaned = e.target.value.replace(/\D+/g, '').slice(0, 6);
+                                        actualizarTarjetaInput(producto.id, 'precio', cleaned);
+                                      }}
                                       className="w-20 h-7 text-xs text-right tabular-nums elegante-input no-spin py-0 px-1.5"
                                     />
                                   </div>
@@ -2097,9 +2125,25 @@ export function ComprasPage() {
                 <Input
                   placeholder="Buscar por cualquier campo de la tabla..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="elegante-input pl-11 w-80"
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="elegante-input pl-11 pr-8 w-80"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setCurrentPage(1);
+                    }}
+                    title="Limpiar búsqueda"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-darker text-gray-lighter hover:text-gray-lightest transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           </div>

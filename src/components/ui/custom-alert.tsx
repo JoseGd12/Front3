@@ -137,9 +137,14 @@ export function CustomAlert({
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
       style={{ pointerEvents: 'all' }}
+      onPointerDownCapture={(e) => { e.stopPropagation(); }}
+      onMouseDownCapture={(e) => { e.stopPropagation(); }}
+      onClick={(e) => { e.stopPropagation(); }}
     >
       <button
-        onClick={handleClose}
+        onClick={(e) => { e.stopPropagation(); handleClose(); }}
+        onMouseDown={(e) => { e.stopPropagation(); }}
+        onPointerDown={(e) => { e.stopPropagation(); }}
         className="absolute top-3 right-3 p-1 rounded-lg hover:bg-gray-darker transition-colors"
         aria-label="Cerrar notificación"
       >

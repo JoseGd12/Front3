@@ -112,7 +112,7 @@ export function EntregaInsumosPage() {
   const [cantidadInsumo, setCantidadInsumo] = useState(0);
   const [cantidadInsumoInput, setCantidadInsumoInput] = useState('');
   const [tarjetaInputsEntrega, setTarjetaInputsEntrega] = useState<Record<number, { cantidad?: string }>>({});
-  const { created, AlertContainer } = useCustomAlert();
+  const { created, error, AlertContainer } = useCustomAlert();
 
   const shakeClass = entregaValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
   const barberoInputRef = useRef<HTMLInputElement | null>(null);
@@ -546,7 +546,7 @@ export function EntregaInsumosPage() {
     if (!insumoSeleccionado) {
       setShowAddInsumoErrors(true);
       setEntregaValidationAttempt(prev => prev + 1);
-      toast.error('Selecciona un producto antes de agregar');
+      error('Campos obligatorios', 'Selecciona un producto antes de agregar.');
       console.warn('🟡 No se agregó: insumoSeleccionado vacío/0');
       requestAnimationFrame(() => {
         addProductoRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -558,7 +558,7 @@ export function EntregaInsumosPage() {
     if (!cantidadInsumoInput.trim() || !cantidadInsumo || cantidadInsumo <= 0) {
       setShowAddInsumoErrors(true);
       setEntregaValidationAttempt(prev => prev + 1);
-      toast.error('Ingresa una cantidad válida');
+      error('Campos obligatorios', 'Ingresa una cantidad válida.');
       console.warn('🟡 No se agregó: cantidadInsumo inválida', { cantidadInsumo });
       requestAnimationFrame(() => {
         addProductoRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -684,7 +684,7 @@ export function EntregaInsumosPage() {
     if (!nuevaEntrega.barberoSeleccionado || !nuevaEntrega.insumos || nuevaEntrega.insumos.length === 0) {
       setShowEntregaFormErrors(true);
       setEntregaValidationAttempt(prev => prev + 1);
-      toast.error('Campos obligatorios', { description: 'Por favor completa el barbero y agrega al menos un producto.' });
+      error('Campos obligatorios', 'Completa el barbero y agrega al menos un producto.');
       requestAnimationFrame(() => {
         if (!nuevaEntrega.barberoSeleccionado) {
           barberoInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1703,9 +1703,25 @@ export function EntregaInsumosPage() {
                 <Input
                   placeholder="Buscar por número, documento, nombre, responsable, insumos, fecha o estado..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="elegante-input pl-11 w-80"
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="elegante-input pl-11 pr-8 w-80"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setCurrentPage(1);
+                    }}
+                    title="Limpiar búsqueda"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-darker text-gray-lighter hover:text-gray-lightest transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
 
