@@ -20,13 +20,24 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://edwisbarbers.somee.com',
+        target: process.env.VITE_API_TARGET || 'https://edwisbarbers.somee.com',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
+        configure: (proxy) => {
+          proxy.on('error', (err, req) => {
+            console.error('[proxy error]', req.method, req.url, err?.message || err);
+          });
+          proxy.on('proxyReq', (_proxyReq, req) => {
+            console.info('[proxy request]', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req) => {
+            console.info('[proxy response]', req.method, req.url, proxyRes.statusCode);
+          });
+        },
       },
       '/assets': {
-        target: 'http://edwisbarbers.somee.com',
+        target: process.env.VITE_API_TARGET || 'https://edwisbarbers.somee.com',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,

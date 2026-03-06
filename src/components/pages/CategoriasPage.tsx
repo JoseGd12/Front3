@@ -333,7 +333,15 @@ export function CategoriasPage() {
                     Nueva Categoría
                   </button>
                 </DialogTrigger>
-                <DialogContent className="bg-gray-darkest border-gray-dark max-w-3xl">
+                <DialogContent
+                  className="bg-gray-darkest border-gray-dark max-w-3xl"
+                  onInteractOutside={(e: any) => {
+                    const target = e.target as HTMLElement | null;
+                    if (target?.closest('[data-alert-container="true"]')) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
                   <DialogHeader>
                     <DialogTitle className="text-white-primary flex items-center gap-2">
                       <Plus className="w-5 h-5 text-orange-primary" />
@@ -646,7 +654,15 @@ export function CategoriasPage() {
 
         {/* Dialog de Edición */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="bg-gray-darkest border-gray-dark max-w-3xl">
+          <DialogContent
+            className="bg-gray-darkest border-gray-dark max-w-3xl"
+            onInteractOutside={(e: any) => {
+              const target = e.target as HTMLElement | null;
+              if (target?.closest('[data-alert-container="true"]')) {
+                e.preventDefault();
+              }
+            }}
+          >
             <DialogHeader>
               <DialogTitle className="text-white-primary flex items-center gap-2">
                 <Edit className="w-5 h-5 text-orange-primary" />

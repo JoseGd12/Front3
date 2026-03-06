@@ -654,26 +654,33 @@ export function ComprasPage() {
 
 
   const handleStockVentasInputChange = (valor: string) => {
-    setStockVentasInput(valor);
+    // Clamp al máximo permitido según cantidadProducto
+    const max = Math.max(0, Number.isFinite(cantidadProducto) ? cantidadProducto : 0);
+    const onlyDigits = valor.replace(/\D+/g, '');
+    const n = onlyDigits ? Math.min(parseInt(onlyDigits, 10) || 0, max) : 0;
+    setStockVentasInput(onlyDigits);
     if (showAddCompraProductoErrors) setShowAddCompraProductoErrors(false);
-    if (valor.trim() === '') {
+    if (onlyDigits.trim() === '') {
       setStockVentas(0);
       return;
     }
-    const numero = Number(valor);
+    const numero = Number(n);
     if (!Number.isNaN(numero)) {
       setStockVentas(Math.max(0, Math.floor(numero)));
     }
   };
 
   const handleStockInsumosInputChange = (valor: string) => {
-    setStockInsumosInput(valor);
+    const max = Math.max(0, Number.isFinite(cantidadProducto) ? cantidadProducto : 0);
+    const onlyDigits = valor.replace(/\D+/g, '');
+    const n = onlyDigits ? Math.min(parseInt(onlyDigits, 10) || 0, max) : 0;
+    setStockInsumosInput(onlyDigits);
     if (showAddCompraProductoErrors) setShowAddCompraProductoErrors(false);
-    if (valor.trim() === '') {
+    if (onlyDigits.trim() === '') {
       setStockInsumos(0);
       return;
     }
-    const numero = Number(valor);
+    const numero = Number(n);
     if (!Number.isNaN(numero)) {
       setStockInsumos(Math.max(0, Math.floor(numero)));
     }
@@ -1721,15 +1728,15 @@ export function ComprasPage() {
                             }}
                             onPaste={(e) => {
                               const text = e.clipboardData?.getData('text') || '';
-                              if (/[^\d]/.test(text) || text.length > 2) {
+                              if (/[^\d]/.test(text) || text.length > 4) {
                                 e.preventDefault();
-                                const cleaned = text.replace(/\D+/g, '').slice(0, 2);
+                                const cleaned = text.replace(/\D+/g, '').slice(0, 4);
                                 handleCantidadProductoInputChange(cleaned);
                               }
                             }}
                             onChange={(e) => {
-                              const val = e.target.value.replace(/\D+/g, '').slice(0, 2);
-                              if (val.length <= 2) {
+                              const val = e.target.value.replace(/\D+/g, '').slice(0, 4);
+                              if (val.length <= 4) {
                                 handleCantidadProductoInputChange(val);
                               }
                             }}
@@ -1758,11 +1765,26 @@ export function ComprasPage() {
                             <Input
                               type="number"
                               value={stockVentasInput}
-                              onChange={(e) => {
-                                if (e.target.value.length <= 10) {
-                                  handleStockVentasInputChange(e.target.value);
-                                }
-                              }}
+                            onKeyDown={(e) => {
+                              if (e.key === '-' || e.key === 'e' || e.key === '+' || e.key === '.') {
+                                e.preventDefault();
+                              }
+                            }}
+                            onPaste={(e) => {
+                              const text = e.clipboardData?.getData('text') || '';
+                              if (/[^\d]/.test(text)) {
+                                e.preventDefault();
+                                const cleaned = text.replace(/\D+/g, '');
+                                handleStockVentasInputChange(cleaned);
+                              }
+                            }}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/\D+/g, '');
+                              // Clamp al máximo permitido (cantidadProducto)
+                              const max = Math.max(0, Number.isFinite(cantidadProducto) ? cantidadProducto : 0);
+                              const clamped = cleaned ? String(Math.min(parseInt(cleaned, 10) || 0, max)) : '';
+                              handleStockVentasInputChange(clamped);
+                            }}
                               className={`elegante-input no-spin ${(showStockVentasError || showDistribucionError) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                               min="0"
                               max={cantidadProducto}
@@ -1787,11 +1809,25 @@ export function ComprasPage() {
                             <Input
                               type="number"
                               value={stockInsumosInput}
-                              onChange={(e) => {
-                                if (e.target.value.length <= 10) {
-                                  handleStockInsumosInputChange(e.target.value);
-                                }
-                              }}
+                            onKeyDown={(e) => {
+                              if (e.key === '-' || e.key === 'e' || e.key === '+' || e.key === '.') {
+                                e.preventDefault();
+                              }
+                            }}
+                            onPaste={(e) => {
+                              const text = e.clipboardData?.getData('text') || '';
+                              if (/[^\d]/.test(text)) {
+                                e.preventDefault();
+                                const cleaned = text.replace(/\D+/g, '');
+                                handleStockInsumosInputChange(cleaned);
+                              }
+                            }}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/\D+/g, '');
+                              const max = Math.max(0, Number.isFinite(cantidadProducto) ? cantidadProducto : 0);
+                              const clamped = cleaned ? String(Math.min(parseInt(cleaned, 10) || 0, max)) : '';
+                              handleStockInsumosInputChange(clamped);
+                            }}
                               className={`elegante-input no-spin ${(showStockInsumosError || showDistribucionError) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                               min="0"
                               max={cantidadProducto}

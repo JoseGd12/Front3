@@ -57,6 +57,7 @@ class CompraService {
 
         const defaultHeaders = {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
         };
 
         const config: RequestInit = {
@@ -215,7 +216,16 @@ class CompraService {
     async getCompras(): Promise<Array<Compra & { searchString: string }>> {
         try {
             const response = await this.request('/Compras');
-            const data = await response.json();
+            const text = await response.text();
+            let data: any = text ? JSON.parse(text) : [];
+            // Desenrollar formato EF Core { $values: [...] }
+            if (data && typeof data === 'object' && !Array.isArray(data) && data.$values) {
+                data = data.$values;
+            }
+            if (!Array.isArray(data)) {
+                console.warn('⚠️ Respuesta de /Compras no es un array, retornando lista vacía');
+                return [];
+            }
             return (data || []).map((item: any) => this.normalizeCompraData(item));
         } catch (error) {
             console.error('Error fetching compras:', error);
