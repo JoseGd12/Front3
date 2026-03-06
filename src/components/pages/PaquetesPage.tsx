@@ -269,7 +269,8 @@ export function PaquetesPage() {
   const handleCreatePaquete = async () => {
     const nombreTrim = (nuevoPaquete.nombre || '').trim();
 
-    if (!nombreTrim || !nuevoPaquete.descripcion || serviciosAgregados.length === 0) {
+    // Descripción ya no es obligatoria: sólo validar nombre y al menos un servicio
+    if (!nombreTrim || serviciosAgregados.length === 0) {
       return;
     }
 

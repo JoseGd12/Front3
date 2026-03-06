@@ -1,13 +1,138 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "../ui/badge";
-import { Calendar, DollarSign, Users, Scissors, Package, Clock, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { Calendar, DollarSign, Users, Scissors, Package, Clock, Download, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend, LineChart, Line, LegendType } from "recharts";
 import { useThemeColors } from "../utils/themeColors";
-import { ventaService, type Venta } from "../../services/ventaService";
-import { agendamientoService, type Agendamiento } from "../../services/agendamientoService";
-import { insumosService, type Insumo } from "../../services/insumosService";
+import { Skeleton } from "../ui/skeleton";
 
 type PeriodoClave = "semanal" | "mensual" | "anual";
+
+type VentaDetalle = {
+  nombre: string;
+  cantidad: number;
+  precio: number;
+};
+
+type Venta = {
+  id: number;
+  fecha: string;
+  estado: string;
+  total: number;
+  clienteId?: number | null;
+  cliente?: string | null;
+  productosDetalle: VentaDetalle[];
+  serviciosDetalle: VentaDetalle[];
+};
+
+type Agendamiento = {
+  id: number;
+  clienteNombre: string;
+  servicioNombre?: string | null;
+  paqueteNombre?: string | null;
+  precio?: number | null;
+  hora?: string | null;
+  barberoNombre: string;
+  estado: string;
+  fecha: string;
+};
+
+type Insumo = {
+  nombre: string;
+  stockVentas?: number;
+  stockInsumos?: number;
+  stockTotal?: number;
+  stock?: number;
+  minimo?: number;
+  categoria?: string | null;
+};
+
+const getVentas = async (): Promise<Venta[]> => {
+  const res = await fetch("/api/Ventas");
+  if (!res.ok) return [];
+  const raw = await res.json();
+  const ventasBase: Venta[] = (Array.isArray(raw) ? raw : []).map((v: any) => ({
+    id: v.id ?? v.Id,
+    fecha: v.fecha ?? v.Fecha,
+    estado: v.estado ?? v.Estado,
+    total: Number((v.total ?? v.Total) ?? 0),
+    clienteId: (v.clienteId ?? v.ClienteId) ?? null,
+    cliente:
+      v.cliente?.usuario
+        ? `${v.cliente.usuario.nombre ?? ""} ${v.cliente.usuario.apellido ?? ""}`.trim()
+        : (v.Cliente?.Usuario
+            ? `${v.Cliente.Usuario.Nombre ?? ""} ${v.Cliente.Usuario.Apellido ?? ""}`.trim()
+            : null),
+    productosDetalle: [],
+    serviciosDetalle: []
+  }));
+  const ids = ventasBase.slice(0, 50).map(v => v.id);
+  const detallesPorVenta = await Promise.all(ids.map(async id => {
+    const dr = await fetch(`/api/DetallesVenta/venta/${id}`).catch(() => null);
+    if (!dr || !dr.ok) return { id, detalles: [] as any[] };
+    const dj = await dr.json();
+    return { id, detalles: Array.isArray(dj) ? dj : [] };
+  }));
+  const mapa = new Map<number, any[]>(detallesPorVenta.map(d => [d.id, d.detalles]));
+  ventasBase.forEach(v => {
+    const dets = mapa.get(v.id) ?? [];
+    v.productosDetalle = dets.filter((d: any) => d.producto || d.Producto).map((d: any) => ({
+      nombre: (d.producto?.nombre ?? d.Producto?.Nombre) ?? "Producto",
+      cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
+      precio: Number((d.precioUnitario ?? d.PrecioUnitario) ?? 0)
+    }));
+    const servicios = dets.filter((d: any) => d.servicio || d.Servicio).map((d: any) => ({
+      nombre: (d.servicio?.nombre ?? d.Servicio?.Nombre) ?? "Servicio",
+      cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
+      precio: Number((d.precioUnitario ?? d.PrecioUnitario) ?? 0)
+    }));
+    const paquetes = dets.filter((d: any) => d.paquete || d.Paquete).map((d: any) => ({
+      nombre: (d.paquete?.nombre ?? d.Paquete?.Nombre) ?? "Paquete",
+      cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
+      precio: Number((d.precioUnitario ?? d.PrecioUnitario) ?? 0)
+    }));
+    v.serviciosDetalle = [...servicios, ...paquetes];
+  });
+  return ventasBase;
+};
+
+const getAgendamientos = async (): Promise<Agendamiento[]> => {
+  const res = await fetch("/api/Agendamientos");
+  if (!res.ok) return [];
+  const raw = await res.json();
+  const list = Array.isArray(raw) ? raw : [];
+  return list.map((a: any) => {
+    const fechaHoraRaw = a.fechaHora ?? a.FechaHora;
+    const dt = fechaHoraRaw ? new Date(fechaHoraRaw) : null;
+    const fecha = dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}` : "";
+    const hora = dt ? `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}` : "";
+    return {
+      id: a.id ?? a.Id,
+      clienteNombre: a.clienteNombre ?? a.ClienteNombre ?? "",
+      servicioNombre: a.servicioNombre ?? a.ServicioNombre ?? null,
+      paqueteNombre: a.paqueteNombre ?? a.PaqueteNombre ?? null,
+      precio: (a.precio ?? a.Precio) ?? null,
+      hora,
+      barberoNombre: a.barberoNombre ?? a.BarberoNombre ?? "",
+      estado: String((a.estado ?? a.Estado) ?? "").toLowerCase(),
+      fecha
+    } as Agendamiento;
+  });
+};
+
+const getInsumosBajos = async (): Promise<Insumo[]> => {
+  const res = await fetch("/api/Productos/stock-bajo");
+  if (!res.ok) return [];
+  const raw = await res.json();
+  const list = Array.isArray(raw) ? raw : [];
+  return list.map((p: any) => ({
+    nombre: p.nombre ?? p.Nombre,
+    stockVentas: Number((p.stockVentas ?? p.StockVentas) ?? 0),
+    stockInsumos: Number((p.stockInsumos ?? p.StockInsumos) ?? 0),
+    stockTotal: Number((p.stockTotal ?? p.StockTotal) ?? 0),
+    minimo: 5,
+    categoria: (p.categoriaNombre ?? p.CategoriaNombre) ?? null
+  }));
+};
 
 const formatCurrencyValue = (amount: number) =>
   amount.toLocaleString("es-CO", { minimumFractionDigits: 0 });
@@ -35,27 +160,53 @@ export function DashboardPage() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [agendamientos, setAgendamientos] = useState<Agendamiento[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([
-      ventaService.getVentas().catch(() => []),
-      agendamientoService.getAgendamientos().catch(() => []),
-      insumosService.getInsumos().catch(() => [])
-    ]).then(([v, a, i]) => {
-      if (!isMounted) return;
-      setVentas(Array.isArray(v) ? v : []);
-      setAgendamientos(Array.isArray(a) ? a : []);
-      setInsumos(Array.isArray(i) ? i : []);
-    }).catch(() => {
-      if (!isMounted) return;
-    });
+    const fetchAll = async () => {
+      setIsLoading(true);
+      setErrorMsg("");
+      try {
+        const [v, a, i] = await Promise.all([
+          getVentas().catch(() => []),
+          getAgendamientos().catch(() => []),
+          getInsumosBajos().catch(() => [])
+        ]);
+        if (!isMounted) return;
+        setVentas(Array.isArray(v) ? v : []);
+        setAgendamientos(Array.isArray(a) ? a : []);
+        setInsumos(Array.isArray(i) ? i : []);
+      } catch {
+        if (!isMounted) return;
+        setErrorMsg("No se pudo cargar la información del backend");
+      } finally {
+        if (!isMounted) return;
+        setIsLoading(false);
+      }
+    };
+    fetchAll();
     return () => { isMounted = false; };
   }, []);
 
   const today = new Date();
   const isSameDay = (d: Date, b: Date) =>
     d.getFullYear() === b.getFullYear() && d.getMonth() === b.getMonth() && d.getDate() === b.getDate();
+  const startOfWeek = (() => {
+    const d = new Date(today);
+    const day = d.getDay();
+    const mondayOffset = (day + 6) % 7;
+    d.setDate(d.getDate() - mondayOffset);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+  const endOfWeek = (() => {
+    const d = new Date(startOfWeek);
+    d.setDate(d.getDate() + 6);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  })();
 
   const ventasHoy = useMemo(() => {
     return ventas.filter(v => {
@@ -86,14 +237,25 @@ export function DashboardPage() {
   }, [agendamientos]);
 
   const inventarioBajo = useMemo(() => {
-    return insumos
-      .filter(p => typeof p.stock === "number" && typeof p.minimo === "number" && p.stock < p.minimo)
-      .map(p => ({
+    const items = insumos.map(p => {
+      const sv = Number(p.stockVentas ?? NaN);
+      const si = Number(p.stockInsumos ?? NaN);
+      let total: number;
+      if (!Number.isNaN(sv) && !Number.isNaN(si)) total = sv + si;
+      else if (!Number.isNaN(sv)) total = sv;
+      else if (!Number.isNaN(si)) total = si;
+      else total = Number(p.stock || 0);
+      return {
         producto: p.nombre,
-        stock: p.stock,
+        stockTotal: total,
         minimo: p.minimo,
         categoria: p.categoria
-      }));
+      };
+    })
+      .filter(item => typeof item.stockTotal === "number" && item.stockTotal >= 0)
+      .sort((a, b) => a.stockTotal - b.stockTotal)
+      .slice(0, 5);
+    return items;
   }, [insumos]);
 
   const totalVentasHoy = useMemo(() => ventasHoy.reduce((acc, v) => acc + (Number(v.total) || 0), 0), [ventasHoy]);
@@ -105,12 +267,22 @@ export function DashboardPage() {
     });
     return setIds.size;
   }, [ventasHoy]);
-  const serviciosRealizadosHoy = useMemo(() => {
-    return ventasHoy.reduce((acc, v) => {
-      const det = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
-      return acc + det.reduce((s, d) => s + (Number(d.cantidad || 1)), 0);
-    }, 0);
-  }, [ventasHoy]);
+  const isCitaCompletada = (estado: string) => {
+    const e = String(estado || "").toLowerCase();
+    return e === "completada" || e === "completado";
+  };
+  const serviciosRealizadosSemana = useMemo(() => {
+    const inWeek = (c: { fecha: string }) => {
+      if (!c.fecha) return false;
+      const [y, m, d] = c.fecha.split("-").map(Number);
+      if (!y || !m || !d) return false;
+      const dt = new Date(y, m - 1, d);
+      return dt >= startOfWeek && dt <= endOfWeek;
+    };
+    return agendamientos
+      .filter(c => inWeek({ fecha: c.fecha }) && isCitaCompletada(c.estado))
+      .length;
+  }, [agendamientos]);
 
   const metrics = useMemo(() => {
     return [
@@ -140,14 +312,14 @@ export function DashboardPage() {
       },
       {
         title: "Servicios Realizados",
-        value: `${serviciosRealizadosHoy}`,
+        value: `${serviciosRealizadosSemana}`,
         change: "",
         icon: Scissors,
         iconColor: "text-gray-lightest",
         isPositive: true
       }
     ];
-  }, [totalVentasHoy, citasHoy.length, clientesAtendidosHoy, serviciosRealizadosHoy]);
+  }, [totalVentasHoy, citasHoy.length, clientesAtendidosHoy, serviciosRealizadosSemana]);
 
   const ventasComparativasPorPeriodo = useMemo(() => {
     const withinDays = (v: Venta, days: number) => {
@@ -204,8 +376,15 @@ export function DashboardPage() {
         b.ventas.forEach(v => {
           const pd = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
           const sd = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
-          productos += pd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
-          servicios += sd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+          const pSum = pd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+          const sSum = sd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+          if (pSum === 0 && sSum === 0 && pd.length === 0 && sd.length === 0) {
+            // Fallback: si no hay detalles, usar el total de la venta
+            servicios += Number(v.total || 0);
+          } else {
+            productos += pSum;
+            servicios += sSum;
+          }
         });
         return { label: b.key, ingresos: productos + servicios, productos, servicios };
       });
@@ -288,7 +467,7 @@ export function DashboardPage() {
   const generateDailyReportPDF = () => {
     const ventasRecientesData = (() => {
       const rows: { producto: string; cliente: string; cantidad: number; precioUnit: number }[] = [];
-      const ordenadas = [...ventas].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).slice(0, 20);
+      const ordenadas = [...ventas].filter(v => isVentaActiva(v.estado)).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).slice(0, 20);
       ordenadas.forEach(v => {
         const cliente = v.cliente;
         const det = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
@@ -579,8 +758,8 @@ export function DashboardPage() {
                 <div class="inventory-alert">
                   <h4>${item.producto}</h4>
                   <div class="inventory-details">
-                    <strong>Stock:</strong> ${item.stock} unidades<br>
-                    <strong>Mínimo:</strong> ${item.minimo} unidades<br>
+                    <strong>Stock Total:</strong> ${item.stockTotal} unidades<br>
+                    <strong>min:</strong> ${item.minimo}<br>
                     <strong>Categoría:</strong> ${item.categoria}
                   </div>
                 </div>
@@ -705,9 +884,14 @@ export function DashboardPage() {
   const participacionProductos = totalGeneralIngresos ? (totalProductos / totalGeneralIngresos) * 100 : 0;
   const participacionServicios = totalGeneralIngresos ? (totalServicios / totalGeneralIngresos) * 100 : 0;
 
+  const isVentaActiva = (estado: string) => {
+    const st = String(estado || "").toLowerCase();
+    return st !== "anulada" && st !== "cancelada";
+  };
+
   const ventasPorProducto = useMemo(() => {
     const mapa = new Map<string, { producto: string; unidades: number; ingresos: number }>();
-    const ordenadas = [...ventas].sort((a, b) => {
+    const ordenadas = [...ventas].filter(v => isVentaActiva(v.estado)).sort((a, b) => {
       const da = new Date(a.fecha).getTime();
       const db = new Date(b.fecha).getTime();
       return db - da;
@@ -762,20 +946,45 @@ export function DashboardPage() {
   };
 
   const ingresosTotalesPorPeriodo = useMemo(() => {
-    const periodos: PeriodoClave[] = ["semanal", "mensual", "anual"];
-    return periodos.map((periodo) => {
-      const datos = ventasComparativasPorPeriodo[periodo];
-      const productos = datos.productos.reduce((total, item) => total + item.monto, 0);
-      const servicios = datos.servicios.reduce((total, item) => total + item.monto, 0);
+    const periodos: { periodo: PeriodoClave; days: number }[] = [
+      { periodo: "semanal", days: 7 },
+      { periodo: "mensual", days: 30 },
+      { periodo: "anual", days: 365 },
+    ];
+    const withinDaysLocal = (fechaStr: string, days: number) => {
+      const dt = new Date(fechaStr);
+      const start = new Date(today);
+      start.setDate(start.getDate() - (days - 1));
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      return dt >= start && dt <= end;
+    };
+    return periodos.map(({ periodo, days }) => {
+      const subset = ventas.filter(v => withinDaysLocal(v.fecha, days));
+      let productos = 0;
+      let servicios = 0;
+      subset.forEach(v => {
+        const pd = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+        const sd = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+        const pSum = pd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+        const sSum = sd.reduce((s, d) => s + (Number(d.precio || 0) * Number(d.cantidad || 1)), 0);
+        if (pSum === 0 && sSum === 0 && pd.length === 0 && sd.length === 0) {
+          servicios += Number(v.total || 0);
+        } else {
+          productos += pSum;
+          servicios += sSum;
+        }
+      });
       return {
         periodo,
         label: periodoLabels[periodo],
         ingresos: productos + servicios,
         productos,
-        servicios
+        servicios,
       };
     });
-  }, []);
+  }, [ventas]);
 
   const renderIngresosTotalesTooltip = ({ active, payload }: any) => {
     if (!active || !payload || !payload.length) return null;
@@ -833,6 +1042,30 @@ export function DashboardPage() {
               <Download className="w-4 h-4" />
               Reporte Diario
             </button>
+            <button
+              onClick={() => {
+                setIsLoading(true);
+                setErrorMsg("");
+                Promise.all([
+                  getVentas().catch(() => []),
+                  getAgendamientos().catch(() => []),
+                  getInsumosBajos().catch(() => [])
+                ]).then(([v, a, i]) => {
+                  setVentas(Array.isArray(v) ? v : []);
+                  setAgendamientos(Array.isArray(a) ? a : []);
+                  setInsumos(Array.isArray(i) ? i : []);
+                }).catch(() => {
+                  setErrorMsg("No se pudo cargar la información del backend");
+                }).finally(() => {
+                  setIsLoading(false);
+                });
+              }}
+              className="elegante-button-primary gap-2 flex items-center hover:scale-105 transition-transform"
+              title="Actualizar datos del panel"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Actualizar
+            </button>
           </div>
         </div>
       </header>
@@ -846,24 +1079,37 @@ export function DashboardPage() {
               Estado rápido de ventas, citas, clientes y servicios.
             </p>
           </div>
+          {errorMsg && (
+            <div className="rounded-lg border border-red-600/40 bg-red-900/30 text-red-300 px-4 py-2 mb-4">
+              {errorMsg}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-            {metrics.map(metric => {
-              const Icon = metric.icon;
-              return (
-                <div key={metric.title} className="rounded-2xl border border-gray-dark bg-gray-darkest p-5 flex items-center justify-between shadow-xl">
-                  <div>
-                    <p className="text-sm text-gray-lightest uppercase tracking-[0.2em]">{metric.title}</p>
-                    <p className="text-3xl font-bold text-white-primary mt-2">{metric.value}</p>
-                    <span className={`text-sm font-semibold ${metric.isPositive ? "text-green-400" : "text-red-400"}`}>
-                      {metric.change}
-                    </span>
-                  </div>
-                  <div className="w-12 h-12 rounded-2xl bg-black/40 border border-gray-dark flex items-center justify-center">
-                    <Icon className={`w-6 h-6 ${metric.iconColor}`} />
-                  </div>
+            {isLoading
+              ? Array.from({ length: 4 }).map((_, idx) => (
+                <div key={`metric-skeleton-${idx}`} className="rounded-2xl border border-gray-dark bg-gray-darkest p-5 shadow-xl">
+                  <Skeleton className="h-4 w-32 mb-3" />
+                  <Skeleton className="h-8 w-24 mb-2" />
+                  <Skeleton className="h-4 w-20" />
                 </div>
-              );
-            })}
+              ))
+              : metrics.map(metric => {
+                const Icon = metric.icon;
+                return (
+                  <div key={metric.title} className="rounded-2xl border border-gray-dark bg-gray-darkest p-5 flex items-center justify-between shadow-xl">
+                    <div>
+                      <p className="text-sm text-gray-lightest uppercase tracking-[0.2em]">{metric.title}</p>
+                      <p className="text-3xl font-bold text-white-primary mt-2">{metric.value}</p>
+                      <span className={`text-sm font-semibold ${metric.isPositive ? "text-green-400" : "text-red-400"}`}>
+                        {metric.change}
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-black/40 border border-gray-dark flex items-center justify-center">
+                      <Icon className={`w-6 h-6 ${metric.iconColor}`} />
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         </section>
         <hr />
@@ -899,86 +1145,90 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="pt-6" style={{ height: "360px" }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={comparativaIngresos}
-                  barCategoryGap={60}
-                  barGap={0}
-                  margin={{ top: 20, right: 20, left: 0, bottom: 30 }}
-                >
-                  <defs>
-                    <linearGradient id="productosGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={colors.gold} stopOpacity={1} />
-                      <stop offset="100%" stopColor={colors.goldAlt} stopOpacity={0.7} />
-                    </linearGradient>
-                    <linearGradient id="serviciosGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={colors.primary} stopOpacity={1} />
-                      <stop offset="100%" stopColor={colors.primaryDark} stopOpacity={0.7} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
-                  <XAxis
-                    dataKey="nombre"
-                    interval={0}
-                    tickLine={false}
-                    axisLine={{ stroke: '#3a3a3a' }}
-                    height={30}
-                    tickFormatter={(_value, index) => {
-                      const item = comparativaIngresos[index];
-                      if (!item || item.esSeparador) return "";
-                      return index === 0
-                        ? "Productos"
-                        : item.groupLabel === "Servicios"
-                          ? "Servicios"
-                          : "";
-                    }}
-                  />
-                  <YAxis
-                    stroke="#888888"
-                    tickFormatter={(value) => formatAxisValue(value as number)}
-                    tick={{ fill: '#888888', fontSize: 12 }}
-                    axisLine={{ stroke: '#3a3a3a' }}
-                  />
-                  <Tooltip
-                    cursor={{ fill: `${colors.primary}20` }}
-                    content={renderIngresosTooltip}
-                  />
-                  <Legend
-                    wrapperStyle={{ paddingTop: 0, paddingBottom: 12 }}
-                    formatter={(value) => (
-                      <span className="text-sm text-gray-lightest">
-                        {value === "Productos" ? "Productos" : "Servicios"}
-                      </span>
-                    )}
-                    payload={[
-                      { value: "Productos", type: "square", color: colors.gold },
-                      { value: "Servicios", type: "square", color: "#3b6473" },
-                    ]}
-                  />
-                  <Bar
-                    dataKey="monto"
-                    radius={[12, 12, 0, 0]}
-                    maxBarSize={48}
+              {isLoading ? (
+                <Skeleton className="h-full w-full rounded-xl" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={comparativaIngresos}
+                    barCategoryGap={60}
+                    barGap={0}
+                    margin={{ top: 20, right: 20, left: 0, bottom: 30 }}
                   >
-                    {comparativaIngresos.map((entry, index) =>
-                      entry.esSeparador ? (
-                        <Cell key={`sep-${index}`} fill="transparent" />
-                      ) : (
-                        <Cell
-                          key={`cell-${entry.nombre}-${index}`}
-                          fill={
-                            entry.grupo === "Productos"
-                              ? "url(#productosGradient)"
-                              : "#3b6473"
-                          }
-                          stroke={entry.grupo === "Productos" ? colors.goldAlt : "#3b6473"}
-                          strokeWidth={entry.grupo === "Productos" ? 0 : 1.2}
-                        />
-                      )
-                    )}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                    <defs>
+                      <linearGradient id="productosGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={colors.gold} stopOpacity={1} />
+                        <stop offset="100%" stopColor={colors.goldAlt} stopOpacity={0.7} />
+                      </linearGradient>
+                      <linearGradient id="serviciosGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={colors.primary} stopOpacity={1} />
+                        <stop offset="100%" stopColor={colors.primaryDark} stopOpacity={0.7} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                    <XAxis
+                      dataKey="nombre"
+                      interval={0}
+                      tickLine={false}
+                      axisLine={{ stroke: '#3a3a3a' }}
+                      height={30}
+                      tickFormatter={(_value, index) => {
+                        const item = comparativaIngresos[index];
+                        if (!item || item.esSeparador) return "";
+                        return index === 0
+                          ? "Productos"
+                          : item.groupLabel === "Servicios"
+                            ? "Servicios"
+                            : "";
+                      }}
+                    />
+                    <YAxis
+                      stroke="#888888"
+                      tickFormatter={(value) => formatAxisValue(value as number)}
+                      tick={{ fill: '#888888', fontSize: 12 }}
+                      axisLine={{ stroke: '#3a3a3a' }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: `${colors.primary}20` }}
+                      content={renderIngresosTooltip}
+                    />
+                    <Legend
+                      wrapperStyle={{ paddingTop: 0, paddingBottom: 12 }}
+                      formatter={(value) => (
+                        <span className="text-sm text-gray-lightest">
+                          {value === "Productos" ? "Productos" : "Servicios"}
+                        </span>
+                      )}
+                      payload={[
+                        { value: "Productos", type: "square", color: colors.gold },
+                        { value: "Servicios", type: "square", color: "#3b6473" },
+                      ]}
+                    />
+                    <Bar
+                      dataKey="monto"
+                      radius={[12, 12, 0, 0]}
+                      maxBarSize={48}
+                    >
+                      {comparativaIngresos.map((entry, index) =>
+                        entry.esSeparador ? (
+                          <Cell key={`sep-${index}`} fill="transparent" />
+                        ) : (
+                          <Cell
+                            key={`cell-${entry.nombre}-${index}`}
+                            fill={
+                              entry.grupo === "Productos"
+                                ? "url(#productosGradient)"
+                                : "#3b6473"
+                            }
+                            stroke={entry.grupo === "Productos" ? colors.goldAlt : "#3b6473"}
+                            strokeWidth={entry.grupo === "Productos" ? 0 : 1.2}
+                          />
+                        )
+                      )}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
           <hr />
@@ -1057,8 +1307,8 @@ export function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="text-red-400 font-semibold">Stock: {item.stock}</span>
-                      <span className="text-gray-lightest">Min: {item.minimo}</span>
+                      <span className="text-red-400 font-semibold">Stock Total: {item.stockTotal}</span>
+                      <span className="text-gray-lightest">min:{item.minimo}</span>
                     </div>
                   </div>
                 ))}
@@ -1082,27 +1332,31 @@ export function DashboardPage() {
               </p>
             </div>
             <div className="pt-6" style={{ height: "360px" }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ventasPorProducto} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
-                  <XAxis dataKey="producto" stroke="#888" tick={{ fill: '#ccc', fontSize: 12 }} />
-                  <YAxis
-                    stroke="#888"
-                    tickFormatter={(value) => `$${formatAxisValue(value as number)}`}
-                    tick={{ fill: '#ccc', fontSize: 12 }}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "#ffffff10" }}
-                    contentStyle={{ backgroundColor: "#0b0b0b", border: `1px solid ${colors.primary}` }}
-                    formatter={(value: any, _name: any, props: any) => [
-                      `$${formatCurrencyValue(value as number)} • ${props.payload.unidades} uds`,
-                      props.payload.producto
-                    ]}
-                  />
-                  <Legend />
-                  <Bar dataKey="ingresos" name="Ingresos" radius={[12, 12, 0, 0]} fill="url(#productosGradient)" />
-                </BarChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <Skeleton className="h-full w-full rounded-xl" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ventasPorProducto} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                    <XAxis dataKey="producto" stroke="#888" tick={{ fill: '#ccc', fontSize: 12 }} />
+                    <YAxis
+                      stroke="#888"
+                      tickFormatter={(value) => `$${formatAxisValue(value as number)}`}
+                      tick={{ fill: '#ccc', fontSize: 12 }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "#ffffff10" }}
+                      contentStyle={{ backgroundColor: "#0b0b0b", border: `1px solid ${colors.primary}` }}
+                      formatter={(value: any, _name: any, props: any) => [
+                        `$${formatCurrencyValue(value as number)} • ${props.payload.unidades} uds`,
+                        props.payload.producto
+                      ]}
+                    />
+                    <Legend />
+                    <Bar dataKey="ingresos" name="Ingresos" radius={[12, 12, 0, 0]} fill="url(#productosGradient)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
             <div className="mt-6">
               <button

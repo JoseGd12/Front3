@@ -478,8 +478,46 @@ export function AgendamientoPage() {
             const cita = citas.find(c => c.id === citaId);
             if (cita && user) {
               const allVentas = await ventaService.getVentas();
+              
+              // Verificar si ya existe una venta para esta cita hoy para evitar duplicados
+              const hoy = new Date().toISOString().split('T')[0];
+              const nombreItem = cita.servicioNombre || cita.paqueteNombre || 'Servicio';
+              
+              const ventaExistente = allVentas.find(v => {
+                // Validación de duplicados basada SOLO en:
+                // Cliente, Método de Pago, Servicio, Fecha y Responsable
+                const fechaVenta = String(v.fecha || '').split('T')[0];
+                const mismaFecha = fechaVenta === hoy;
+                const mismoCliente = Number(v.clienteId) === Number(cita.clienteId);
+                const metodoMatch = String(v.metodoPago || '').toLowerCase().trim() === 'efectivo';
+                const nombreItemClean = nombreItem.toLowerCase().trim();
+                const serviciosVenta = String(v.servicios || '').toLowerCase();
+                const contieneServicio = serviciosVenta.includes(nombreItemClean);
+                const responsableVenta = String(v.responsable || '').toLowerCase().trim();
+                const responsableMatch = !!user && responsableVenta.includes(String(user.name || '').toLowerCase().trim());
+                
+                return mismaFecha && mismoCliente && metodoMatch && contieneServicio && responsableMatch;
+              });
+
+              if (ventaExistente) {
+                success("Cita completada", `Estado actualizado. Ya existe una venta registrada hoy para este servicio (Venta #${ventaExistente.numeroVenta || ventaExistente.id}), no se creará una nueva.`);
+                return;
+              }
+
               const nextNumeroVenta = allVentas.length + 1;
               
+              // Intentar recuperar el ID del barbero si viene en 0
+              let finalBarberoId = Number(cita.barberoId);
+              if ((!finalBarberoId || finalBarberoId === 0) && cita.barberoNombre) {
+                 const foundBarbero = barberosList.find(b => {
+                    const fullName = `${b.nombre || ''} ${b.apellido || ''}`.trim();
+                    return fullName === cita.barberoNombre;
+                 });
+                 if (foundBarbero) {
+                    finalBarberoId = Number(foundBarbero.id);
+                 }
+              }
+
               const ventaData: any = {
                 numeroVenta: nextNumeroVenta,
                 clienteId: cita.clienteId,
@@ -492,7 +530,7 @@ export function AgendamientoPage() {
                 iva: 0,
                 descuento: 0,
                 total: cita.precio,
-                barberoId: cita.barberoId,
+                barberoId: finalBarberoId,
                 barberoNombre: cita.barberoNombre,
                 estado: 'Completada',
                 metodoPago: 'Efectivo', 

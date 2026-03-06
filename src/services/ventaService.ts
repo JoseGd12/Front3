@@ -50,6 +50,7 @@ export interface CreateVentaRequest {
   iva: number;
   descuento: number;
   total: number;
+  saldoAFavorUsado?: number;
   barberoId?: number | null;
   barberoNombre?: string;
   estado: string;
@@ -123,6 +124,7 @@ class VentaService {
     if (data.subtotal !== undefined) mapped.Subtotal = Number(data.subtotal);
     if (data.total !== undefined) mapped.Total = Number(data.total);
     if (data.garantiaMeses !== undefined) mapped.GarantiaMeses = Number(data.garantiaMeses);
+    if (data.saldoAFavorUsado !== undefined) mapped.SaldoAFavorUsado = Number(data.saldoAFavorUsado);
 
     // Unificar detalles en la propiedad 'Detalles' (PascalCase)
     const detalles: any[] = [];

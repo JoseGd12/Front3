@@ -449,8 +449,8 @@ export function ServiciosPage() {
                 Completa la información del servicio
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 pt-4">
-              <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+              <div className="space-y-2 md:col-span-1">
                 <Label className="text-white-primary flex items-center gap-1">
                   Nombre del Servicio
                   <span className="text-red-400">*</span>
@@ -473,18 +473,42 @@ export function ServiciosPage() {
                   <p className="text-xs text-red-400">El nombre ya existe.</p>
                 )}
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white-primary">Descripción</Label>
-              <Textarea
-                value={nuevoServicio.descripcion}
-                onChange={(e) => setNuevoServicio({ ...nuevoServicio, descripcion: e.target.value })}
-                placeholder="Describe el servicio detalladamente"
-                className="elegante-input"
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
+              <div className="space-y-2 md:col-span-1">
+                <Label className="text-white-primary flex items-center gap-1">
+                  Precio ($)
+                  <span className="text-red-400">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  value={precioServicioInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.length <= 15) {
+                      setPrecioServicioInput(val);
+                      if (val.trim() === '') {
+                        setNuevoServicio({ ...nuevoServicio, precio: 0 });
+                      } else {
+                        const numero = Number(val);
+                        if (!Number.isNaN(numero)) {
+                          setNuevoServicio({ ...nuevoServicio, precio: Math.max(0, numero) });
+                        }
+                      }
+                    }
+                  }}
+                  className={`elegante-input no-spin ${showServicioFormErrors && (nuevoServicio.precio || 0) <= 0 ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
+                  min="0"
+                  step="100"
+                />
+                <div className="flex justify-start mt-1">
+                  <span className="text-xs text-gray-500 font-medium">
+                    {precioServicioInput.length}/15 caracteres
+                  </span>
+                </div>
+                {showServicioFormErrors && (nuevoServicio.precio || 0) <= 0 && (
+                  <p className="text-xs text-red-400">El precio debe ser mayor a cero.</p>
+                )}
+              </div>
+              <div className="space-y-2 md:col-span-1">
               <Label className="text-white-primary flex items-center gap-1">
                 Duración (minutos)
                 <span className="text-red-400">*</span>
@@ -501,41 +525,42 @@ export function ServiciosPage() {
               {showServicioFormErrors && (nuevoServicio.duracion || 0) <= 0 && (
                 <p className="text-xs text-red-400">La duración debe ser mayor a 0 minutos.</p>
               )}
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white-primary flex items-center gap-1">
-                Precio ($)
-                <span className="text-red-400">*</span>
-              </Label>
-              <Input
-                type="number"
-                value={precioServicioInput}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.length <= 15) {
-                    setPrecioServicioInput(val);
-                    if (val.trim() === '') {
-                      setNuevoServicio({ ...nuevoServicio, precio: 0 });
-                    } else {
-                      const numero = Number(val);
-                      if (!Number.isNaN(numero)) {
-                        setNuevoServicio({ ...nuevoServicio, precio: Math.max(0, numero) });
-                      }
-                    }
-                  }
-                }}
-                className={`elegante-input no-spin ${showServicioFormErrors && (nuevoServicio.precio || 0) <= 0 ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
-                min="0"
-                step="100"
-              />
-              <div className="flex justify-start mt-1">
-                <span className="text-xs text-gray-500 font-medium">
-                  {precioServicioInput.length}/15 caracteres
-                </span>
+                <p className="text-[11px] text-gray-400 mt-1">Ingresa los minutos manualmente.</p>
+              </div> <div className="space-y-2 md:col-span-1">
+              <Label className="text-white-primary">Descripción</Label>
+                  <Textarea
+                    value={nuevoServicio.descripcion}
+                    onChange={(e) => setNuevoServicio({ ...nuevoServicio, descripcion: e.target.value })}
+                    placeholder="Describe el servicio detalladamente"
+                    className="elegante-input"
+                    rows={3}
+                  /> 
               </div>
-              {showServicioFormErrors && (nuevoServicio.precio || 0) <= 0 && (
-                <p className="text-xs text-red-400">El precio debe ser mayor a cero.</p>
-              )}
+            </div>
+            {/* Vista Previa UI/UX */}
+            <div className="bg-gray-darker p-2 rounded-md border border-gray-dark mt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-lightest text-xs">Vista previa</span>
+                <Scissors className="w-3 h-3 text-orange-primary" />
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                <div>
+                  <p className="text-[10px] text-gray-400">Nombre</p>
+                  <p className="text-white-primary font-medium text-xs truncate">{nuevoServicio.nombre || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400">Duración</p>
+                  <p className="text-white-primary font-medium text-xs">{(nuevoServicio.duracion || 0) > 0 ? `${nuevoServicio.duracion} min` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400">Precio</p>
+                  <p className="text-orange-primary font-semibold text-xs">${(nuevoServicio.precio || 0).toLocaleString('es-CO')}</p>
+                </div>
+              </div>
+              <div className="mt-2">
+                <p className="text-[10px] text-gray-400">Descripción</p>
+                <p className="text-gray-lightest text-xs line-clamp-1">{nuevoServicio.descripcion || '—'}</p>
+              </div>
             </div>
             <div className="flex items-center space-x-2">
               <input

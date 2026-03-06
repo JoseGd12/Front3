@@ -1199,12 +1199,14 @@ export function VentasPage() {
       return;
     }
 
-    // Validar Barbero si hay servicios
-    if (tieneServicios && !nuevaVenta.barberoId) {
-      toast.error("El barbero es obligatorio cuando se agregan servicios", {
-        description: "Por favor selecciona un barbero para continuar."
-      });
-      return;
+    // Validar Barbero estrictamente si hay servicios
+    if (tieneServicios) {
+      if (!nuevaVenta.barberoId || Number(nuevaVenta.barberoId) <= 0) {
+        toast.error("El barbero es obligatorio cuando se agregan servicios", {
+          description: "Por favor selecciona un barbero válido para continuar."
+        });
+        return;
+      }
     }
 
     // Validar que los productos tengan IDs válidos
@@ -1264,6 +1266,9 @@ export function VentasPage() {
       const metodoPagoFinal = (nuevaVenta.metodoPago === 'Saldo')
         ? 'Saldo'
         : (nuevaVenta.usarSaldoAFavor ? `${nuevaVenta.metodoPago} (Saldo aplicado)` : nuevaVenta.metodoPago);
+      // Convertir explícitamente el barberoId a número antes de enviarlo
+      const barberoIdFinal = nuevaVenta.barberoId ? Number(nuevaVenta.barberoId) : null;
+
       const ventaData = {
         numeroVenta,
         clienteId: nuevaVenta.clienteId,
@@ -1276,7 +1281,8 @@ export function VentasPage() {
         iva: 0,
         descuento: descuento,
         total: total,
-        barberoId: nuevaVenta.barberoId ?? undefined,
+        saldoAFavorUsado: montoSaldoUsado,
+        barberoId: barberoIdFinal, // Usar el valor convertido
         barberoNombre: nuevaVenta.barberoNombre || 'Sin asignar',
         estado: 'Completada',
         metodoPago: metodoPagoFinal,
@@ -2376,8 +2382,8 @@ export function VentasPage() {
                                 <User className="w-4 h-4 text-orange-primary" />
                                 Barbero {serviciosAgregados.length > 0 ? "*" : "(opcional)"}
                               </Label>
-                              <Select
-                                value={nuevaVenta.barberoId?.toString() || VALOR_SIN_BARBERO}
+                              <Select 
+                                value={nuevaVenta.barberoId ? nuevaVenta.barberoId.toString() : VALOR_SIN_BARBERO}
                                 onValueChange={(value) => {
                                   if (value === VALOR_SIN_BARBERO) {
                                     setNuevaVenta({ ...nuevaVenta, barberoId: null, barberoNombre: "Sin asignar" });
@@ -2399,7 +2405,7 @@ export function VentasPage() {
                                   <SelectItem value={VALOR_SIN_BARBERO}>Sin barbero</SelectItem>
                                   {barberosAPI.map((barbero) => (
                                     <SelectItem key={barbero.id} value={barbero.id.toString()}>
-                                      {barbero.nombre} {barbero.apellido}
+                                      {barbero.nombre} {barbero.apellido || ''}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -2506,8 +2512,9 @@ export function VentasPage() {
                                           type="number"
                                           min={1}
                                           value={getTarjetaServicioInput(servicio.id, 'cantidad', servicio.cantidad)}
-                                          onChange={(e) => onTarjetaServicioInputChange(servicio.id, 'cantidad', e.target.value)}
-                                          className="w-14 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5"
+                                          disabled
+                                          readOnly
+                                          className="w-14 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5 bg-gray-medium cursor-not-allowed"
                                         />
                                       </div>
 
