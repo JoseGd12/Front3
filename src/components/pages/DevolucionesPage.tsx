@@ -990,16 +990,16 @@ export function DevolucionesPage() {
           // Revertir el stock si tenemos el ID del producto
           if (devolucion.productoId) {
             console.log(`📦 Revirtiendo stock por anulación de devolución: Producto ${devolucion.productoId}, Cantidad ${devolucion.cantidad}`);
-            const destinoReversion = (devolucion.motivoCategoria === 'Defectuoso' || devolucion.motivoCategoria === 'Vencido')
-              ? 'insumos'
-              : 'ventas';
-
-            await productoService.adjustStock(
-              devolucion.productoId,
-              devolucion.cantidad,
-              'decrement',
-              destinoReversion
-            );
+            const motivo = String(devolucion.motivoCategoria || '').toLowerCase();
+            const esErrorCompra = motivo === 'error_compra' || motivo === 'error en la compra';
+            if (esErrorCompra) {
+              await productoService.adjustStock(
+                devolucion.productoId,
+                devolucion.cantidad,
+                'decrement',
+                'ventas'
+              );
+            }
           }
 
           toast.success(`Devolución ${nuevoEstado.toLowerCase()}ada exitosamente`);

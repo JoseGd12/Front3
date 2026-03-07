@@ -9,7 +9,7 @@ async function testUpload() {
     formData.append('file', blob, 'package.json');
 
     try {
-        const res = await fetch('http://edwisbarbers.somee.com/api/Images/upload', {
+        const res = await fetch('https://manitobarbershop.up.railway.app/api/Images/upload', {
             method: 'POST',
             body: formData
         });

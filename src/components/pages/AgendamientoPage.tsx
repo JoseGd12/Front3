@@ -99,6 +99,7 @@ export function AgendamientoPage() {
   const [slotFilterEstado, setSlotFilterEstado] = useState("all");
   const [activeTab, setActiveTab] = useState<'lista' | 'crear' | 'detalle'>('lista');
   const [selectedCita, setSelectedCita] = useState<any>(null);
+  const [ventasPorCita, setVentasPorCita] = useState<Record<number, number>>({});
 
   // Estados para formulario de nueva cita
   const [nuevaCita, setNuevaCita] = useState({
@@ -469,104 +470,57 @@ export function AgendamientoPage() {
       setCitas(citas.map(cita =>
         cita.id === citaId ? { ...cita, estado: nuevoEstado } : cita
       ));
-      if (String(nuevoEstado).toLowerCase() === 'completada') {
+      const estadoLower = String(nuevoEstado).toLowerCase();
+      if (estadoLower === 'cancelada') {
+        const ventaInfoCancel = result && (result.venta || result.Venta || null);
+        const ventaIdCancel = Number(result?.ventaId || result?.VentaId || ventaInfoCancel?.id || ventaInfoCancel?.Id || 0);
+        const { [citaId]: _, ...rest } = ventasPorCita;
+        setVentasPorCita(rest);
+        if (ventaIdCancel > 0) {
+          success("Cita cancelada", `La venta #${ventaIdCancel} asociada ha sido anulada.`);
+        } else {
+          success("Cita cancelada", "Estado actualizado correctamente.");
+        }
+        return;
+      }
+      if (estadoLower === 'completada') {
         const ventaInfo = result && (result.venta || result.Venta || null);
-        if (ventaInfo) {
-          success("Cita completada", `Se creó la venta #${ventaInfo.id || ventaInfo.Id} por $${(ventaInfo.total || ventaInfo.Total || 0).toLocaleString('es-CO')}.`);
+        const ventaIdRes = Number(result?.ventaId || result?.VentaId || ventaInfo?.id || ventaInfo?.Id || 0);
+        const ventaRegistradaLocal = ventasPorCita[citaId];
+        if (ventaRegistradaLocal && ventaRegistradaLocal > 0) {
+          success("Cita completada", `Venta #${ventaRegistradaLocal} ya registrada para esta cita.`);
+          return;
+        }
+        if (!ventaInfo && !(ventaIdRes > 0)) {
+          const posibleVenta = await agendamientoService.getVentaPorAgendamiento(citaId);
+          const ventaInfo2 = posibleVenta && (posibleVenta.venta || posibleVenta.Venta || null);
+          const ventaId2 = Number(posibleVenta?.ventaId || posibleVenta?.VentaId || ventaInfo2?.id || ventaInfo2?.Id || 0);
+          if (ventaInfo2 || ventaId2 > 0) {
+            success("Cita completada", `Venta #${ventaInfo2?.id || ventaInfo2?.Id || ventaId2} confirmada.`);
+            setVentasPorCita(prev => ({ ...prev, [citaId]: (ventaInfo2?.id || ventaInfo2?.Id || ventaId2) }));
+            return;
+          }
+        }
+        if (ventaInfo || ventaIdRes > 0) {
+          success("Cita completada", `Venta #${ventaInfo?.id || ventaInfo?.Id || ventaIdRes} confirmada.`);
+          const idConfirmado = Number(ventaInfo?.id || ventaInfo?.Id || ventaIdRes || 0);
+          if (idConfirmado > 0) {
+            setVentasPorCita(prev => ({ ...prev, [citaId]: idConfirmado }));
+          }
         } else {
           try {
-            const cita = citas.find(c => c.id === citaId);
-            if (cita && user) {
-              const allVentas = await ventaService.getVentas();
-              
-              // Verificar si ya existe una venta para esta cita hoy para evitar duplicados
-              const hoy = new Date().toISOString().split('T')[0];
-              const nombreItem = cita.servicioNombre || cita.paqueteNombre || 'Servicio';
-              
-              const ventaExistente = allVentas.find(v => {
-                // Validación de duplicados basada SOLO en:
-                // Cliente, Método de Pago, Servicio, Fecha y Responsable
-                const fechaVenta = String(v.fecha || '').split('T')[0];
-                const mismaFecha = fechaVenta === hoy;
-                const mismoCliente = Number(v.clienteId) === Number(cita.clienteId);
-                const metodoMatch = String(v.metodoPago || '').toLowerCase().trim() === 'efectivo';
-                const nombreItemClean = nombreItem.toLowerCase().trim();
-                const serviciosVenta = String(v.servicios || '').toLowerCase();
-                const contieneServicio = serviciosVenta.includes(nombreItemClean);
-                const responsableVenta = String(v.responsable || '').toLowerCase().trim();
-                const responsableMatch = !!user && responsableVenta.includes(String(user.name || '').toLowerCase().trim());
-                
-                return mismaFecha && mismoCliente && metodoMatch && contieneServicio && responsableMatch;
-              });
-
-              if (ventaExistente) {
-                success("Cita completada", `Estado actualizado. Ya existe una venta registrada hoy para este servicio (Venta #${ventaExistente.numeroVenta || ventaExistente.id}), no se creará una nueva.`);
-                return;
-              }
-
-              const nextNumeroVenta = allVentas.length + 1;
-              
-              // Intentar recuperar el ID del barbero si viene en 0
-              let finalBarberoId = Number(cita.barberoId);
-              if ((!finalBarberoId || finalBarberoId === 0) && cita.barberoNombre) {
-                 const foundBarbero = barberosList.find(b => {
-                    const fullName = `${b.nombre || ''} ${b.apellido || ''}`.trim();
-                    return fullName === cita.barberoNombre;
-                 });
-                 if (foundBarbero) {
-                    finalBarberoId = Number(foundBarbero.id);
-                 }
-              }
-
-              const ventaData: any = {
-                numeroVenta: nextNumeroVenta,
-                clienteId: cita.clienteId,
-                usuarioId: Number(user.id),
-                clienteDocumento: '', 
-                fecha: new Date().toISOString().split('T')[0],
-                servicios: cita.servicioNombre || 'Servicio de cita',
-                productos: 'Ninguno',
-                subtotal: cita.precio,
-                iva: 0,
-                descuento: 0,
-                total: cita.precio,
-                barberoId: finalBarberoId,
-                barberoNombre: cita.barberoNombre,
-                estado: 'Completada',
-                metodoPago: 'Efectivo', 
-                garantiaMeses: 0,
-                productosDetalle: [],
-                serviciosDetalle: []
-              };
-
-              if (cita.paqueteId) {
-                ventaData.serviciosDetalle.push({
-                  id: `PAQ-${cita.paqueteId}`,
-                  nombre: cita.paqueteNombre || 'Paquete',
-                  precio: cita.precio,
-                  cantidad: 1
-                });
-              } else if (cita.servicioId) {
-                ventaData.serviciosDetalle.push({
-                  id: `SERV-${cita.servicioId}`,
-                  nombre: cita.servicioNombre || 'Servicio',
-                  precio: cita.precio,
-                  cantidad: 1
-                });
-              }
-
-              if (ventaData.serviciosDetalle.length > 0) {
-                const nuevaVenta = await ventaService.createVenta(ventaData);
-                success("Cita completada", `Se generó la venta #${nuevaVenta.numeroVenta || nextNumeroVenta} manualmente.`);
-              } else {
-                success("Cita completada", "No se pudo generar venta automática (faltan detalles de servicio).");
-              }
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const verif = await agendamientoService.getVentaPorAgendamiento(citaId);
+            const vi = verif && (verif.venta || verif.Venta || null);
+            const vid = Number(verif?.ventaId || verif?.VentaId || vi?.id || vi?.Id || 0);
+            if (vid > 0) {
+              setVentasPorCita(prev => ({ ...prev, [citaId]: vid }));
+              success("Cita completada", `Venta #${vid} confirmada.`);
             } else {
-              success("Cita completada", "No se pudo generar la venta automática (cita no encontrada o usuario no autenticado).");
+              success("Cita completada", "Estado actualizado. La venta se gestionará por el sistema.");
             }
-          } catch (e) {
-            console.error("Error creando venta manual:", e);
-            success("Cita completada", "Pero hubo un error al generar la venta automática.");
+          } catch {
+            success("Cita completada", "Estado actualizado correctamente.");
           }
         }
       } else {

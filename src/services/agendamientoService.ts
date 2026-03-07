@@ -69,6 +69,16 @@ class AgendamientoService {
         }
     }
 
+    async getVentaPorAgendamiento(id: number): Promise<any> {
+        const response = await this.request(`/Ventas/por-agendamiento/${id}`);
+        const text = await response.text();
+        try {
+            return text ? JSON.parse(text) : {};
+        } catch {
+            return {};
+        }
+    }
+
     mapApiToComponent(api: any): Agendamiento {
         if (!api) return this.getDefaultAgendamiento();
 

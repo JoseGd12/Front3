@@ -20,7 +20,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://edwisbarbers.somee.com',
+        target: 'https://manitobarbershop.up.railway.app',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
@@ -37,7 +37,7 @@ export default defineConfig({
         },
       },
       '/assets': {
-        target: 'https://edwisbarbers.somee.com',
+        target: 'https://manitobarbershop.up.railway.app',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,

@@ -1,4 +1,11 @@
-const API_BASE_URL = '/api';
+const RAW_API_BASE =
+  (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_API_URL) ||
+  (typeof window !== 'undefined' && (window as any)?.API_BASE_URL) ||
+  '';
+const NORMALIZED_BASE = RAW_API_BASE ? String(RAW_API_BASE).replace(/\/+$/, '') : '';
+const API_BASE_URL = NORMALIZED_BASE
+  ? (NORMALIZED_BASE.endsWith('/api') ? NORMALIZED_BASE : `${NORMALIZED_BASE}/api`)
+  : '/api';
 
 export interface Venta {
   id: number;
@@ -178,6 +185,14 @@ class VentaService {
       // No lanzar error aquí, dejar que el backend valide
     }
 
+    const requiereBarbero = (mapped.Detalles || []).some((d: any) => d.ServicioId || d.PaqueteId);
+    if (requiereBarbero) {
+      const barberoNum = Number(mapped.BarberoId || 0);
+      if (!barberoNum || barberoNum <= 0) {
+        throw new Error('BarberoId es requerido cuando la venta incluye servicios o paquetes');
+      }
+    }
+
     // Validar que ClienteId sea válido
     if (!mapped.ClienteId || mapped.ClienteId <= 0) {
       throw new Error('ClienteId es requerido y debe ser un número válido');
@@ -305,9 +320,12 @@ class VentaService {
       ? `${cliente.nombre || cliente.Nombre} ${cliente.apellido || cliente.Apellido || ''}`.trim()
       : (data.clienteNombre || data.ClienteNombre || data.cliente || data.Cliente || 'Cliente');
 
-    const barberoNombre = barberoObj.nombre || barberoObj.Nombre
-      ? `${barberoObj.nombre || barberoObj.Nombre} ${barberoObj.apellido || barberoObj.Apellido || ''}`.trim()
-      : (data.barberoNombre || data.BarberoNombre || data.barbero || data.Barbero || 'Sin asignar');
+    const barberoUsuario = (barberoObj as any).usuario || (barberoObj as any).Usuario || {};
+    const barberoNombre = (barberoObj as any).nombre || (barberoObj as any).Nombre
+      ? `${(barberoObj as any).nombre || (barberoObj as any).Nombre} ${(barberoObj as any).apellido || (barberoObj as any).Apellido || ''}`.trim()
+      : (barberoUsuario?.nombre || barberoUsuario?.Nombre)
+        ? `${barberoUsuario?.nombre || barberoUsuario?.Nombre} ${barberoUsuario?.apellido || barberoUsuario?.Apellido || ''}`.trim()
+        : (data.barberoNombre || data.BarberoNombre || (typeof data.barbero === 'string' ? data.barbero : '') || (typeof data.Barbero === 'string' ? data.Barbero : '') || 'Sin asignar');
 
     const responsableNombre = usuarioResponsable.nombre || usuarioResponsable.Nombre
       ? `${usuarioResponsable.nombre || usuarioResponsable.Nombre} ${usuarioResponsable.apellido || usuarioResponsable.Apellido || ''}`.trim()

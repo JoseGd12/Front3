@@ -20,7 +20,6 @@ import ImageRenderer from "../ui/ImageRenderer";
 import { apiService } from "../../services/api";
 import { clientesService } from "../../services/clientesService";
 import { useAuth } from "../AuthContext";
-import { firebaseAuthService } from "../../services/firebase";
 
 const TIPOS_DOCUMENTO = [
   { value: 'CC', label: 'Cédula de Ciudadanía' },
@@ -74,7 +73,6 @@ export function BarberosPage() {
   const [showBarberoFormErrors, setShowBarberoFormErrors] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState('');
   const [isCreateConfirmOpen, setIsCreateConfirmOpen] = useState(false);
-  const [createInFirebase, setCreateInFirebase] = useState(true);
   const formatDateLocal = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -206,6 +204,14 @@ export function BarberosPage() {
 
   const validateBarberoForm = () => {
     if (!newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.correo || !newBarbero.fechaNacimiento) {
+      const faltantes: string[] = [];
+      if (!newBarbero.tipoDocumento) faltantes.push('Tipo de Documento');
+      if (!newBarbero.documento) faltantes.push('Número de Documento');
+      if (!newBarbero.nombre) faltantes.push('Nombres');
+      if (!newBarbero.apellido) faltantes.push('Apellidos');
+      if (!newBarbero.correo) faltantes.push('Correo');
+      if (!newBarbero.fechaNacimiento) faltantes.push('Fecha de Nacimiento');
+      errorAlert("Campos obligatorios faltantes", `Por favor completa: ${faltantes.join(', ')}`);
       return false;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -270,29 +276,6 @@ export function BarberosPage() {
       setIsCreateConfirmOpen(false);
       successAlert("¡Barbero creado exitosamente!", `El barbero "${mappedBarbero.nombre} ${mappedBarbero.apellido}" ha sido registrado en el sistema.`);
 
-      if (createInFirebase) {
-        try {
-          const tempPass = generatedPassword && generatedPassword.length >= 6 ? generatedPassword : Math.random().toString(36).slice(-8) + "A1";
-          await firebaseAuthService.createUserWithoutAffectingSession(
-            newBarbero.correo,
-            tempPass,
-            { sendVerification: false, sendPasswordReset: true }
-          );
-          successAlert("Cuenta Firebase creada", "Se envió enlace para configurar contraseña.");
-        } catch (err: any) {
-          const msg = String(err?.message || '').toLowerCase();
-          if (msg.includes('ya está en uso') || msg.includes('already')) {
-            const res = await resetPassword(newBarbero.correo);
-            if (res?.success) {
-              successAlert("Correo existente en Firebase", "Se envió enlace para configurar contraseña.");
-            } else {
-              errorAlert("No se pudo enviar enlace de contraseña", "");
-            }
-          } else {
-            errorAlert("No se pudo crear la cuenta en Firebase", "");
-          }
-        }
-      }
     } catch (err: unknown) {
       console.error('Error creando barbero:', err);
       const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
@@ -912,18 +895,9 @@ export function BarberosPage() {
             }} className="elegante-button-secondary">
               Cancelar
             </button>
-            <div className="flex items-center space-x-2 mr-auto">
-              <input
-                type="checkbox"
-                checked={createInFirebase}
-                onChange={(e) => setCreateInFirebase(e.target.checked)}
-              />
-              <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
-            </div>
             <button
               onClick={editingBarbero ? handleUpdateBarbero : handleCreateClick}
               className="elegante-button-primary"
-              disabled={!newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.correo || !newBarbero.fechaNacimiento || isDocDuplicateNewBarbero || isTooYoungNewBarbero}
             >
               {editingBarbero ? 'Actualizar' : 'Crear Barbero'}
             </button>

@@ -1155,8 +1155,17 @@ export function VentasPage() {
         });
 
         const ventaEnriquecida = enriquecerVentaConClienteOptimizado(ventaConDetalles, clientesById, clientesByDocumento);
+        const barberoIdNum = Number((ventaEnriquecida as any).barberoId ?? (venta as any).barberoId ?? 0);
+        let barberoNombreFinal = normalizeBarbero(ventaEnriquecida.barbero);
+        if ((!barberoNombreFinal || barberoNombreFinal === 'Sin asignar') && barberoIdNum > 0) {
+          const b = barberosAPI.find((u: any) => Number(u.id) === barberoIdNum);
+          if (b) {
+            barberoNombreFinal = `${b.nombre} ${b.apellido || ''}`.trim();
+          }
+        }
         setSelectedVenta({
           ...ventaEnriquecida,
+          barbero: barberoNombreFinal,
           // Fallback: si el endpoint de detalle no trae productos/servicios, conservar los ya cargados en la tabla.
           productosDetalle: (ventaEnriquecida.productosDetalle && ventaEnriquecida.productosDetalle.length > 0)
             ? ventaEnriquecida.productosDetalle
@@ -1805,6 +1814,8 @@ export function VentasPage() {
             <div>
               <div class="field-label">Barbero asignado:</div>
               <div style="color: #333; font-weight: 500; margin-top: 5px;">${normalizeBarbero(venta.barbero)}</div>
+              <div class="field-label" style="margin-top: 8px;">ID Barbero</div>
+              <div class="field-value">${String((venta as any).barberoId ?? '')}</div>
             </div>
             <div>
               <div class="field-label">Estado de la venta:</div>
