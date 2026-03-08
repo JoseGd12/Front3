@@ -177,6 +177,14 @@ export function UsersPage() {
     const existeEnBarberos = barberosCatalogo.some((b: any) => String((b as any).documento || '').trim() === docVal);
     return existeEnUsuarios || existeEnClientes || existeEnBarberos;
   }, [newUser.documento, users, clientesCatalogo, barberosCatalogo]);
+  const isEmailDuplicateCreateUser = React.useMemo(() => {
+    const emailVal = String(newUser.correo || '').trim().toLowerCase();
+    if (!emailVal) return false;
+    const existeEnUsuarios = users.some((u: any) => String(u.correo || '').trim().toLowerCase() === emailVal);
+    const existeEnClientes = clientesCatalogo.some((c: any) => String((c?.correo || c?.Correo || c?.email || '')).trim().toLowerCase() === emailVal);
+    const existeEnBarberos = barberosCatalogo.some((b: any) => String(b.correo || '').trim().toLowerCase() === emailVal);
+    return existeEnUsuarios || existeEnClientes || existeEnBarberos;
+  }, [newUser.correo, users, clientesCatalogo, barberosCatalogo]);
 
   // Cargar usuarios y roles desde la API
   const loadInitialData = async () => {
@@ -355,10 +363,14 @@ export function UsersPage() {
 
   const handleCreateUser = async () => {
     setShowUserFormErrors(true);
-    if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento) {
+    if (!newUser.tipoDocumento || !newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento) {
       return;
     }
     if (!isValidEmail(newUser.correo)) {
+      return;
+    }
+    if (isEmailDuplicateCreateUser) {
+      showError('Correo duplicado', 'Ya existe un registro con este correo (Usuario/Cliente/Barbero).');
       return;
     }
     if (newUser.fechaNacimiento) {
@@ -533,7 +545,7 @@ export function UsersPage() {
 
   const handleUpdateUser = async () => {
     setShowUserFormErrors(true);
-    if (!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento) {
+    if (!newUser.tipoDocumento || !newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento) {
       return;
     }
     if (!isValidEmail(newUser.correo)) {
@@ -558,12 +570,13 @@ export function UsersPage() {
       }
     }
     const docVal = String(newUser.documento || '').trim();
-    const existeEnUsuarios = users.some((u: any) => u.id !== editingUser.id && String(u.documento || '').trim() === docVal);
-    const existeEnClientes = clientesCatalogo.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
-    const existeEnBarberos = barberosCatalogo.some((b: any) => String((b as any).documento || '').trim() === docVal);
-    if (existeEnUsuarios || existeEnClientes || existeEnBarberos) {
-      showError('Documento duplicado', 'Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).');
-      return;
+    if (newUser.documento !== editingUser.documento) {
+      const existeEnUsuarios = users.some((u: any) => u.id !== editingUser.id && String(u.documento || '').trim() === docVal);
+      const existeEnClientes = clientesCatalogo.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+      const existeEnBarberos = barberosCatalogo.some((b: any) => String((b as any).documento || '').trim() === docVal);
+      if (existeEnUsuarios || existeEnClientes || existeEnBarberos) {
+        return;
+      }
     }
 
     try {
@@ -857,7 +870,7 @@ export function UsersPage() {
                         <select
                           value={newUser.tipoDocumento}
                           onChange={(e) => setNewUser({ ...newUser, tipoDocumento: e.target.value })}
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${showUserFormErrors && !newUser.tipoDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           disabled={editingUser !== null}
                         >
                           <option value="">Selecciona tipo de documento</option>
@@ -865,6 +878,7 @@ export function UsersPage() {
                             <option key={tipo} value={tipo}>{tipo}</option>
                           ))}
                         </select>
+                        {showUserFormErrors && !newUser.tipoDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                       </div>
                     </div>
                   </div>
@@ -884,11 +898,13 @@ export function UsersPage() {
                           }}
                           inputMode="numeric"
                           pattern="[0-9]*"
+                          maxLength={18}
                           className={`elegante-input w-full ${showUserFormErrors && !newUser.documento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="Número de documento (solo números)"
+                          disabled={editingUser !== null}
                         />
                         {showUserFormErrors && !newUser.documento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
-                        {isDocDuplicateCreateUser && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
+                        {isDocDuplicateCreateUser && !editingUser && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -958,11 +974,12 @@ export function UsersPage() {
                           type="email"
                           value={newUser.correo}
                           onChange={(e) => setNewUser({ ...newUser, correo: e.target.value })}
-                          className={`elegante-input w-full ${showUserFormErrors && (!newUser.correo || !isValidEmail(newUser.correo)) ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                          className={`elegante-input w-full ${((showUserFormErrors && (!newUser.correo || !isValidEmail(newUser.correo))) || (isEmailDuplicateCreateUser && !editingUser)) ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           placeholder="correo@ejemplo.com"
                         />
                         {showUserFormErrors && !newUser.correo && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
                         {showUserFormErrors && newUser.correo && !isValidEmail(newUser.correo) && <p className="text-xs text-red-400">Formato de correo inválido.</p>}
+                        {isEmailDuplicateCreateUser && !editingUser && <p className="text-xs text-red-400">Correo ya existe en el sistema.</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -1026,7 +1043,7 @@ export function UsersPage() {
                       <button
                         onClick={editingUser ? handleUpdateUser : handleCreateUser}
                         className="elegante-button-primary"
-                        disabled={!newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento || isDocDuplicateCreateUser || isTooYoungNewUser}
+                        aria-disabled={!newUser.tipoDocumento || !newUser.nombres || !newUser.apellidos || !newUser.documento || !newUser.correo || !newUser.celular || !newUser.rol || !newUser.fechaNacimiento || isDocDuplicateCreateUser || isEmailDuplicateCreateUser || isTooYoungNewUser}
                       >
                         {editingUser ? 'Actualizar Usuario' : 'Crear Usuario'}
                       </button>

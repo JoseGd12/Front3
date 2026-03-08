@@ -197,7 +197,9 @@ export function ServiciosPage() {
 
   const handleDeleteServicio = (servicio: Servicio) => {
     setServicioToDelete(servicio);
-    setIsDeleteDialogOpen(true);
+    (async () => {
+      await handleConfirmDelete();
+    })();
   };
 
   const handleConfirmDelete = async () => {

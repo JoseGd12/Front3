@@ -53,7 +53,7 @@ const TIPOS_DOCUMENTO = [
 ];
 
 const CLIENTE_LIMITS = {
-  numeroDocumento: 20,
+  numeroDocumento: 18,
   nombre: 100,
   apellido: 100,
   email: 100,
@@ -167,6 +167,14 @@ export function ClientesPage() {
     const existeCliente = clientes.some(c => String(c.numeroDocumento || '').trim() === docVal);
     const existeUsuario = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
     const existeBarbero = barberosAll.some((b: any) => String(b.documento || '').trim() === docVal);
+    return existeCliente || existeUsuario || existeBarbero;
+  })();
+  const isEmailDuplicateCreateCliente = (() => {
+    const emailVal = String(createForm.email || '').trim().toLowerCase();
+    if (!emailVal) return false;
+    const existeCliente = clientes.some(c => String(((c as any).email || (c as any).correo || (c as any).Correo) || '').trim().toLowerCase() === emailVal);
+    const existeUsuario = usuariosAll.some((u: any) => String(u.correo || '').trim().toLowerCase() === emailVal);
+    const existeBarbero = barberosAll.some((b: any) => String(b.correo || '').trim().toLowerCase() === emailVal);
     return existeCliente || existeUsuario || existeBarbero;
   })();
 
@@ -317,7 +325,7 @@ export function ClientesPage() {
   };
 
   const validateForm = (form: any) => {
-    if (!form.numeroDocumento || !form.nombre || !form.apellido || !form.email || !form.fechaNacimiento) {
+    if (!form.tipoDocumento || !form.numeroDocumento || !form.nombre || !form.apellido || !form.email || !form.fechaNacimiento || !form.telefono) {
       return false;
     }
 
@@ -338,12 +346,15 @@ export function ClientesPage() {
       return false;
     }
 
-    // Verificar si el email ya existe
-    const emailExiste = clientes.some(c => c.email === form.email);
-
-    if (emailExiste) {
-      error('Email duplicado', 'Ya existe un cliente registrado con este email.');
-      return false;
+    // Verificar si el email ya existe globalmente
+    const emailVal = String(form.email || '').trim().toLowerCase();
+    if (emailVal) {
+      const existeCliente = clientes.some(c => String(((c as any).email || (c as any).correo || (c as any).Correo) || '').trim().toLowerCase() === emailVal);
+      const existeUsuario = usuariosAll.some((u: any) => String(u.correo || '').trim().toLowerCase() === emailVal);
+      const existeBarbero = barberosAll.some((b: any) => String(b.correo || '').trim().toLowerCase() === emailVal);
+      if (existeCliente || existeUsuario || existeBarbero) {
+        return false;
+      }
     }
 
     if (form.fechaNacimiento) {
@@ -595,7 +606,7 @@ export function ClientesPage() {
   };
 
   const validateEditForm = (form: any) => {
-    if (!form.numeroDocumento || !form.nombre || !form.apellido || !form.email || !form.fechaNacimiento) {
+    if (!form.tipoDocumento || !form.numeroDocumento || !form.nombre || !form.apellido || !form.email || !form.fechaNacimiento || !form.telefono) {
       return false;
     }
 
@@ -606,17 +617,17 @@ export function ClientesPage() {
       return false;
     }
 
-    const docVal = String(form.numeroDocumento || '').trim();
-    const documentoExisteCliente = clientes.some(c =>
-      c.id !== selectedCliente?.id &&
-      String(c.numeroDocumento || '').trim() === docVal
-    );
-    const documentoExisteUsuario = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
-    const documentoExisteBarbero = barberosAll.some((b: any) => String(b.documento || '').trim() === docVal);
-
-    if (documentoExisteCliente || documentoExisteUsuario || documentoExisteBarbero) {
-      error('Documento duplicado', 'Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).');
-      return false;
+    if (form.numeroDocumento !== selectedCliente?.numeroDocumento) {
+      const docVal = String(form.numeroDocumento || '').trim();
+      const documentoExisteCliente = clientes.some(c =>
+        c.id !== selectedCliente?.id &&
+        String(c.numeroDocumento || '').trim() === docVal
+      );
+      const documentoExisteUsuario = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+      const documentoExisteBarbero = barberosAll.some((b: any) => String(b.documento || '').trim() === docVal);
+      if (documentoExisteCliente || documentoExisteUsuario || documentoExisteBarbero) {
+        return false;
+      }
     }
 
     // Verificar si el email ya existe (excepto el cliente actual)
@@ -791,7 +802,7 @@ export function ClientesPage() {
               error('No se puede eliminar', 'Este cliente tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.');
             }
           } else {
-            error('Error', `No se pudo eliminar el cliente: ${errorMessage || 'Error desconocido'}`);
+            // suprimir alerta grande genérica
           }
           // Lanzar para evitar que se dispare la alerta de éxito de confirmación
           throw new Error(errorMessage || 'DELETE_FAILED');
@@ -1313,12 +1324,13 @@ export function ClientesPage() {
                 <select
                   value={editForm.tipoDocumento}
                   onChange={(e) => setEditForm({ ...editForm, tipoDocumento: e.target.value })}
-                  className="elegante-input w-full"
+                  className={`elegante-input w-full ${showEditValidation && !editForm.tipoDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 >
                   {TIPOS_DOCUMENTO.map(tipo => (
                     <option key={tipo.value} value={tipo.value}>{tipo.label}</option>
                   ))}
                 </select>
+                {showEditValidation && !editForm.tipoDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
             </div>
 
@@ -1340,6 +1352,7 @@ export function ClientesPage() {
                   maxLength={CLIENTE_LIMITS.numeroDocumento}
                   className={`elegante-input w-full ${showEditValidation && !editForm.numeroDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                   placeholder="Número de documento (solo números)"
+                  disabled={!!selectedCliente}
                 />
                 {showEditValidation && !editForm.numeroDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
@@ -1408,15 +1421,16 @@ export function ClientesPage() {
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
                   <Phone className="w-4 h-4 text-orange-primary" />
-                  Número de Celular
+                  Número de Celular *
                 </Label>
                 <Input
                   value={editForm.telefono}
                   onChange={(e) => setEditForm({ ...editForm, telefono: e.target.value })}
                   maxLength={CLIENTE_LIMITS.telefono}
-                  className="elegante-input w-full"
+                  className={`elegante-input w-full ${showEditValidation && !editForm.telefono ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                   placeholder="+57 300 123 4567"
                 />
+                {showEditValidation && !editForm.telefono && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
             </div>
 
@@ -1537,12 +1551,13 @@ export function ClientesPage() {
                 <select
                   value={createForm.tipoDocumento}
                   onChange={(e) => setCreateForm({ ...createForm, tipoDocumento: e.target.value })}
-                  className="elegante-input w-full"
+                  className={`elegante-input w-full ${showCreateValidation && !createForm.tipoDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 >
                   {TIPOS_DOCUMENTO.map(tipo => (
                     <option key={tipo.value} value={tipo.value}>{tipo.label}</option>
                   ))}
                 </select>
+                {showCreateValidation && !createForm.tipoDocumento && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
             </div>
 
@@ -1626,23 +1641,25 @@ export function ClientesPage() {
                   value={createForm.email}
                   onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
                   maxLength={CLIENTE_LIMITS.email}
-                  className={`elegante-input w-full ${showCreateValidation && !createForm.email ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                  className={`elegante-input w-full ${(showCreateValidation && !createForm.email) || isEmailDuplicateCreateCliente ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                   placeholder="correo@ejemplo.com"
                 />
                 {showCreateValidation && !createForm.email && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
+                {isEmailDuplicateCreateCliente && <p className="text-xs text-red-400">Correo ya existe en el sistema.</p>}
               </div>
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
                   <Phone className="w-4 h-4 text-orange-primary" />
-                  Número de Celular
+                  Número de Celular *
                 </Label>
                 <Input
                   value={createForm.telefono}
                   onChange={(e) => setCreateForm({ ...createForm, telefono: e.target.value })}
                   maxLength={CLIENTE_LIMITS.telefono}
-                  className="elegante-input w-full"
+                  className={`elegante-input w-full ${showCreateValidation && !createForm.telefono ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                   placeholder="+57 300 123 4567"
                 />
+                {showCreateValidation && !createForm.telefono && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               </div>
             </div>
 
@@ -1700,7 +1717,7 @@ export function ClientesPage() {
               <button
                 onClick={handleCreateCliente}
                 className="elegante-button-primary"
-                disabled={!createForm.numeroDocumento || !createForm.nombre || !createForm.apellido || !createForm.email || !createForm.fechaNacimiento || isDocDuplicateCreateCliente || isTooYoungCreateCliente}
+                aria-disabled={!createForm.tipoDocumento || !createForm.numeroDocumento || !createForm.nombre || !createForm.apellido || !createForm.email || !createForm.fechaNacimiento || isDocDuplicateCreateCliente || isEmailDuplicateCreateCliente || isTooYoungCreateCliente}
               >
                 Crear Cliente
               </button>

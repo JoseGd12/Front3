@@ -455,26 +455,50 @@ export function PaquetesPage() {
 
   const handleEliminarPaquete = (paquete: Paquete) => {
     const nombrePaquete = paquete.nombre;
-
-    confirmCreateAction(
-      `${nombrePaquete}`,
-      async () => {
+    (async () => {
+      try {
+        await apiService.deletePaquete(paquete.id);
+        let exists = false;
         try {
-          await apiService.deletePaquete(paquete.id);
-          await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
-          deleted("Paquete eliminado exitosamente ✔️", `El paquete "${nombrePaquete}" ha sido eliminado permanentemente del sistema.`);
-        } catch (error) {
-          console.error('Error deleting paquete:', error);
+          const all = await apiService.getPaquetes();
+          exists = !!all.find(p => p.id === paquete.id);
+        } catch { exists = false; }
+        if (exists) {
+          try {
+            await apiService.updatePaqueteStatus(paquete.id, false);
+            await loadPaquetes();
+            edited("Paquete desactivado", `El paquete "${nombrePaquete}" se desactivó automáticamente porque tiene conexiones.`);
+          } catch {
+            showErrorAlert("No se puede eliminar", "Este paquete tiene conexiones. Solo se puede desactivar para conservar el historial.");
+          }
+          return;
         }
-      },
-      {
-        confirmTitle: 'Eliminar Paquete',
-        confirmMessage: `¿Estás seguro de que deseas eliminar permanentemente el paquete "${nombrePaquete}"? Esta acción no se puede deshacer y se perderán todos los datos asociados.`,
-        successTitle: 'Paquete eliminado exitosamente ✔️',
-        successMessage: `El paquete "${nombrePaquete}" ha sido eliminado permanentemente del sistema.`,
-        requireInput: true
+        await loadPaquetes();
+        deleted("Paquete eliminado ✔️", `El paquete "${nombrePaquete}" ha sido eliminado del sistema.`);
+      } catch (error: any) {
+        const msg = String(error?.message || '').toLowerCase();
+        const related =
+          msg.includes('409') ||
+          msg.includes('foreign') ||
+          msg.includes('constraint') ||
+          msg.includes('referenc') ||
+          msg.includes('venta') ||
+          msg.includes('compra') ||
+          msg.includes('servicio') ||
+          msg.includes('cita');
+        if (related) {
+          try {
+            await apiService.updatePaqueteStatus(paquete.id, false);
+            await loadPaquetes();
+            edited("Paquete desactivado", `El paquete "${nombrePaquete}" se desactivó automáticamente porque tiene conexiones.`);
+          } catch {
+            showErrorAlert("No se puede eliminar", "Este paquete tiene conexiones. Solo se puede desactivar para conservar el historial.");
+          }
+        } else {
+          showErrorAlert("Error", "No se pudo eliminar el paquete.");
+        }
       }
-    );
+    })();
   };
 
   const toggleEstadoPaquete = (paqueteId: number) => {
@@ -757,6 +781,8 @@ export function PaquetesPage() {
                     min="0"
                     step="100"
                     placeholder=""
+                    readOnly={viewMode !== 'edit'}
+                    disabled={viewMode !== 'edit'}
                   />
                   <div className="flex justify-start mt-1">
                     <span className="text-xs text-gray-500 font-medium">

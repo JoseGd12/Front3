@@ -7,7 +7,8 @@ import { Eye, EyeOff, Lock, AlertCircle, Mail, ArrowRight } from 'lucide-react';
 import { ForgotPasswordPage } from './ForgotPasswordPage';
 import { PasswordResetPage } from './PasswordResetPage';
 import { SimpleCaptcha } from './captcha';
-const LOGO_URL = '/Manito.jpeg';
+import manitoLogo from '../assets/Manito.jpeg';
+const LOGO_URL = manitoLogo;
 
 interface LoginPageProps {
   onRequestRegister?: () => void;

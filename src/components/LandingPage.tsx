@@ -20,7 +20,8 @@ import {
   Facebook
 } from 'lucide-react';
 import { Dialog, DialogContent } from './ui/dialog';
-const LOGO_URL = '/Manito.jpeg';
+import manitoLogo from '../assets/Manito.jpeg';
+const LOGO_URL = manitoLogo;
 
 // Datos de productos (solo activos)
 const productosData = [

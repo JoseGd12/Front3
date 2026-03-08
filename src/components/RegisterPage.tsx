@@ -5,7 +5,8 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Eye, EyeOff, User, Mail, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { SimpleCaptcha } from './captcha';
-const LOGO_URL = '/Manito.jpeg';
+import manitoLogo from '../assets/Manito.jpeg';
+const LOGO_URL = manitoLogo;
 
 interface RegisterPageProps {
   onBack: () => void;

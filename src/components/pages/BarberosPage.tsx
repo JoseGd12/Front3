@@ -32,7 +32,7 @@ const TIPOS_DOCUMENTO = [
 const BARBERO_LIMITS = {
   nombre: 100,
   apellido: 100,
-  documento: 20,
+  documento: 18,
   correo: 100,
   telefono: 20,
   especialidad: 100
@@ -100,6 +100,14 @@ export function BarberosPage() {
     const existeEnClientes = clientesAll.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
     return existeEnBarberos || existeEnUsuarios || existeEnClientes;
   }, [newBarbero.documento, barberos, usuariosAll, clientesAll]);
+  const isEmailDuplicateNewBarbero = React.useMemo(() => {
+    const emailVal = String(newBarbero.correo || '').trim().toLowerCase();
+    if (!emailVal) return false;
+    const existeEnBarberos = barberos.some(b => String(b.correo || '').trim().toLowerCase() === emailVal);
+    const existeEnUsuarios = usuariosAll.some((u: any) => String(u.correo || '').trim().toLowerCase() === emailVal);
+    const existeEnClientes = clientesAll.some((c: any) => String((c?.correo || c?.Correo || c?.email || '')).trim().toLowerCase() === emailVal);
+    return existeEnBarberos || existeEnUsuarios || existeEnClientes;
+  }, [newBarbero.correo, barberos, usuariosAll, clientesAll]);
 
   const generatePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -204,19 +212,21 @@ export function BarberosPage() {
 
   const validateBarberoForm = () => {
     if (!newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.correo || !newBarbero.fechaNacimiento) {
-      const faltantes: string[] = [];
-      if (!newBarbero.tipoDocumento) faltantes.push('Tipo de Documento');
-      if (!newBarbero.documento) faltantes.push('Número de Documento');
-      if (!newBarbero.nombre) faltantes.push('Nombres');
-      if (!newBarbero.apellido) faltantes.push('Apellidos');
-      if (!newBarbero.correo) faltantes.push('Correo');
-      if (!newBarbero.fechaNacimiento) faltantes.push('Fecha de Nacimiento');
-      errorAlert("Campos obligatorios faltantes", `Por favor completa: ${faltantes.join(', ')}`);
       return false;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(newBarbero.correo)) {
       return false;
+    }
+    // Validar correo único contra Barberos/Usuarios/Clientes
+    const emailVal = String(newBarbero.correo || '').trim().toLowerCase();
+    if (emailVal) {
+      const existeEnBarberos = barberos.some(b => String(b.correo || '').trim().toLowerCase() === emailVal);
+      const existeEnUsuarios = usuariosAll.some((u: any) => String(u.correo || '').trim().toLowerCase() === emailVal);
+      const existeEnClientes = clientesAll.some((c: any) => String((c?.correo || c?.Correo || c?.email || '')).trim().toLowerCase() === emailVal);
+      if (existeEnBarberos || existeEnUsuarios || existeEnClientes) {
+        return false;
+      }
     }
     if (newBarbero.fechaNacimiento) {
       const birth = new Date(newBarbero.fechaNacimiento);
@@ -310,7 +320,6 @@ export function BarberosPage() {
   const handleUpdateBarbero = async () => {
     setShowBarberoFormErrors(true);
     if (!editingBarbero || !newBarbero.nombre || !newBarbero.apellido || !newBarbero.tipoDocumento || !newBarbero.documento || !newBarbero.correo || !newBarbero.telefono) {
-      errorAlert("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombre, apellido, documento, correo y teléfono.");
       return;
     }
     if (newBarbero.fechaNacimiento) {
@@ -336,12 +345,13 @@ export function BarberosPage() {
       }
     }
     const docVal = String(newBarbero.documento || '').trim();
-    const existeEnBarberos = barberos.some(b => b.id !== editingBarbero.id && String(b.documento || '').trim() === docVal);
-    const existeEnUsuarios = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
-    const existeEnClientes = clientesAll.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
-    if (existeEnBarberos || existeEnUsuarios || existeEnClientes) {
-      errorAlert("Documento duplicado", "Ya existe un registro con este número de documento (Usuario/Cliente/Barbero).");
-      return;
+    if (newBarbero.documento !== editingBarbero.documento) {
+      const existeEnBarberos = barberos.some(b => b.id !== editingBarbero.id && String(b.documento || '').trim() === docVal);
+      const existeEnUsuarios = usuariosAll.some((u: any) => String(u.documento || '').trim() === docVal);
+      const existeEnClientes = clientesAll.some((c: any) => String((c as any).documento || (c as any).numeroDocumento || '').trim() === docVal);
+      if (existeEnBarberos || existeEnUsuarios || existeEnClientes) {
+        return;
+      }
     }
 
     try {
@@ -427,7 +437,7 @@ export function BarberosPage() {
           errorAlert("No se puede eliminar", "Este barbero tiene registros asociados (ventas, compras, agendamientos o entregas de insumos). Solo se puede desactivar para conservar el historial.");
         }
       } else {
-        errorAlert("Error", "No se pudo eliminar el barbero. Por favor intenta nuevamente.");
+        // suprimir alerta grande genérica
       }
     }
   };
@@ -730,6 +740,7 @@ export function BarberosPage() {
                   value={newBarbero.tipoDocumento}
                   onChange={(e) => setNewBarbero({ ...newBarbero, tipoDocumento: e.target.value })}
                   className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.tipoDocumento ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                  disabled={!!editingBarbero}
                 >
                   <option value="">Seleccionar...</option>
                   {TIPOS_DOCUMENTO.map(td => (
@@ -757,9 +768,10 @@ export function BarberosPage() {
                   maxLength={BARBERO_LIMITS.documento}
                   className={`elegante-input w-full ${showBarberoFormErrors && !newBarbero.documento.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                   placeholder="Número de documento (solo números)"
+                  disabled={!!editingBarbero}
                 />
                 {showBarberoFormErrors && !newBarbero.documento.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
-              {isDocDuplicateNewBarbero && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
+              {isDocDuplicateNewBarbero && !editingBarbero && <p className="text-xs text-red-400">Documento ya existe en el sistema.</p>}
               </div>
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">
@@ -819,15 +831,16 @@ export function BarberosPage() {
                 value={newBarbero.correo}
                 onChange={(e) => setNewBarbero({ ...newBarbero, correo: e.target.value })}
                 maxLength={BARBERO_LIMITS.correo}
-                className={`elegante-input w-full ${
-                  showBarberoFormErrors && (!newBarbero.correo.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newBarbero.correo))
-                    ? 'border-red-500 ring-1 ring-red-500'
-                    : ''
-                }`}
+               className={`elegante-input w-full ${
+                 ((showBarberoFormErrors && (!newBarbero.correo.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newBarbero.correo))) || (isEmailDuplicateNewBarbero && !editingBarbero))
+                   ? 'border-red-500 ring-1 ring-red-500'
+                   : ''
+               }`}
                 placeholder="correo@ejemplo.com"
               />
               {showBarberoFormErrors && !newBarbero.correo.trim() && <p className="text-xs text-red-400">Este campo es obligatorio.</p>}
               {showBarberoFormErrors && newBarbero.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newBarbero.correo) && <p className="text-xs text-red-400">Formato de correo inválido.</p>}
+            {isEmailDuplicateNewBarbero && !editingBarbero && <p className="text-xs text-red-400">Correo ya existe en el sistema.</p>}
             </div>
               <div className="space-y-2">
                 <Label className="text-white-primary flex items-center gap-2">

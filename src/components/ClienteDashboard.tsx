@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
-const LOGO_URL = "/Manito.jpeg";
+import manitoLogo from "../assets/Manito.jpeg";
+const LOGO_URL = manitoLogo;
 import { ClienteMisCitasPageCalendar } from "./pages/ClienteMisCitasPageCalendar";
 import { ClienteHistorialVentasPage } from "./pages/ClienteHistorialVentasPage";
 import { ClienteHistorialDevolucionesPage } from "./pages/ClienteHistorialDevolucionesPage";

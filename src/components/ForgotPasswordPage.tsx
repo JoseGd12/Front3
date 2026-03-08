@@ -4,7 +4,8 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Mail, ArrowLeft, CheckCircle, AlertCircle, Shield, Clock } from 'lucide-react';
-const LOGO_URL = '/Manito.jpeg';
+import manitoLogo from '../assets/Manito.jpeg';
+const LOGO_URL = manitoLogo;
 
 interface ForgotPasswordPageProps {
   onBack: () => void;

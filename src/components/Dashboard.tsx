@@ -43,6 +43,7 @@ import { EntregaInsumosPage } from "./pages/EntregaInsumosPage";
 import { DevolucionesPage } from "./pages/DevolucionesPage";
 import { RolesPage } from "./pages/RolesPage";
 import { UsersPage } from "./pages/UsersPage";
+import manitoLogo from "../assets/Manito.jpeg";
 
 // Información de cada módulo para el título dinámico
 const moduleInfo: Record<string, {
@@ -320,7 +321,7 @@ export function Dashboard() {
             </button>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center elegante-shadow-lg relative overflow-hidden">
-                <img src="/Manito.jpeg" alt="Manito Barbershop Logo" className="w-full h-full object-contain" />
+                <img src={manitoLogo} alt="Manito Barbershop Logo" className="w-full h-full object-contain" />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-white-primary">MANITO BARBERSHOP</h1>

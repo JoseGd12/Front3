@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import {
@@ -80,6 +80,16 @@ export function ProductosPage() {
   const [showCategoryResults, setShowCategoryResults] = useState(false);
 
   const shakeClass = productoValidationAttempt > 0 ? 'animate-shake' : '';
+
+  const isNombreDuplicado = useMemo(() => {
+    const nombreLower = String(nuevoProducto.nombre || '').trim().toLowerCase();
+    if (!nombreLower) return false;
+    return productos.some(
+      (p) =>
+        String(p.nombre || '').trim().toLowerCase() === nombreLower &&
+        (!editingProducto || p.id !== editingProducto.id)
+    );
+  }, [nuevoProducto.nombre, productos, editingProducto]);
 
   // Load products and categories from API
   useEffect(() => {
@@ -185,6 +195,14 @@ export function ProductosPage() {
       error("Campos obligatorios faltantes", "Por favor completa todos los campos obligatorios: nombre y categoría.");
       return;
     }
+    const nombreLower = String(nuevoProducto.nombre || '').trim().toLowerCase();
+    const existeNombre = productos.some(p => String(p.nombre || '').trim().toLowerCase() === nombreLower);
+    if (existeNombre) {
+      setShowProductoFormErrors(true);
+      setProductoValidationAttempt(prev => prev + 1);
+      error("Nombre duplicado", `El nombre "${nuevoProducto.nombre.trim()}" ya existe. Por favor elige otro nombre.`);
+      return;
+    }
     setShowProductoFormErrors(false);
     setProductoValidationAttempt(0);
     // Asegurar que precioBase y minCantidad estén en 0 si no se han establecido
@@ -210,11 +228,26 @@ export function ProductosPage() {
       error("Campos obligatorios", "Por favor completa el nombre, la categoría y el precio correctamente.");
       return;
     }
+    const nombreLower = String(nuevoProducto.nombre || '').trim().toLowerCase();
+    const existeNombre = productos.some(p => String(p.nombre || '').trim().toLowerCase() === nombreLower);
+    if (existeNombre) {
+      setShowProductoFormErrors(true);
+      setProductoValidationAttempt(prev => prev + 1);
+      error("Nombre duplicado", `El nombre "${nuevoProducto.nombre.trim()}" ya existe. Por favor elige otro nombre.`);
+      return;
+    }
     setIsCreateDialogOpen(true);
   };
 
   const confirmCreateProducto = async () => {
     try {
+      const nombreLower = String(nuevoProducto.nombre || '').trim().toLowerCase();
+      const existeNombre = productos.some(p => String(p.nombre || '').trim().toLowerCase() === nombreLower);
+      if (existeNombre) {
+        error("Nombre duplicado", `El nombre "${nuevoProducto.nombre.trim()}" ya existe. Por favor elige otro nombre.`);
+        setIsCreateDialogOpen(false);
+        return;
+      }
       const precioFinal = nuevoProducto.precioBase || 0;
 
       const stockVentas = nuevoProducto.stockVentas || 0;
@@ -344,6 +377,14 @@ export function ProductosPage() {
       error("Campos obligatorios", "Por favor completa el nombre, la categoría y los precios correctamente.");
       return;
     }
+    const nombreLower = String(nuevoProducto.nombre || '').trim().toLowerCase();
+    const existeNombre = productos.some(p => p.id !== (editingProducto?.id) && String(p.nombre || '').trim().toLowerCase() === nombreLower);
+    if (existeNombre) {
+      setShowProductoFormErrors(true);
+      setProductoValidationAttempt(prev => prev + 1);
+      error("Nombre duplicado", `El nombre "${nuevoProducto.nombre.trim()}" ya existe. Por favor elige otro nombre.`);
+      return;
+    }
     setIsEditDialogOpen(true);
   };
 
@@ -351,6 +392,13 @@ export function ProductosPage() {
     if (!editingProducto) return;
 
     try {
+      const nombreLower = String(nuevoProducto.nombre || '').trim().toLowerCase();
+      const existeNombre = productos.some(p => p.id !== (editingProducto?.id) && String(p.nombre || '').trim().toLowerCase() === nombreLower);
+      if (existeNombre) {
+        error("Nombre duplicado", `El nombre "${nuevoProducto.nombre.trim()}" ya existe. Por favor elige otro nombre.`);
+        setIsEditDialogOpen(false);
+        return;
+      }
       const precioVentaFinal = Number((nuevoProducto as any).precioVenta) || 0;
       const precioCompraFinal = Number((nuevoProducto as any).precioCompra) || 0;
       const stockVentas = Number(nuevoProducto.stockVentas) || 0;
@@ -441,11 +489,61 @@ export function ProductosPage() {
       setProductos(productosActualizados);
 
       setIsDeleteDialogOpen(false);
-      setProductoToDelete(null);
-      deleted("Producto eliminado ✔️", `El producto "${productoToDelete.nombre}" ha sido eliminado exitosamente del inventario.`);
+      const stillExists = productosActualizados.find(p => p.id === productoToDelete.id);
+      if (stillExists) {
+        const desactivado = stillExists.activo === false;
+        setProductoToDelete(null);
+        error(
+          'No se puede eliminar',
+          desactivado
+            ? `El producto "${productoToDelete.nombre}" tiene conexiones (compras/ventas/entregas/devoluciones). Se desactivó en lugar de eliminarlo.`
+            : `El producto "${productoToDelete.nombre}" no pudo eliminarse porque tiene conexiones.`
+        );
+      } else {
+        setProductoToDelete(null);
+        deleted("Producto eliminado ✔️", `El producto "${productoToDelete.nombre}" ha sido eliminado exitosamente del inventario.`);
+      }
     } catch (err: any) {
       console.error('Error deleting product:', err);
-      error('Error al eliminar producto', err.message || 'No se pudo eliminar el producto. Inténtalo nuevamente.');
+      const rawMsg = String(err?.message || '').toLowerCase();
+      const isFkConflict =
+        rawMsg.includes('foreign') ||
+        rawMsg.includes('constraint') ||
+        rawMsg.includes('referenc') ||
+        rawMsg.includes('conflict') ||
+        rawMsg.includes('no se puede eliminar') ||
+        rawMsg.includes('asociado') ||
+        rawMsg.includes('ya existe relación') ||
+        rawMsg.includes('en uso');
+
+      if (isFkConflict) {
+        try {
+          if (productoToDelete.activo) {
+            await productoService.toggleProductoActivo(productoToDelete.id);
+            // Actualizar lista local
+            const productosActualizados = await productoService.getProductos();
+            setProductos(productosActualizados);
+            setIsDeleteDialogOpen(false);
+            setProductoToDelete(null);
+            error(
+              'No se puede eliminar',
+              `El producto "${productoToDelete.nombre}" tiene conexiones (ventas/compras/entregas/devoluciones). Se desactivó en lugar de eliminarlo.`
+            );
+          } else {
+            setIsDeleteDialogOpen(false);
+            setProductoToDelete(null);
+            error(
+              'No se puede eliminar',
+              `El producto "${productoToDelete.nombre}" tiene conexiones y ya estaba desactivado.`
+            );
+          }
+        } catch (e: any) {
+          console.error('Error al desactivar producto tras fallo de eliminación:', e);
+          error('Error al desactivar producto', e.message || 'No se pudo desactivar el producto. Inténtalo nuevamente.');
+        }
+      } else {
+        error('Error al eliminar producto', err.message || 'No se pudo eliminar el producto. Inténtalo nuevamente.');
+      }
     }
   };
 
@@ -762,10 +860,13 @@ export function ProductosPage() {
                             value={nuevoProducto.nombre}
                             onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
                             placeholder="Ej: Cadena de Rodio"
-                            className="elegante-input h-9 text-sm"
+                            className={`elegante-input h-9 text-sm ${isNombreDuplicado ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                           />
                           {showProductoFormErrors && !nuevoProducto.nombre.trim() && (
                             <p className="text-[10px] text-red-400 mt-1">El nombre es obligatorio</p>
+                          )}
+                          {isNombreDuplicado && (
+                            <p className="text-[10px] text-red-400 mt-1">Nombre ya existe en el sistema.</p>
                           )}
                         </div>
                         <div className="space-y-1.5">

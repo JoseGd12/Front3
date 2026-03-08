@@ -739,6 +739,7 @@ export function ProveedoresPage() {
                           value={formData.nit}
                           onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
                           placeholder="Ej: 900123456-7"
+                          maxLength={18}
                           className={`elegante-input ${((showProveedorFormErrors && !isEditDialogOpen && !formData.nit.trim()) || !!duplicateErrors.nit) ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
                         {showProveedorFormErrors && !isEditDialogOpen && !formData.nit.trim() && (

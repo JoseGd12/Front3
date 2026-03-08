@@ -4,7 +4,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Shield, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft, Clock } from 'lucide-react';
-const LOGO_URL = '/Manito.jpeg';
+import manitoLogo from '../assets/Manito.jpeg';
+const LOGO_URL = manitoLogo;
 
 interface PasswordResetPageProps {
   token?: string;
