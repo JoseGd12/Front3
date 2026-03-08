@@ -207,7 +207,7 @@ export function EmailSimulatorCita({ citaData, clienteInfo, onClose }: EmailSimu
             <div className="bg-orange-primary/5 border border-orange-primary/20 p-6 rounded-lg mb-8">
               <h4 className="font-bold text-gray-darkest mb-4 flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-orange-primary" />
-                EDWINS BARBER
+                MANITO BARBERSHOP
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-medium">

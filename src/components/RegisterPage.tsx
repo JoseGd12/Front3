@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Eye, EyeOff, User, Mail, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { SimpleCaptcha } from './captcha';
-import logo from '../assets/a51cd14e3664f3752eaa436dadb14492d91e40aa.png';
+const LOGO_URL = '/Manito.jpeg';
 
 interface RegisterPageProps {
   onBack: () => void;
@@ -144,17 +144,13 @@ export function RegisterPage({ onBack }: RegisterPageProps) {
         {/* Logo y título */}
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4 elegante-shadow-lg relative overflow-hidden">
-            <img
-              src={logo}
-              alt="Edwin's Barbería Logo"
-              className="w-full h-full object-contain"
-            />
+            <img src={LOGO_URL} alt="Manito Barbershop Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-white-primary mb-2">
             Crear Cuenta
           </h1>
           <p className="text-gray-lightest">
-            Únete a EDWINS BARBER
+            Únete a MANITO BARBERSHOP
           </p>
         </div>
 

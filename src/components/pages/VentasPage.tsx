@@ -1702,7 +1702,7 @@ export function VentasPage() {
       </head>
       <body>
         <div class="header">
-          <div class="company-name">BARBERÍA ELEGANTE</div>
+          <div class="company-name">MANITO BARBERSHOP</div>
           <div class="invoice-title">Detalles de Venta ${venta.id}</div>
           <div class="invoice-subtitle">Información completa de la transacción</div>
         </div>
@@ -1827,7 +1827,7 @@ export function VentasPage() {
         </div>
 
         <div class="footer">
-          <p><strong>Barbería Elegante</strong> - Sistema de Gestión Integral</p>
+          <p><strong>Manito Barbershop</strong> - Sistema de Gestión</p>
           <p>Documento generado automáticamente el ${new Date().toLocaleDateString('es-CO', {
         day: '2-digit',
         month: '2-digit',

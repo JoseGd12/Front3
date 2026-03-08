@@ -1044,7 +1044,7 @@ export function ComprasPage() {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(28);
       doc.setTextColor(216, 176, 129);
-      doc.text("BARBERÍA ELEGANTE", pageWidth / 2, y, { align: "center" });
+      doc.text("MANITO BARBERSHOP", pageWidth / 2, y, { align: "center" });
       y += 28;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(20);
@@ -1198,7 +1198,7 @@ export function ComprasPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       doc.setTextColor(102, 102, 102);
-      doc.text("Documento generado automáticamente por el Sistema de Gestión - Barbería Elegante", pageWidth / 2, y, { align: "center" });
+      doc.text("Documento generado automáticamente por el Sistema de Gestión - Manito Barbershop", pageWidth / 2, y, { align: "center" });
       const filename = `Reporte_Compra_${(compra as any).numeroCompra || compra.id}_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(filename);
       toast.success("PDF generado exitosamente");
@@ -1249,7 +1249,7 @@ export function ComprasPage() {
       </head>
       <body>
         <div class="header">
-          <div class="company-name">BARBERÍA ELEGANTE</div>
+          <div class="company-name">MANITO BARBERSHOP</div>
           <div class="report-title">Reporte de Compra</div>
           <div>Fecha de generación: ${formatDate(new Date())}</div>
         </div>

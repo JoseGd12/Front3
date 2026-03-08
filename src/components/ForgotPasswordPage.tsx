@@ -4,7 +4,7 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Mail, ArrowLeft, CheckCircle, AlertCircle, Shield, Clock } from 'lucide-react';
-import logo from '../assets/a51cd14e3664f3752eaa436dadb14492d91e40aa.png';
+const LOGO_URL = '/Manito.jpeg';
 
 interface ForgotPasswordPageProps {
   onBack: () => void;
@@ -124,8 +124,8 @@ export function ForgotPasswordPage({ onBack }: ForgotPasswordPageProps) {
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4 elegante-shadow-lg relative overflow-hidden">
             <img
-              src={logo}
-              alt="Edwin's Barbería Logo"
+              src={LOGO_URL}
+              alt="Manito Barbershop Logo"
               className="w-full h-full object-contain"
             />
           </div>
@@ -162,7 +162,7 @@ export function ForgotPasswordPage({ onBack }: ForgotPasswordPageProps) {
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-lighter" />
               </div>
               <p className="text-xs text-gray-lightest">
-                Ingresa el email asociado con tu cuenta de EDWINS BARBER
+                Ingresa el email asociado con tu cuenta de MANITO BARBERSHOP
               </p>
             </div>
 

@@ -78,12 +78,18 @@ class DevolucionService {
   async createDevolucionInsumosBarbero(input: {
       barberoId: number;
       usuarioId: number;
+      motivoCategoria?: string;
+      motivoDetalle?: string;
+      observaciones?: string;
       detalles: Array<{ productoId: number; cantidad: number; precioHistorico?: number }>;
   }): Promise<{ id?: number; cantidadTotal?: number; valorTotal?: number; estado?: string }> {
       try {
           const payload = {
               BarberoId: input.barberoId,
               UsuarioId: input.usuarioId,
+              MotivoCategoria: input.motivoCategoria ?? '',
+              MotivoDetalle: input.motivoDetalle ?? '',
+              Observaciones: input.observaciones ?? '',
               Detalles: input.detalles.map(d => ({
                   ProductoId: d.productoId,
                   Cantidad: d.cantidad,

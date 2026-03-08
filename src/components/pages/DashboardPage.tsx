@@ -694,7 +694,7 @@ export function DashboardPage() {
       </head>
       <body>
         <div class="header">
-          <div class="logo">✂️ EDWINS BARBER</div>
+          <div class="logo">✂️ MANITO BARBERSHOP</div>
           <div class="subtitle">Reporte Diario de Operaciones</div>
           <div class="date">${new Date().toLocaleDateString('es-ES', {
       weekday: 'long',
@@ -806,7 +806,7 @@ export function DashboardPage() {
         
         <div class="footer">
           <p>Reporte generado automáticamente el ${new Date().toLocaleString('es-ES')}</p>
-          <p><strong class="highlight">EDWINS BARBER</strong> - Sistema de Gestión Integral</p>
+          <p><strong class="highlight">MANITO BARBERSHOP</strong> - Sistema de Gestión</p>
         </div>
       </body>
       </html>

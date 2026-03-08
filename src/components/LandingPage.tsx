@@ -20,7 +20,7 @@ import {
   Facebook
 } from 'lucide-react';
 import { Dialog, DialogContent } from './ui/dialog';
-import logo from '../assets/a51cd14e3664f3752eaa436dadb14492d91e40aa.png';
+const LOGO_URL = '/Manito.jpeg';
 
 // Datos de productos (solo activos)
 const productosData = [
@@ -239,14 +239,14 @@ export function LandingPage({ onRequestLogin, onRequestRegister }: LandingPagePr
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center elegante-shadow-lg relative overflow-hidden">
                 <img
-                  src={logo}
-                  alt="Edwin's Barbería Logo"
+                  src={LOGO_URL}
+                  alt="Manito Barbershop Logo"
                   className="w-full h-full object-contain"
                 />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white-primary">EDWINS BARBERIA</h1>
-                <p className="text-xs text-gray-lighter">Barberia de élite</p>
+                <h1 className="text-xl font-bold text-white-primary">MANITO BARBERSHOP</h1>
+                <p className="text-xs text-gray-lighter">Barbershop de élite</p>
               </div>
             </div>
 
@@ -786,13 +786,13 @@ export function LandingPage({ onRequestLogin, onRequestRegister }: LandingPagePr
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center elegante-shadow-lg relative overflow-hidden">
                     <img
-                      src={logo}
-                      alt="Edwin's Barbería Logo"
+                      src={LOGO_URL}
+                      alt="Manito Barbershop Logo"
                       className="w-full h-full object-contain"
                     />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-white-primary">EDWINS BARBER</h3>
+                    <h3 className="text-lg font-bold text-white-primary">MANITO BARBERSHOP</h3>
                   </div>
                 </div>
                 <p className="text-gray-lightest text-sm">
@@ -939,4 +939,3 @@ export function LandingPage({ onRequestLogin, onRequestRegister }: LandingPagePr
     </>
   );
 }
-

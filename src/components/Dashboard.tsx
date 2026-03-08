@@ -320,14 +320,10 @@ export function Dashboard() {
             </button>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center elegante-shadow-lg relative overflow-hidden">
-                <img
-                  src={logo}
-                  alt="Edwin's Barbería Logo"
-                  className="w-full h-full object-contain"
-                />
+                <img src="/Manito.jpeg" alt="Manito Barbershop Logo" className="w-full h-full object-contain" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white-primary">EDWINS BARBER</h1>
+                <h1 className="text-lg font-bold text-white-primary">MANITO BARBERSHOP</h1>
                 <p className="text-xs text-gray-lighter font-medium">Sistema de Gestión</p>
               </div>
             </div>

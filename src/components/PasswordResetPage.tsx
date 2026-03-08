@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Shield, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft, Clock } from 'lucide-react';
-import logo from '../assets/a51cd14e3664f3752eaa436dadb14492d91e40aa.png';
+const LOGO_URL = '/Manito.jpeg';
 
 interface PasswordResetPageProps {
   token?: string;
@@ -141,11 +141,7 @@ export function PasswordResetPage({ token, email, onComplete, onBack }: Password
         <div className="w-full max-w-md">
           <div className="elegante-card text-center">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 elegante-shadow-lg relative overflow-hidden">
-              <img
-                src={logo}
-                alt="Edwin's Barbería Logo"
-                className="w-full h-full object-contain"
-              />
+              <img src={LOGO_URL} alt="Manito Barbershop Logo" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-white-primary mb-4">
               Verificando enlace...
@@ -225,11 +221,7 @@ export function PasswordResetPage({ token, email, onComplete, onBack }: Password
         {/* Header con información de la solicitud */}
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4 elegante-shadow-lg relative overflow-hidden">
-            <img
-              src={logo}
-              alt="Edwin's Barbería Logo"
-              className="w-full h-full object-contain"
-            />
+            <img src={LOGO_URL} alt="Manito Barbershop Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-white-primary mb-2">
             Recuperación de Contraseña

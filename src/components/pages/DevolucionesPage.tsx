@@ -493,6 +493,16 @@ export function DevolucionesPage() {
         try {
           const ventaCompleta = await ventaService.getVentaById(ventaId);
           if (ventaCompleta) {
+            const devsVenta = (devoluciones || []).filter(d => Number(d.ventaId) === ventaId && String(d.estado).toLowerCase() !== 'anulada');
+            const yaDevueltosPorProducto: Record<number, number> = {};
+            devsVenta.forEach(d => {
+              const pid = Number(d.productoId || 0);
+              const cant = Number(d.cantidad || 0);
+              if (pid > 0 && cant > 0) {
+                yaDevueltosPorProducto[pid] = (yaDevueltosPorProducto[pid] || 0) + cant;
+              }
+            });
+
             const productosActualizados = (ventaCompleta.productosDetalle || []).map((p: any) => {
               const productoId = Number(p.id || p.productoId || p.ProductoId || 0);
               const productoPrevio = (venta?.productos || []).find((item: any) => {
@@ -500,12 +510,15 @@ export function DevolucionesPage() {
                 if (productoId > 0 && prevId === productoId) return true;
                 return String(item?.nombre || '').trim().toLowerCase() === String(p?.nombre || '').trim().toLowerCase();
               });
+              const vendidosOriginal = Number(p.cantidad || 0);
+              const yaDev = yaDevueltosPorProducto[productoId] || 0;
+              const disponible = Math.max(0, vendidosOriginal - yaDev);
 
               return {
                 id: productoId,
                 nombre: p.nombre,
                 precio: Number(p.precio || 0),
-                cantidad: Number(p.cantidad || 0),
+                cantidad: disponible,
                 imagen: String(
                   p.imagen ||
                   p.imagenProduc ||
@@ -550,7 +563,7 @@ export function DevolucionesPage() {
       (venta?.productos || []).forEach((p: any) => {
         const id = Number(p.id);
         if (!Number.isNaN(id) && id > 0) {
-          cantidadesIniciales[id] = '1';
+          cantidadesIniciales[id] = Number(p.cantidad || 0) > 0 ? '1' : '0';
         }
       });
       setCantidadesDevolucion(cantidadesIniciales);
@@ -703,13 +716,30 @@ export function DevolucionesPage() {
     const pid = Number(row.productoId || 0);
     if (!pid) return;
     const max = Number(row.disponible ?? 0);
-    const parsed = Number(valor);
+    const cleaned = valor.replace(/\D/g, '');
+    if (cleaned === '') {
+      setCantidadesInsumos(prev => ({ ...prev, [pid]: '' }));
+      return;
+    }
+    const parsed = Number(cleaned);
     if (!Number.isNaN(parsed)) {
       const valid = Math.min(Math.max(1, Math.floor(parsed)), max);
       setCantidadesInsumos(prev => ({ ...prev, [pid]: String(valid) }));
-    } else {
-      setCantidadesInsumos(prev => ({ ...prev, [pid]: valor }));
     }
+  };
+
+  const handleCantidadInsumoBlur = (row: any) => {
+    const pid = Number(row.productoId || 0);
+    if (!pid) return;
+    const max = Number(row.disponible ?? 0);
+    const raw = String(cantidadesInsumos[pid] ?? '').trim();
+    if (raw === '') {
+      setCantidadesInsumos(prev => ({ ...prev, [pid]: '1' }));
+      return;
+    }
+    const parsed = Number(raw);
+    const valid = Math.min(Math.max(1, Math.floor(parsed)), max);
+    setCantidadesInsumos(prev => ({ ...prev, [pid]: String(valid) }));
   };
 
   const handleCreateDevolucionInsumos = async () => {
@@ -741,6 +771,9 @@ export function DevolucionesPage() {
       await devolucionService.createDevolucionInsumosBarbero({
         barberoId: Number(selectedBarbero.id),
         usuarioId: currentUserId,
+        motivoCategoria: nuevaDevolucion.motivoCategoria || '',
+        motivoDetalle: nuevaDevolucion.motivoCategoria || '',
+        observaciones: nuevaDevolucion.observaciones || '',
         detalles
       });
       toast.success("Devolución de insumos registrada");
@@ -770,7 +803,13 @@ export function DevolucionesPage() {
       return;
     }
 
-    const maxCantidad = Math.max(1, Number(producto?.cantidad || 1));
+    const maxCantidad = Math.max(0, Number(producto?.cantidad || 0));
+    if (maxCantidad <= 0) {
+      toast.info("No hay cantidad disponible para devolver de este producto en esta venta.");
+      setProductosSeleccionados(prev => ({ ...prev, [productoId]: false }));
+      setCantidadesDevolucion(prev => ({ ...prev, [productoId]: '0' }));
+      return;
+    }
     const rawCantidad = cantidadesDevolucion[productoId] ?? '1';
     const parsedCantidad = Number(rawCantidad);
     const cantidadValida = !Number.isNaN(parsedCantidad) && parsedCantidad > 0
@@ -793,7 +832,7 @@ export function DevolucionesPage() {
       [productoId]: valor
     }));
 
-    const maxCantidad = Math.max(1, Number(producto?.cantidad || 1));
+    const maxCantidad = Math.max(0, Number(producto?.cantidad || 0));
     if (valor.trim() === '') {
       return;
     }
@@ -801,7 +840,9 @@ export function DevolucionesPage() {
     const parsedCantidad = Number(valor);
     if (Number.isNaN(parsedCantidad)) return;
 
-    const cantidadValida = Math.min(maxCantidad, Math.max(1, Math.floor(parsedCantidad)));
+    const cantidadValida = maxCantidad === 0
+      ? 0
+      : Math.min(maxCantidad, Math.max(1, Math.floor(parsedCantidad)));
     setCantidadesDevolucion(prev => ({
       ...prev,
       [productoId]: String(cantidadValida)
@@ -2328,10 +2369,10 @@ export function DevolucionesPage() {
                                 <Input
                                   type="number"
                                   min={1}
-                                  max={Math.max(1, maxCantidad)}
+                                  max={Math.max(0, maxCantidad)}
                                   value={cantidadInput}
                                   onChange={(e) => handleCantidadProductoSeleccionChange(producto, e.target.value)}
-                                  disabled={!isChecked}
+                                  disabled={!isChecked || maxCantidad <= 0}
                                   className={`w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5`}
                                 />
                               </div>
@@ -2413,9 +2454,12 @@ export function DevolucionesPage() {
                           <div className="flex flex-col gap-0.5 shrink-0">
                             <label className="text-[11px] text-gray-400 font-normal">Cantidad</label>
                             <Input
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
                               value={val}
                               onChange={(e) => handleCantidadInsumoChange(row, e.target.value)}
+                              onBlur={() => handleCantidadInsumoBlur(row)}
                               disabled={!checked}
                               className="w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5"
                             />
