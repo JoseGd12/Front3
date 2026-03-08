@@ -166,7 +166,23 @@ class ClientesService {
       throw new Error(`Error en API Usuarios ${response.status}: ${errorText}`);
     }
 
-    return await response.json();
+    const createdUsuario = await response.json();
+    try {
+      const todosClientes = await this.getClientes();
+      const perfilCliente = (todosClientes || []).find((c: any) => {
+        const u = c.usuario || c.Usuario;
+        const uId = (u && (u.id || u.Id)) || c.usuarioId;
+        const uCorreo = String((u && (u.correo || u.Correo)) || c.correo || '').toLowerCase();
+        const createdCorreo = String(createdUsuario?.correo || createdUsuario?.Correo || '').toLowerCase();
+        return Number(uId) === Number(createdUsuario?.id || createdUsuario?.Id) || (!!createdCorreo && uCorreo === createdCorreo);
+      });
+      if (perfilCliente) {
+        return perfilCliente;
+      }
+    } catch {
+      // ignorar fallos de búsqueda del perfil y retornar usuario creado
+    }
+    return createdUsuario;
   }
 
   async updateCliente(id: number, clienteData: any): Promise<any> {

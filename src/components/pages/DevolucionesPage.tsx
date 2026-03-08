@@ -912,72 +912,53 @@ export function DevolucionesPage() {
     // ---------------------------------------------------------
 
     if (isSubmittingRef.current) return;
-    confirmCreateAction(
-      `${Object.entries(productosSeleccionados).filter(([_,v])=>v).length} producto(s) - ${nuevaDevolucion.cliente}`,
-      async () => {
-        try {
-          if (isSubmittingRef.current) return;
-          isSubmittingRef.current = true;
-          // Validar sesión de usuario
-          const stringUserId = user?.id ? String(user.id) : null;
-          const currentUserId = stringUserId ? parseInt(stringUserId) : 0;
-
-          if (!currentUserId || isNaN(currentUserId) || currentUserId <= 0) {
-            toast.error("Error de sesión", { description: "No se ha identificado el usuario responsable. Por favor inicie sesión nuevamente." });
-            return;
-          }
-
-          const idsSel = Object.entries(productosSeleccionados).filter(([_,v])=>v).map(([k])=>Number(k));
-          const items = idsSel.map(pid => {
-            const prod = ventaSeleccionada?.productos?.find((p: any) => Number(p.id) === Number(pid));
-            const precio = Number(prod?.precio || 0);
-            const cant = Number(cantidadesDevolucion[pid] || 1);
-            const monto = precio * cant;
-            return { productoId: pid, cantidad: cant, montoDevuelto: monto };
-          });
-
-          const batchPayload = {
-            ventaId: Number(nuevaDevolucion.ventaId),
-            clienteId: Number(nuevaDevolucion.clienteId),
-            usuarioId: currentUserId,
-            motivoCategoria: nuevaDevolucion.motivoCategoria,
-            observaciones: nuevaDevolucion.observaciones || '',
-            items
-          };
-
-          const hasInvalid = [
-            batchPayload.ventaId,
-            batchPayload.clienteId,
-            batchPayload.usuarioId
-          ].some(v => isNaN(Number(v)) || Number(v) <= 0);
-          if (hasInvalid || items.length === 0) {
-            toast.error("Datos inválidos para registrar la devolución");
-            return;
-          }
-
-          await devolucionService.createDevolucionBatch(batchPayload);
-
-          toast.success(`Devolución registrada exitosamente.`);
-          // Cerrar modal solo después de éxito
-          setIsDialogOpen(false);
-          // Recargar datos
-          loadData();
-          resetFormularios();
-        } catch (error) {
-          toast.error("Error al registrar la devolución");
-          console.error(error);
-        } finally {
-          isSubmittingRef.current = false;
+    (async () => {
+      try {
+        if (isSubmittingRef.current) return;
+        isSubmittingRef.current = true;
+        const stringUserId = user?.id ? String(user.id) : null;
+        const currentUserId = stringUserId ? parseInt(stringUserId) : 0;
+        if (!currentUserId || isNaN(currentUserId) || currentUserId <= 0) {
+          toast.error("Error de sesión", { description: "No se ha identificado el usuario responsable. Por favor inicie sesión nuevamente." });
+          return;
         }
-      },
-      {
-        confirmTitle: 'Confirmar Registro de Devolución',
-        confirmMessage: `¿Estás seguro de registrar la devolución de los productos seleccionados para el cliente "${nuevaDevolucion.cliente}"?`,
-        successTitle: '¡Devolución registrada exitosamente!',
-        successMessage: `La devolución ha sido registrada correctamente en el sistema.`,
-        requireInput: false
+        const idsSel = Object.entries(productosSeleccionados).filter(([_,v])=>v).map(([k])=>Number(k));
+        const items = idsSel.map(pid => {
+          const prod = ventaSeleccionada?.productos?.find((p: any) => Number(p.id) === Number(pid));
+          const precio = Number(prod?.precio || 0);
+          const cant = Number(cantidadesDevolucion[pid] || 1);
+          const monto = precio * cant;
+          return { productoId: pid, cantidad: cant, montoDevuelto: monto };
+        });
+        const batchPayload = {
+          ventaId: Number(nuevaDevolucion.ventaId),
+          clienteId: Number(nuevaDevolucion.clienteId),
+          usuarioId: currentUserId,
+          motivoCategoria: nuevaDevolucion.motivoCategoria,
+          observaciones: nuevaDevolucion.observaciones || '',
+          items
+        };
+        const hasInvalid = [
+          batchPayload.ventaId,
+          batchPayload.clienteId,
+          batchPayload.usuarioId
+        ].some(v => isNaN(Number(v)) || Number(v) <= 0);
+        if (hasInvalid || items.length === 0) {
+          toast.error("Datos inválidos para registrar la devolución");
+          return;
+        }
+        await devolucionService.createDevolucionBatch(batchPayload);
+        toast.success(`Devolución registrada exitosamente.`);
+        setIsDialogOpen(false);
+        loadData();
+        resetFormularios();
+      } catch (error) {
+        toast.error("Error al registrar la devolución");
+        console.error(error);
+      } finally {
+        isSubmittingRef.current = false;
       }
-    );
+    })();
   };
 
   const resetFormularios = () => {
