@@ -1638,22 +1638,12 @@ export function EntregaInsumosPage() {
                       </div>
 
                       <div>
-                        <h4 className="text-white-primary font-semibold mb-4">Resumen</h4>
+                        
                         <div className="bg-gray-darker p-4 rounded-lg border border-gray-dark">
-                          <div className="mt-1">
-                            {(nuevaEntrega.insumos || []).length === 0 ? (
-                              <p className="text-gray-lightest">No hay productos agregados</p>
-                            ) : (
-                              <p className="text-gray-lightest text-sm leading-relaxed">
-                                {(nuevaEntrega.insumos || [])
-                                  .map((i) => `${i.nombre} (${i.cantidad})`)
-                                  .join(', ')}
-                              </p>
-                            )}
-                          </div>
-                          <div className="pt-3 mt-3 border-t border-gray-medium flex items-center justify-between">
+                          
+                          <div className="font-semibold text-gray-lightest text-xl border-gray-medium flex items-center justify-between">
                             <span className="text-gray-lightest">Total productos</span>
-                            <span className="text-orange-primary font-semibold text-base tracking-wide">
+                            <span className="text-orange-primary text-xl font-semibold text-base tracking-wide">
                               {(nuevaEntrega.insumos || []).reduce((sum, insumo) => sum + insumo.cantidad, 0)} unidades
                             </span>
                           </div>

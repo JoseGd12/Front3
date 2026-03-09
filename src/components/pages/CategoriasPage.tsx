@@ -172,7 +172,8 @@ export function CategoriasPage() {
         }
       }
 
-      await loadCategorias(); // Recargar las categorías
+      setCategorias(prev => [creada as any, ...prev]);
+      await loadCategorias(true);
 
       setIsDialogOpen(false);
       setNuevaCategoria({
@@ -224,7 +225,12 @@ export function CategoriasPage() {
         estado: editCategoria.estado
       });
 
-      await loadCategorias(); // Recargar las categorías
+      setCategorias(prev =>
+        prev.map(c =>
+          c.id === selectedCategoria.id ? { ...c, ...editCategoria, id: selectedCategoria.id } as any : c
+        )
+      );
+      await loadCategorias(true);
 
       setIsEditDialogOpen(false);
       setSelectedCategoria(null);
@@ -259,7 +265,8 @@ export function CategoriasPage() {
       async () => {
         try {
           await categoriaService.deleteCategoria(categoria.id);
-          await loadCategorias(); // Recargar las categorías y productos
+          setCategorias(prev => prev.filter(c => c.id !== categoria.id));
+          await loadCategorias(true);
         } catch (error) {
           console.error('Error eliminando categoría:', error);
           setError('Error al eliminar la categoría');

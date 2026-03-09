@@ -63,6 +63,14 @@ const getCategoriaNombre = (p: any): string => {
   return String(p?.categoriaNombre || p?.CategoriaNombre || '');
 };
 
+const getPrecioVenta = (p: any): number => {
+  const candidates = [p?.precioVenta, p?.PrecioVenta, p?.precioBase, p?.PrecioBase, p?.precio];
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && !Number.isNaN(n)) return n;
+  }
+  return 0;
+};
 const normalizeSearchText = (value: unknown): string => {
   return String(value ?? '')
     .normalize('NFD')
@@ -174,6 +182,17 @@ export function ComprasPage() {
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+  const toLocalISODate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${da}`;
+  };
+  const getOneMonthAgoISO = () => {
+    const now = new Date();
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    return toLocalISODate(prev);
+  };
 
   // Función para formatear fecha en formato estándar DD/MM/YYYY
   const formatDate = (date: string | Date) => {
@@ -239,6 +258,7 @@ export function ComprasPage() {
       precio: number,
       stockVentas: number,
       stockInsumos: number,
+      precioVenta?: number,
       imagen?: string,
       categoria?: string
     }>
@@ -250,6 +270,7 @@ export function ComprasPage() {
     stockVentas?: string;
     stockInsumos?: string;
     precio?: string;
+    precioVenta?: string;
   }>>({});
   const [productoSeleccionado, setProductoSeleccionado] = useState('');
   const [proveedorSearchTerm, setProveedorSearchTerm] = useState('');
@@ -535,7 +556,8 @@ export function ComprasPage() {
                 cantidad: cantidadActualizada,
                 precio: precioUnitario,
                 stockVentas: stockVentasActualizado,
-                stockInsumos: stockInsumosActualizado
+                stockInsumos: stockInsumosActualizado,
+                precioVenta: (p as any).precioVenta ?? getPrecioVenta(producto)
               }
               : p
           )
@@ -546,13 +568,15 @@ export function ComprasPage() {
             cantidad: String(cantidadActualizada),
             stockVentas: String(stockVentasActualizado),
             stockInsumos: String(stockInsumosActualizado),
-            precio: String(precioUnitario)
+            precio: String(precioUnitario),
+            precioVenta: prev[producto.id]?.precioVenta ?? String((existeProducto as any)?.precioVenta ?? getPrecioVenta(producto))
           }
         }));
       } else {
         const cantidadNueva = cantidadProducto;
         const stockVentasNuevo = stockVentas;
         const stockInsumosNuevo = stockInsumos;
+        const precioVentaInicial = getPrecioVenta(producto);
         setNuevaCompra({
           ...nuevaCompra,
           productos: [...productosActuales, {
@@ -562,6 +586,7 @@ export function ComprasPage() {
             precio: precioUnitario,
             stockVentas: stockVentasNuevo,
             stockInsumos: stockInsumosNuevo,
+            precioVenta: precioVentaInicial,
             imagen: (producto as Insumo).imagen ?? (producto as { imagenProduc?: string }).imagenProduc ?? '',
             categoria: (producto as any).categoria && typeof (producto as any).categoria === 'object'
               ? ((producto as any).categoria.nombre || '')
@@ -574,7 +599,8 @@ export function ComprasPage() {
             cantidad: String(cantidadNueva),
             stockVentas: String(stockVentasNuevo),
             stockInsumos: String(stockInsumosNuevo),
-            precio: String(precioUnitario)
+            precio: String(precioUnitario),
+            precioVenta: String(precioVentaInicial)
           }
         }));
       }
@@ -610,8 +636,8 @@ export function ComprasPage() {
   };
 
   const getTarjetaInput = (
-    producto: { id: number; cantidad: number; stockVentas: number; stockInsumos: number; precio: number },
-    campo: 'cantidad' | 'stockVentas' | 'stockInsumos' | 'precio'
+    producto: { id: number; cantidad: number; stockVentas: number; stockInsumos: number; precio: number; precioVenta?: number },
+    campo: 'cantidad' | 'stockVentas' | 'stockInsumos' | 'precio' | 'precioVenta'
   ) => {
     const visual = tarjetaInputs[producto.id]?.[campo];
     return visual ?? '';
@@ -619,7 +645,7 @@ export function ComprasPage() {
 
   const actualizarTarjetaInput = (
     productId: number,
-    campo: 'cantidad' | 'stockVentas' | 'stockInsumos' | 'precio',
+    campo: 'cantidad' | 'stockVentas' | 'stockInsumos' | 'precio' | 'precioVenta',
     valor: string
   ) => {
     setTarjetaInputs((prev) => ({
@@ -649,6 +675,10 @@ export function ComprasPage() {
     }
     if (campo === 'precio' && numero >= 0) {
       actualizarPrecioProducto(productId, numero);
+      return;
+    }
+    if (campo === 'precioVenta' && numero >= 0) {
+      actualizarPrecioVentaProducto(productId, numero);
     }
   };
 
@@ -680,36 +710,45 @@ export function ComprasPage() {
 
 
   const handleStockVentasInputChange = (valor: string) => {
-    // Clamp al máximo permitido según cantidadProducto
     const max = Math.max(0, Number.isFinite(cantidadProducto) ? cantidadProducto : 0);
     const onlyDigits = valor.replace(/\D+/g, '');
-    const n = onlyDigits ? Math.min(parseInt(onlyDigits, 10) || 0, max) : 0;
     setStockVentasInput(onlyDigits);
     if (showAddCompraProductoErrors) setShowAddCompraProductoErrors(false);
     if (onlyDigits.trim() === '') {
-      setStockVentas(0);
+      const ventas = 0;
+      const insumos = Math.max(0, max - ventas);
+      setStockVentas(ventas);
+      setStockInsumos(insumos);
+      setStockInsumosInput(String(insumos));
       return;
     }
-    const numero = Number(n);
-    if (!Number.isNaN(numero)) {
-      setStockVentas(Math.max(0, Math.floor(numero)));
-    }
+    const n = Math.min(parseInt(onlyDigits, 10) || 0, max);
+    const ventas = Math.max(0, Math.floor(n));
+    const insumos = Math.max(0, max - ventas);
+    setStockVentas(ventas);
+    setStockInsumos(insumos);
+    setStockInsumosInput(String(insumos));
   };
 
   const handleStockInsumosInputChange = (valor: string) => {
     const max = Math.max(0, Number.isFinite(cantidadProducto) ? cantidadProducto : 0);
     const onlyDigits = valor.replace(/\D+/g, '');
-    const n = onlyDigits ? Math.min(parseInt(onlyDigits, 10) || 0, max) : 0;
     setStockInsumosInput(onlyDigits);
     if (showAddCompraProductoErrors) setShowAddCompraProductoErrors(false);
     if (onlyDigits.trim() === '') {
-      setStockInsumos(0);
+      const insumos = 0;
+      const ventas = Math.max(0, max - insumos);
+      setStockInsumos(insumos);
+      setStockVentas(ventas);
+      setStockVentasInput(String(ventas));
       return;
     }
-    const numero = Number(n);
-    if (!Number.isNaN(numero)) {
-      setStockInsumos(Math.max(0, Math.floor(numero)));
-    }
+    const n = Math.min(parseInt(onlyDigits, 10) || 0, max);
+    const insumos = Math.max(0, Math.floor(n));
+    const ventas = Math.max(0, max - insumos);
+    setStockInsumos(insumos);
+    setStockVentas(ventas);
+    setStockVentasInput(String(ventas));
   };
 
   const handlePorcentajeDescuentoInputChange = (valor: string) => {
@@ -724,6 +763,16 @@ export function ComprasPage() {
       setNuevaCompra({ ...nuevaCompra, porcentajeDescuento: clamped });
     }
   };
+
+  useEffect(() => {
+    const max = Math.max(0, Number.isFinite(cantidadProducto) ? Math.floor(cantidadProducto) : 0);
+    const ventas = Math.max(0, Math.min(Math.floor(stockVentas), max));
+    const insumos = Math.max(0, max - ventas);
+    setStockVentas(ventas);
+    setStockInsumos(insumos);
+    setStockVentasInput(String(ventas));
+    setStockInsumosInput(String(insumos));
+  }, [cantidadProducto]);
 
   const actualizarCantidadProducto = (productId: number, nuevaCantidad: number) => {
     if (nuevaCantidad < 1) return;
@@ -781,6 +830,24 @@ export function ComprasPage() {
       [productId]: {
         ...prev[productId],
         precio: String(nuevoPrecio)
+      }
+    }));
+  };
+
+  const actualizarPrecioVentaProducto = (productId: number, nuevoPrecioVenta: number) => {
+    if (nuevoPrecioVenta < 0) return;
+    const productosActuales = nuevaCompra.productos || [];
+    setNuevaCompra({
+      ...nuevaCompra,
+      productos: productosActuales.map(p =>
+        p.id === productId ? { ...p, precioVenta: nuevoPrecioVenta } : p
+      )
+    });
+    setTarjetaInputs((prev) => ({
+      ...prev,
+      [productId]: {
+        ...prev[productId],
+        precioVenta: String(nuevoPrecioVenta)
       }
     }));
   };
@@ -926,6 +993,23 @@ export function ComprasPage() {
     try {
       await compraService.createCompra(compraRequest);
 
+      try {
+        const updates = nuevaCompra.productos.map(async (p) => {
+          const full = await productoService.getProductoById(p.id);
+          if (!full) return;
+          const precioVentaFinal = (p as any).precioVenta !== undefined ? Number((p as any).precioVenta) : (full as any).precioVenta;
+          const precioCompraFinal = Number(p.precio);
+          const categoriaName = typeof full.categoria === 'string' ? full.categoria : full.categoria?.nombre || '';
+          await productoService.updateProducto(p.id, {
+            ...full,
+            categoria: categoriaName || full.categoria || null,
+            precioVenta: precioVentaFinal,
+            precioCompra: precioCompraFinal,
+          } as any);
+        });
+        await Promise.allSettled(updates);
+      } catch {}
+
       // El backend ajusta los stocks según los detalles enviados
 
       created("Compra creada ✔️", `La compra ha sido registrada exitosamente.`);
@@ -1007,8 +1091,12 @@ export function ComprasPage() {
             await loadCompras().catch(() => { });
             return;
           }
-          toast.error("Error al anular", { description: "No se pudo anular la compra." });
+          const raw = String(error?.message || error?.toString() || "");
+          const match = raw.match(/"([^"]+)"/);
+          const friendly = (match ? match[1] : raw).replace(/^Error:\s*/i, '').trim() || "No se pudo anular la compra.";
+          toast.error("No se puede anular la compra", { description: friendly });
           console.error("Error al anular compra:", error);
+          throw error;
         }
       },
       {
@@ -1475,12 +1563,33 @@ export function ComprasPage() {
                         <Input
                           type="date"
                           value={nuevaCompra.fechaFactura}
-                          onChange={(e) => setNuevaCompra({ ...nuevaCompra, fechaFactura: e.target.value })}
+                          min={getOneMonthAgoISO()}
+                          max={generateCurrentDate()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const min = getOneMonthAgoISO();
+                            const max = generateCurrentDate();
+                            if (!val) {
+                              setNuevaCompra({ ...nuevaCompra, fechaFactura: '' });
+                              return;
+                            }
+                            const clamped = val < min ? min : (val > max ? max : val);
+                            setNuevaCompra({ ...nuevaCompra, fechaFactura: clamped });
+                          }}
                           className={`elegante-input ${showCompraFormErrors && !nuevaCompra.fechaFactura ? `border-red-500 ring-1 ring-red-500 ${shakeClass}` : ''}`}
                         />
                         {showCompraFormErrors && !nuevaCompra.fechaFactura && (
                           <p className="text-xs text-red-400">Este campo es obligatorio.</p>
                         )}
+                        {(() => {
+                          const f = nuevaCompra.fechaFactura;
+                          const min = getOneMonthAgoISO();
+                          const max = generateCurrentDate();
+                          const out = !!f && (f < min || f > max);
+                          return out ? (
+                            <p className="text-xs text-red-400">La fecha debe estar entre {formatDate(min)} y {formatDate(max)}.</p>
+                          ) : null;
+                        })()}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -2005,9 +2114,9 @@ export function ComprasPage() {
                                     />
                                   </div>
 
-                                  {/* Precio unitario — label arriba, input abajo */}
+                                  {/* Precio compra — label arriba, input abajo */}
                                   <div className="flex flex-col gap-0.5 shrink-0">
-                                    <label className="text-[11px] text-gray-400 font-normal">Precio unit.</label>
+                                    <label className="text-[11px] text-gray-400 font-normal">Precio compra</label>
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -2031,10 +2140,36 @@ export function ComprasPage() {
                                     />
                                   </div>
 
+                                  {/* Precio venta — label arriba, input abajo */}
+                                  <div className="flex flex-col gap-0.5 shrink-0">
+                                    <label className="text-[11px] text-gray-400 font-normal">Precio venta</label>
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={getTarjetaInput(producto as any, 'precioVenta')}
+                                      onKeyDown={(e) => {
+                                        if (e.key === '-' || e.key === '+' || e.key === 'e' || e.key === 'E' || e.key === '.') {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      onPaste={(e) => {
+                                        const text = e.clipboardData?.getData('text') || '';
+                                        const cleaned = text.replace(/\D+/g, '').slice(0, 6);
+                                        e.preventDefault();
+                                        actualizarTarjetaInput(producto.id, 'precioVenta', cleaned);
+                                      }}
+                                      onChange={(e) => {
+                                        const cleaned = e.target.value.replace(/\D+/g, '').slice(0, 6);
+                                        actualizarTarjetaInput(producto.id, 'precioVenta', cleaned);
+                                      }}
+                                      className="w-20 h-7 text-xs text-right tabular-nums elegante-input no-spin py-0 px-1.5"
+                                    />
+                                  </div>
+
                                   {/* Subtotal — label arriba, valor abajo */}
                                   <div className="flex flex-col gap-0.5 shrink-0 justify-center">
-                                    <label className="text-[11px] text-gray-400 font-normal">Subt.</label>
-                                    <span className="text-orange-primary font-semibold text-xs tabular-nums leading-7">
+                                    <label className="text-[11px] text-gray-400 font-normal">Subt. compra</label>
+                                    <span className="text-orange-primary font-semibold text-xs tabular-nums leading-5">
                                       ${formatCurrency(producto.precio * producto.cantidad)}
                                     </span>
                                   </div>

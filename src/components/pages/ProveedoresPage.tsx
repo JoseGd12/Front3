@@ -464,8 +464,9 @@ export function ProveedoresPage() {
       const tempSelectedProveedor = { ...selectedProveedor };
       setIsEditDialogOpen(false);
       if (tempSelectedProveedor.id) {
-        await proveedorService.actualizarProveedor(tempSelectedProveedor.id, tempFormData);
-        await cargarProveedores();
+        const actualizado = await proveedorService.actualizarProveedor(tempSelectedProveedor.id, tempFormData);
+        setProveedores(prev => prev.map(p => p.id === tempSelectedProveedor.id ? { ...p, ...actualizado } : p));
+        cargarProveedores(true);
       }
       edited('Proveedor actualizado ✔️', `La información del proveedor "${formData.nombre}" ha sido actualizada exitosamente.`);
       setSelectedProveedor(null);
@@ -514,7 +515,8 @@ export function ProveedoresPage() {
           if (proveedor.id) {
             await proveedorService.eliminarProveedor(proveedor.id);
           }
-          await cargarProveedores();
+          setProveedores(prev => prev.filter(p => p.id !== proveedor.id));
+          await cargarProveedores(true);
         } catch (err: any) {
           console.error('Error eliminando proveedor:', err);
           error('Error al eliminar proveedor', err?.message || 'No se pudo eliminar el proveedor.');
