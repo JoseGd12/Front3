@@ -819,6 +819,16 @@ export function VentasPage() {
     return Math.max(0, subtotal + iva - descuento);
   };
 
+  const calcularSaldoAFavorUsado = () => {
+    if (!nuevaVenta.usarSaldoAFavor || !nuevaVenta.clienteId) return 0;
+    const subtotal = calcularSubtotal();
+    const iva = calcularIva(subtotal);
+    const descuento = calcularDescuento(subtotal);
+    const totalSinSaldo = subtotal + iva - descuento;
+    const saldoDisponible = clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0;
+    return Math.min(totalSinSaldo, saldoDisponible);
+  };
+
   const calcularIva = (subtotal: number) => {
     return 0;
   };
@@ -2579,13 +2589,13 @@ export function VentasPage() {
                             {nuevaVenta.usarSaldoAFavor && (
                               <div className="flex justify-between text-green-400">
                                 <span>Saldo a Favor usado:</span>
-                                <span>-${formatCurrency(Math.min(calcularSubtotal() + calcularIva(calcularSubtotal()) - calcularDescuento(calcularSubtotal()), clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0))}</span>
+                                <span>-${formatCurrency(calcularSaldoAFavorUsado())}</span>
                               </div>
                             )}
                             <hr className="border-gray-medium" />
                             <div className="flex justify-between text-white-primary font-bold text-lg">
                               <span>Total:</span>
-                              <span className="text-orange-primary">${formatCurrency(calcularTotal())}</span>
+                              <span className="text-orange-primary">${formatCurrency(Math.max(0, calcularTotal() - (nuevaVenta.usarSaldoAFavor ? calcularSaldoAFavorUsado() : 0)))}</span>
                             </div>
                           </div>
                         )}
@@ -2669,7 +2679,7 @@ export function VentasPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-dark">
-                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">###</th>
+                      <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">ID</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Documento Cliente</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Nombre Cliente</th>
                       <th className="text-center py-3 px-4 text-white-primary font-bold text-sm">Total</th>
@@ -2711,15 +2721,20 @@ export function VentasPage() {
                                   return Number((d as any).ventaId) === Number(venta.id) && noAnulada && !esConsumoSaldo;
                                 })
                                 .reduce((acc, d) => acc + (Number((d as any).monto) || 0), 0);
-                              // Si hay devoluciones, ajustamos; si no, mostramos el total del backend (ya considera saldo a favor)
-                              if (sumDev > 0) {
-                                const adjSubtotal = Math.max(0, (Number(venta.subtotal) || 0) - sumDev);
-                                const adjTotal = Math.max(0, adjSubtotal - (Number(venta.descuento) || 0));
-                                return formatCurrency(adjTotal);
-                              }
-                              return formatCurrency(Number(venta.total) || 0);
+                              // Mostrar el mismo cálculo que "Subtotal Ajustado" del detalle:
+                              // Subtotal - SaldoUsado - Monto Devuelto
+                              const expSaldo = Number((venta as any).SaldoAFavorUsado ?? (venta as any).saldoAFavorUsado ?? (venta as any).SaldoAFavor ?? (venta as any).saldoAfavor ?? 0);
+                              const saldoUsado = expSaldo > 0
+                                ? expSaldo
+                                : (() => {
+                                    const should = (Number(venta.subtotal) || 0) + (Number((venta as any).iva) || 0) - (Number(venta.descuento) || 0);
+                                    const diff = should - (Number(venta.total) || 0);
+                                    return diff > 0.01 ? diff : 0;
+                                  })();
+                              const listadoTotalAjustado = Math.max(0, (Number(venta.subtotal) || 0) - saldoUsado - sumDev);
+                              return formatCurrency(listadoTotalAjustado);
                             })()}
-                          </span>
+                          </span> 
                         </td>
                         <td className="py-4 px-4 text-center">
                           <span className="text-gray-lighter">{formatDate(venta.fecha)}</span>
@@ -3131,11 +3146,9 @@ export function VentasPage() {
                     {/* Total Ajustado - Grande y Naranja */}
                     <div className="flex justify-between items-end">
                       <span className="text-white-primary font-bold text-xl">Total Ajustado:</span>
-                      <span className="text-orange-primary font-bold text-2xl">
+                       <span className="text-orange-primary font-bold  text-xl">
                         ${formatCurrency(
-                          devolucionesVentaActual.length > 0
-                            ? Math.max(0, subtotalAjustado - (selectedVenta.descuento || 0))
-                            : (selectedVenta.total || 0)
+                          Math.max(0, (selectedVenta.subtotal || 0) - (saldoUsadoDetalle || 0) - (totalMontoDevuelto || 0))
                         )}
                       </span>
                     </div>
