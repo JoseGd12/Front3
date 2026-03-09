@@ -982,6 +982,24 @@ class ApiService {
     }
   }
 
+  async updatePaqueteDetalles(id: number, detalles: Array<{ servicioId: number; cantidad: number }>): Promise<Paquete> {
+    try {
+      const mapped = this.mapToApiFormat({ detalles });
+      console.log(`📤 Actualizando detalles del paquete ${id}:`, mapped);
+      const response = await this.request(`/Paquetes/${id}/detalles`, {
+        method: 'PUT',
+        body: JSON.stringify(mapped),
+      });
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : null;
+      console.log(`✅ Detalles del paquete ${id} actualizados:`, data);
+      return data ? this.normalizePaqueteData(data) : await this.getPaqueteById(id) as Paquete;
+    } catch (error: any) {
+      console.error(`❌ Error actualizando detalles del paquete ${id}:`, error);
+      throw error;
+    }
+  }
+
   async deletePaquete(id: number): Promise<void> {
     try {
       console.log(`🗑️ Eliminando paquete ${id}...`);
@@ -1029,10 +1047,12 @@ class ApiService {
   async getDetallePaquetesByPaqueteId(paqueteId: number): Promise<DetallePaquete[]> {
     try {
       console.log(`📥 Obteniendo detalles del paquete ${paqueteId}...`);
-      const detalles = await this.getDetallePaquetes();
-      const filtered = detalles.filter(d => d.paqueteId === paqueteId);
-      console.log(`✅ Detalles del paquete ${paqueteId}:`, filtered);
-      return filtered;
+      const response = await this.request(`/DetallePaquetes/paquete/${paqueteId}`);
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : [];
+      const normalizedData = Array.isArray(data) ? data.map(item => this.normalizeDetallePaqueteData(item)) : [];
+      console.log(`✅ Detalles del paquete ${paqueteId}:`, normalizedData);
+      return normalizedData;
     } catch (error: any) {
       console.error(`❌ Error obteniendo detalles del paquete ${paqueteId}:`, error);
       throw error;
@@ -1107,4 +1127,3 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
-

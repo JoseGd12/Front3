@@ -430,7 +430,6 @@ export function UsersPage() {
             barrio: createdUser.barrio || newUser.barrio,
             fotoPerfil: createdUser.fotoPerfil || undefined
           });
-          toast.success("Perfil de Cliente creado automáticamente");
         }
         // Lógica para Barberos (Rol 2 = AppRole.BARBERO)
         else if (roleId === 2) {
@@ -452,7 +451,6 @@ export function UsersPage() {
             rol: 'Barbero',
             status: 'active'
           });
-          toast.success("Perfil de Barbero creado automáticamente");
         }
         // Otros roles (Admin, Recepcionista, Gerente) no requieren perfil adicional
         else {
@@ -460,7 +458,6 @@ export function UsersPage() {
         }
       } catch (profileError) {
         console.error("❌ Error creando perfil asociado:", profileError);
-        toast.warning("Usuario creado, pero hubo un error creando el perfil asociado (Cliente/Barbero).");
       }
 
       await notifyEntityCreated('usuario', {
@@ -471,7 +468,7 @@ export function UsersPage() {
         rolId: roleId
       });
       setUsers([mappedUser, ...users]);
-      setIsCreateDialogOpen(false);
+      setIsDialogOpen(false);
       showSuccess("¡Usuario creado exitosamente!", `El usuario "${mappedUser.nombres} ${mappedUser.apellidos}" ha sido registrado en el sistema.`);
 
       if (createInFirebase) {
@@ -481,20 +478,11 @@ export function UsersPage() {
             tempPassword,
             { sendVerification: false, sendPasswordReset: true }
           );
-          toast.success('Cuenta creada en Firebase y enlace de contraseña enviado', {
-            style: { background: 'var(--color-gray-darkest)', border: '1px solid var(--color-orange-primary)', color: 'var(--color-white-primary)' },
-          });
         } catch (firebaseErr: any) {
           const msg = String(firebaseErr?.message || '').toLowerCase();
           if (msg.includes('ya está en uso') || msg.includes('already')) {
-            const res = await resetPassword(createdUser.correo);
-            if (res.success) {
-              toast.success('El email ya existe en Firebase. Se envió enlace para configurar contraseña.');
-            } else {
-              toast.error('No se pudo enviar el enlace de contraseña en Firebase.');
-            }
+            await resetPassword(createdUser.correo);
           } else {
-            toast.error('No se pudo crear la cuenta en Firebase.');
           }
         }
       }

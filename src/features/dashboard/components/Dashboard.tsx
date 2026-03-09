@@ -1,5 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../shared/contexts/AuthContext";
+import { authSyncService } from "../../auth/services/authSyncService";
+import { rolesApiService } from "../../administracion/services/rolesApiService";
+import { modulosService } from "../../administracion/services/modulosService";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 import { BarberPole } from "../../../shared/components/ui/BarberPole";
 import {
@@ -191,10 +194,90 @@ const menuSections = [
 export function Dashboard() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  
+
   const [activePage, setActivePage] = useState("Dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isUserDetailOpen, setIsUserDetailOpen] = useState(false);
+
+  const [allowedModules, setAllowedModules] = useState<string[]>([]);
+  const [loadingModules, setLoadingModules] = useState(true);
+
+  useEffect(() => {
+    const fetchModules = async () => {
+      if (!user) {
+        setLoadingModules(false);
+        return;
+      }
+      try {
+        setLoadingModules(true);
+        const rolId = authSyncService.getRolId(user.role);
+
+        // Obtener permisos del rol y todos los módulos concurrentemente
+        const [rolePerms, allModules] = await Promise.all([
+          rolesApiService.getRoleModules(rolId),
+          modulosService.getModulos()
+        ]);
+
+        // IDs de módulos que el rol puede ver
+        const validModuleIds = rolePerms
+          .filter(rm => rm.puedeVer)
+          .map(rm => rm.moduloId.toString());
+
+        // Mapear de validModuleIds a los nombres de módulo
+        const allowedNames = allModules
+          .filter(m => validModuleIds.includes(m.id.toString()))
+          .map(m => m.nombre);
+
+        setAllowedModules(allowedNames);
+      } catch (error) {
+        console.error("Error fetching role modules:", error);
+      } finally {
+        setLoadingModules(false);
+      }
+    };
+
+    fetchModules();
+  }, [user]);
+
+  // Filtrar las secciones del menú basado en los módulos permitidos
+  const checkModuleAccess = (itemLabel: string) => {
+    if (itemLabel === "Dashboard") return true;
+
+    // Ajustes específicos y términos de búsqueda comunes por si la BD guarda el nombre diferente al label en UI
+    const searchTerms = [itemLabel.toLowerCase().trim()];
+
+    if (itemLabel === 'Horarios') searchTerms.push('horario');
+    if (itemLabel === 'Agendamientos') searchTerms.push('agendamiento', 'agenda', 'citas');
+    if (itemLabel === 'Barberos') searchTerms.push('barbero', 'empleado');
+    if (itemLabel === 'Servicios') searchTerms.push('servicio');
+    if (itemLabel === 'Paquetes') searchTerms.push('paquete');
+    if (itemLabel === 'Ventas') searchTerms.push('venta');
+    if (itemLabel === 'Devoluciones') searchTerms.push('devolucion');
+    if (itemLabel === 'Clientes') searchTerms.push('cliente');
+    if (itemLabel === 'Compras') searchTerms.push('compra');
+    if (itemLabel === 'Productos') searchTerms.push('producto', 'inventario');
+    if (itemLabel === 'Categorías') searchTerms.push('categoria');
+    if (itemLabel === 'Proveedores') searchTerms.push('proveedor');
+    if (itemLabel === 'Entregas de Insumos') searchTerms.push('entrega', 'insumo');
+    if (itemLabel === 'Usuarios') searchTerms.push('usuario');
+    if (itemLabel === 'Roles') searchTerms.push('rol', 'permiso');
+    if (itemLabel === 'Configuración') searchTerms.push('config', 'ajuste');
+
+    return allowedModules.some(mod => {
+      const modNormalizado = mod.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      return searchTerms.some(term => {
+        const termNormalizado = term.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return modNormalizado === termNormalizado || modNormalizado.includes(termNormalizado) || termNormalizado.includes(modNormalizado);
+      });
+    });
+  };
+
+  const filteredMenuSections = menuSections.map(section => {
+    return {
+      ...section,
+      items: section.items.filter(item => checkModuleAccess(item.label))
+    };
+  }).filter(section => section.items.length > 0);
 
   const renderNavItem = (item: any) => {
     const Icon = item.icon;
@@ -273,7 +356,7 @@ export function Dashboard() {
   };
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(menuSections.map(section => [section.title, false]))
+    Object.fromEntries(filteredMenuSections.map(section => [section.title, false]))
   );
 
   const toggleSection = (title: string) => {
@@ -295,7 +378,7 @@ export function Dashboard() {
           }}
         >
           <div className="flex items-center gap-4 shrink-0">
-          <button
+            <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="group relative p-2 rounded-md bg-muted border border-[#5D4037]/40 transition-all duration-300 flex items-center justify-center overflow-visible"
               style={{
@@ -409,8 +492,8 @@ export function Dashboard() {
                 <div className="space-y-1">
                   {/* Dashboard independiente */}
                   {renderNavItem({ icon: LayoutGrid, label: "Dashboard", page: "Dashboard" })}
-                  {/* Otros módulos */}
-                  {menuSections.flatMap(section => section.items).map(renderNavItem)}
+                  {/* Otros módulos filtrados */}
+                  {filteredMenuSections.flatMap(section => section.items).map(renderNavItem)}
                 </div>
               ) : (
                 <>
@@ -418,8 +501,8 @@ export function Dashboard() {
                   <div className="space-y-1">
                     {renderNavItem({ icon: LayoutGrid, label: "Dashboard", page: "Dashboard" })}
                   </div>
-                  {/* Secciones desplegables */}
-                  {menuSections.map(section => {
+                  {/* Secciones desplegables filtradas */}
+                  {filteredMenuSections.map(section => {
                     const isCollapsed = collapsedSections[section.title];
                     return (
                       <div key={section.title} className="space-y-2">

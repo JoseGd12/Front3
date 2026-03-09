@@ -922,7 +922,7 @@ export function DevolucionesPage() {
           toast.error("Error de sesión", { description: "No se ha identificado el usuario responsable. Por favor inicie sesión nuevamente." });
           return;
         }
-        const idsSel = Object.entries(productosSeleccionados).filter(([_,v])=>v).map(([k])=>Number(k));
+        const idsSel = Object.entries(productosSeleccionados).filter(([_, v]) => v).map(([k]) => Number(k));
         const items = idsSel.map(pid => {
           const prod = ventaSeleccionada?.productos?.find((p: any) => Number(p.id) === Number(pid));
           const precio = Number(prod?.precio || 0);
@@ -1024,7 +1024,7 @@ export function DevolucionesPage() {
             }
           }
 
-          toast.success(`Devolución ${nuevoEstado.toLowerCase()}ada exitosamente`);
+          // La alerta de éxito la maneja confirmEditAction en sus opciones
           loadData();
 
         } catch (error: any) {
@@ -1543,7 +1543,7 @@ export function DevolucionesPage() {
                   <div className="space-y-2">
                     <Label className="text-white-primary">Estado</Label>
                     <div className="grid gap-2">
-                      {['Todos', 'Completada', 'Anulada', ].map((estado) => (
+                      {['Todos', 'Completada', 'Anulada',].map((estado) => (
                         <button
                           key={estado}
                           onClick={() => setFiltroEstado(estado)}
@@ -1560,7 +1560,7 @@ export function DevolucionesPage() {
                 </PopoverContent>
               </Popover>
 
-              
+
             </div>
 
             <div className="flex items-center gap-4">
@@ -1604,9 +1604,9 @@ export function DevolucionesPage() {
                           {devolucion.ventaId
                             ? (devolucion.clienteDocumento || devolucion.clienteId || '—')
                             : (() => {
-                                const b = barberosDisponibles.find((x: any) => Number(x.id) === Number(devolucion.barberoId));
-                                return b ? `${b.tipoDocumento} ${b.documento}` : (devolucion.clienteDocumento || devolucion.clienteId || '—');
-                              })()
+                              const b = barberosDisponibles.find((x: any) => Number(x.id) === Number(devolucion.barberoId));
+                              return b ? `${b.tipoDocumento} ${b.documento}` : (devolucion.clienteDocumento || devolucion.clienteId || '—');
+                            })()
                           }
                         </span>
                       </td>
@@ -2375,91 +2375,91 @@ export function DevolucionesPage() {
               </div>
             )}
 
-          {selectedBarbero && resumenEntregas.length > 0 && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
-              <div className="bg-gray-darker p-5 rounded-2xl border border-gray-dark/50 shadow-lg">
-                <div className="flex items-center gap-3 mb-4 border-b border-gray-dark pb-3">
-                  <div className="p-2 bg-orange-primary/10 rounded-lg">
-                    <UserIcon className="w-5 h-5 text-orange-primary" />
-                  </div>
-                  <div>
-                    <h3 className="text-white-primary font-bold text-lg">Barbero</h3>
-                    <p className="text-xs text-gray-lightest">{selectedBarbero.nombre} {selectedBarbero.apellido} — {selectedBarbero.tipoDocumento} {selectedBarbero.documento}</p>
-                  </div>
-                </div>
-                {entregasBarbero.length > 0 && (
-                  <div className="mb-4">
-                    <div className="text-[11px] text-gray-400 mb-1">Entregas de Insumos</div>
-                    <div className="flex flex-wrap gap-2">
-                      {entregasBarbero.map((ent: any) => (
-                        <button
-                          key={`ent-${ent.id}`}
-                          onClick={() => handleSelectEntrega(ent)}
-                          className={`px-2.5 py-1 rounded-lg text-xs border ${selectedEntrega?.id === ent.id
-                            ? 'bg-orange-primary text-black-primary border-orange-primary'
-                            : 'bg-gray-dark text-gray-lightest border-gray-dark hover:border-orange-primary/40'}`}
-                          title={`Entrega #${ent.id} • ${(String(ent.estado || ent.Estado || '').toLowerCase().includes('anul') ? 'Anulada' : 'Completada')} • ${ent.fecha ? new Date(ent.fecha).toLocaleDateString('es-CO') : ''}`}
-                        >
-                          #{ent.id} • {(String(ent.estado || ent.Estado || '').toLowerCase().includes('anul') ? 'Anulada' : 'Completada')} • {ent.fecha ? new Date(ent.fecha).toLocaleDateString('es-CO') : ''}
-                        </button>
-                      ))}
+            {selectedBarbero && resumenEntregas.length > 0 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="bg-gray-darker p-5 rounded-2xl border border-gray-dark/50 shadow-lg">
+                  <div className="flex items-center gap-3 mb-4 border-b border-gray-dark pb-3">
+                    <div className="p-2 bg-orange-primary/10 rounded-lg">
+                      <UserIcon className="w-5 h-5 text-orange-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-white-primary font-bold text-lg">Barbero</h3>
+                      <p className="text-xs text-gray-lightest">{selectedBarbero.nombre} {selectedBarbero.apellido} — {selectedBarbero.tipoDocumento} {selectedBarbero.documento}</p>
                     </div>
                   </div>
-                )}
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
-                  {resumenEntregas.map((row: any) => {
-                    const pid = Number(row.productoId || 0);
-                    const checked = !!productosInsumosSeleccionados[pid];
-                    const val = cantidadesInsumos[pid] ?? '1';
-                    const subtotal = Number(row.precio || 0) * Number(val || 0);
-                    return (
-                      <div key={`ins-${pid}`} className="bg-gray-darkest rounded-lg px-3 py-2.5 border-l-2 border-orange-primary/20">
-                        <div className="flex items-center gap-4 flex-nowrap min-w-0">
-                          <div className="shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-colors border-[#D9C3A4] bg-[#D9C3A4]/20">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(e) => handleToggleInsumoSeleccion(row, e.target.checked)}
-                              className="h-4 w-4 accent-[#D9C3A4] shrink-0"
-                            />
-                          </div>
-                          <div className="min-w-0 flex-1 shrink flex items-center justify-start">
-                            <span className="text-white-primary font-semibold text-base truncate block w-full">
-                              {row.nombre}
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-0.5 shrink-0">
-                            <label className="text-[11px] text-gray-400 font-normal">Disponible</label>
-                            <span className="text-white-primary font-semibold text-xs tabular-nums leading-7">{row.disponible}</span>
-                          </div>
-                          <div className="flex flex-col gap-0.5 shrink-0">
-                            <label className="text-[11px] text-gray-400 font-normal">Cantidad</label>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={val}
-                              onChange={(e) => handleCantidadInsumoChange(row, e.target.value)}
-                              onBlur={() => handleCantidadInsumoBlur(row)}
-                              disabled={!checked}
-                              className="w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-0.5 shrink-0 justify-center">
-                            <label className="text-[11px] text-gray-400 font-normal">Subtotal</label>
-                            <span className="text-orange-primary font-semibold text-xs tabular-nums leading-7">
-                              ${formatCurrency(subtotal)}
-                            </span>
+                  {entregasBarbero.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-[11px] text-gray-400 mb-1">Entregas de Insumos</div>
+                      <div className="flex flex-wrap gap-2">
+                        {entregasBarbero.map((ent: any) => (
+                          <button
+                            key={`ent-${ent.id}`}
+                            onClick={() => handleSelectEntrega(ent)}
+                            className={`px-2.5 py-1 rounded-lg text-xs border ${selectedEntrega?.id === ent.id
+                              ? 'bg-orange-primary text-black-primary border-orange-primary'
+                              : 'bg-gray-dark text-gray-lightest border-gray-dark hover:border-orange-primary/40'}`}
+                            title={`Entrega #${ent.id} • ${(String(ent.estado || ent.Estado || '').toLowerCase().includes('anul') ? 'Anulada' : 'Completada')} • ${ent.fecha ? new Date(ent.fecha).toLocaleDateString('es-CO') : ''}`}
+                          >
+                            #{ent.id} • {(String(ent.estado || ent.Estado || '').toLowerCase().includes('anul') ? 'Anulada' : 'Completada')} • {ent.fecha ? new Date(ent.fecha).toLocaleDateString('es-CO') : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+                    {resumenEntregas.map((row: any) => {
+                      const pid = Number(row.productoId || 0);
+                      const checked = !!productosInsumosSeleccionados[pid];
+                      const val = cantidadesInsumos[pid] ?? '1';
+                      const subtotal = Number(row.precio || 0) * Number(val || 0);
+                      return (
+                        <div key={`ins-${pid}`} className="bg-gray-darkest rounded-lg px-3 py-2.5 border-l-2 border-orange-primary/20">
+                          <div className="flex items-center gap-4 flex-nowrap min-w-0">
+                            <div className="shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-colors border-[#D9C3A4] bg-[#D9C3A4]/20">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => handleToggleInsumoSeleccion(row, e.target.checked)}
+                                className="h-4 w-4 accent-[#D9C3A4] shrink-0"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1 shrink flex items-center justify-start">
+                              <span className="text-white-primary font-semibold text-base truncate block w-full">
+                                {row.nombre}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-0.5 shrink-0">
+                              <label className="text-[11px] text-gray-400 font-normal">Disponible</label>
+                              <span className="text-white-primary font-semibold text-xs tabular-nums leading-7">{row.disponible}</span>
+                            </div>
+                            <div className="flex flex-col gap-0.5 shrink-0">
+                              <label className="text-[11px] text-gray-400 font-normal">Cantidad</label>
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={val}
+                                onChange={(e) => handleCantidadInsumoChange(row, e.target.value)}
+                                onBlur={() => handleCantidadInsumoBlur(row)}
+                                disabled={!checked}
+                                className="w-16 h-7 text-xs text-center tabular-nums elegante-input no-spin py-0 px-1.5"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-0.5 shrink-0 justify-center">
+                              <label className="text-[11px] text-gray-400 font-normal">Subtotal</label>
+                              <span className="text-orange-primary font-semibold text-xs tabular-nums leading-7">
+                                ${formatCurrency(subtotal)}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
+                <div className="flex justify-end gap-3"></div>
               </div>
-              <div className="flex justify-end gap-3"></div>
-            </div>
-          )}
+            )}
 
             {/* Motivo */}
             <div className="grid grid-cols-2 gap-4">

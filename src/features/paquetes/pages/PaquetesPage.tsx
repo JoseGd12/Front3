@@ -320,20 +320,47 @@ export function PaquetesPage() {
     }
   };
 
-  const handleEditPaquete = (paquete: Paquete) => {
+  const handleEditPaquete = async (paquete: Paquete) => {
     setEditingPaquete(paquete);
-    const serviciosArray = Array.isArray(paquete.servicios) ? paquete.servicios : [];
+    // Cargar detalles reales para obtener IDs y nombres exactos
+    let serviciosArray: string[] = Array.isArray(paquete.servicios) ? paquete.servicios : [];
+    let serviciosConPrecio: any[] = [];
+    try {
+      const detalles = await apiService.getDetallePaquetesByPaqueteId(paquete.id);
+      if (Array.isArray(detalles) && detalles.length > 0) {
+        serviciosConPrecio = detalles.map((d: any) => {
+          const matchById = serviciosDisponibles.find(s => Number(s.id) === Number(d.servicioId));
+          const matchByName = serviciosDisponibles.find(s => String(s.nombre || '').trim().toLowerCase() === String(d.nombreServicio || '').trim().toLowerCase());
+          const svc = matchById || matchByName;
+          return {
+            id: svc ? svc.id : (d.servicioId || 0),
+            nombre: svc ? svc.nombre : (d.nombreServicio || 'Servicio'),
+            precio: svc ? svc.precio : 0
+          };
+        });
+        serviciosArray = serviciosConPrecio.map(s => s.nombre);
+      } else {
+        // Fallback: usar strings del paquete con match case-insensitive
+        serviciosConPrecio = serviciosArray.map((nombreServicio: string) => {
+          const servicioEncontrado = serviciosDisponibles.find(s => String(s.nombre || '').trim().toLowerCase() === String(nombreServicio || '').trim().toLowerCase());
+          return {
+            id: servicioEncontrado ? servicioEncontrado.id : 0,
+            nombre: nombreServicio,
+            precio: servicioEncontrado ? servicioEncontrado.precio : 0
+          };
+        });
+      }
+    } catch {
+      serviciosConPrecio = serviciosArray.map((nombreServicio: string) => {
+        const servicioEncontrado = serviciosDisponibles.find(s => String(s.nombre || '').trim().toLowerCase() === String(nombreServicio || '').trim().toLowerCase());
+        return {
+          id: servicioEncontrado ? servicioEncontrado.id : 0,
+          nombre: nombreServicio,
+          precio: servicioEncontrado ? servicioEncontrado.precio : 0
+        };
+      });
+    }
     const serviciosTexto = serviciosArray.join(', ');
-
-    // Convertir servicios a objetos con nombre y precio
-    const serviciosConPrecio = serviciosArray.map((nombreServicio: string) => {
-      const servicioEncontrado = serviciosDisponibles.find(s => s.nombre === nombreServicio);
-      return {
-        id: servicioEncontrado ? servicioEncontrado.id : 0,
-        nombre: nombreServicio,
-        precio: servicioEncontrado ? servicioEncontrado.precio : 0
-      };
-    });
 
     setNuevoPaquete({
       nombre: paquete.nombre || '',
@@ -404,17 +431,15 @@ export function PaquetesPage() {
             precioOriginal: parseFloat(tempPaqueteData.precio.toString()) * (1 + tempPaqueteData.descuento / 100)
           });
 
-          // Actualizar detalles (borrar y volver a crear)
+          // Actualizar detalles del paquete en una sola operación (IDs de servicios)
           console.log(`🔄 Actualizando detalles para el paquete ${editingPaquete.id}`);
-          await apiService.deleteDetallePaquetesByPaqueteId(editingPaquete.id);
-
-          for (const servicio of serviciosAgregados) {
-            await apiService.createDetallePaquete({
-              paqueteId: editingPaquete.id,
-              servicioId: (servicio as any).id,
+          await apiService.updatePaqueteDetalles(
+            editingPaquete.id,
+            serviciosAgregados.map((s: any) => ({
+              servicioId: Number(s.id || 0),
               cantidad: 1
-            });
-          }
+            }))
+          );
 
           await loadPaquetes(); // Recargar todos los paquetes como en ServiciosPage
           setEditingPaquete(null);
@@ -422,7 +447,6 @@ export function PaquetesPage() {
           setServiciosAgregados([]);
           setViewMode('list');
 
-          edited("Paquete actualizado exitosamente ✔️", `El paquete "${nombrePaquete}" ha sido actualizado correctamente con la nueva información.`);
         } catch (error) {
           console.error('Error updating paquete:', error);
         }

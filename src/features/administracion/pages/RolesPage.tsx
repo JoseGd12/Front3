@@ -313,6 +313,11 @@ export function RolesPage() {
       setEditingRole(null);
       showSuccess(`Rol "${updatedRole.nombre}" actualizado exitosamente`);
       console.log('✅ Rol actualizado:', updatedRole);
+
+      // Recargar la página para aplicar los cambios de sesión inmediatamente
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
     } catch (err) {
       console.error('❌ Error actualizando rol:', err);
       showError(err instanceof Error ? err.message : 'Error al actualizar el rol. Por favor, intente nuevamente.');

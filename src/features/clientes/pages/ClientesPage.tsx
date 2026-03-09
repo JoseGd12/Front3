@@ -393,10 +393,14 @@ export function ClientesPage() {
 
   const confirmCreateCliente = async () => {
     try {
-      // Convertir imagen a base64 si existe
-      let fotoPerfilBase64 = '';
-      if (selectedProfileImage && previewUrl) {
-        fotoPerfilBase64 = previewUrl;
+      let fotoPerfilUrl = '';
+      if (selectedProfileImage) {
+        try {
+          fotoPerfilUrl = await apiService.uploadImage(selectedProfileImage);
+        } catch (e: any) {
+          error('Error al subir imagen', 'No se pudo subir la imagen del cliente. Intenta nuevamente o continúa sin imagen.');
+          fotoPerfilUrl = '';
+        }
       }
 
       // Preparar datos para la API
@@ -409,7 +413,7 @@ export function ClientesPage() {
         fechaNacimiento: createForm.fechaNacimiento ? formatDateForAPI(createForm.fechaNacimiento) : '',
         direccion: createForm.direccion,
         barrio: createForm.barrio,
-        fotoPerfil: fotoPerfilBase64
+        fotoPerfil: fotoPerfilUrl
       };
 
       // Crear cliente en la API
@@ -693,10 +697,14 @@ export function ClientesPage() {
     if (!selectedCliente) return;
 
     try {
-      // Usar la imagen nueva si se seleccionó, o mantener la existente
       let fotoPerfilFinal = selectedCliente.fotoPerfil || '';
-      if (editSelectedProfileImage && editPreviewUrl) {
-        fotoPerfilFinal = editPreviewUrl;
+      if (editSelectedProfileImage) {
+        try {
+          fotoPerfilFinal = await apiService.uploadImage(editSelectedProfileImage);
+        } catch (e: any) {
+          error('Error al subir imagen', 'No se pudo subir la nueva imagen del cliente. Intenta nuevamente o continúa sin cambios en la imagen.');
+          fotoPerfilFinal = selectedCliente.fotoPerfil || '';
+        }
       } else if (editPreviewUrl) {
         fotoPerfilFinal = editPreviewUrl;
       }

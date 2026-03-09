@@ -223,10 +223,28 @@ class BarberosService {
   }
 
   async updateBarberoStatus(id: number, estado: boolean): Promise<void> {
-    await this.request(`${BARBEROS_URL}/${id}/estado`, {
-      method: 'POST',
-      body: JSON.stringify({ estado })
-    });
+    try {
+      await this.request(`${BARBEROS_URL}/${id}/estado`, {
+        method: 'POST',
+        body: JSON.stringify({ estado })
+      });
+    } catch (e: any) {
+      const msg = String(e?.message || '').toLowerCase();
+      const is404 = msg.includes('404') || msg.includes('not found');
+      if (!is404) throw e;
+
+      // Fallback: Si el perfil Barbero retorna 404, actualizamos directamente en /Usuarios
+      try {
+        const usuario = await apiService.getUsuarioById(id);
+        if (usuario && usuario.id) {
+          await apiService.updateUsuario(usuario.id, { ...usuario, estado });
+          return;
+        }
+      } catch (fallbackErr) {
+        // Ignorar el error del fallback y lanzar el error original 404
+      }
+      throw e;
+    }
   }
 }
 
