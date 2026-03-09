@@ -120,7 +120,13 @@ export function EntregaInsumosPage() {
   const cantidadInputRef = useRef<HTMLInputElement | null>(null);
   const addProductoRowRef = useRef<HTMLDivElement | null>(null);
   const productosAgregadosRef = useRef<HTMLDivElement | null>(null);
-  const numeroEntregas = 21 + entregas.length;
+  const numeroEntregas = (() => {
+    const maxId = (entregas || []).reduce((max, e) => {
+      const id = Number((e as any)?.id ?? 0);
+      return Number.isFinite(id) ? Math.max(max, id) : max;
+    }, 0);
+    return maxId + 1;
+  })();
   const [isProductoDetalleOpen, setIsProductoDetalleOpen] = useState(false);
   const [productoDetalle, setProductoDetalle] = useState<any | null>(null);
 

@@ -307,7 +307,13 @@ export function ComprasPage() {
   const baseErrorGate = (showCompraFormErrors || showAddCompraProductoErrors) && cantidadProducto > 0;
   const showExcesoVentas = baseErrorGate && stockVentas > cantidadProducto;
   const showExcesoEntregas = baseErrorGate && stockInsumos > cantidadProducto;
-  const numeroCompras = 121 + compras.length; 
+  const numeroCompras = (() => {
+    const maxId = (compras || []).reduce((max, c) => {
+      const id = Number((c as any)?.id ?? 0);
+      return Number.isFinite(id) ? Math.max(max, id) : max;
+    }, 0);
+    return maxId + 1;
+  })(); 
   // Cargar datos de forma separada y perezosa con cache SWR
   const loadCompras = async (useCache = false) => {
     if (useCache) {
