@@ -146,6 +146,13 @@ export function RolesPage() {
     if (isEditing) {
       setEditingRole((prev) => {
         if (!prev) return prev;
+        const moduloInfo = modulosProyecto.find(m => m.id === moduloId);
+        const isRolesModule = !!moduloInfo && String(moduloInfo.nombre || '').toLowerCase().includes('rol');
+        const isAdminRole = String(prev.nombre || '').toLowerCase().includes('administrador');
+        if (isAdminRole && isRolesModule && prev.modulos.includes(moduloId)) {
+          showError('Módulo obligatorio', 'El módulo "Roles" no puede ser removido del rol Administrador.');
+          return prev;
+        }
         const newModulos = prev.modulos.includes(moduloId)
           ? prev.modulos.filter((id: string) => id !== moduloId)
           : [...prev.modulos, moduloId];
@@ -233,7 +240,15 @@ export function RolesPage() {
 
   const deselectAllModulos = useCallback((isEditing: boolean = false) => {
     if (isEditing) {
-      setEditingRole((prev) => ({ ...prev!, modulos: [] }));
+      setEditingRole((prev) => {
+        if (!prev) return prev!;
+        const isAdminRole = String(prev.nombre || '').toLowerCase().includes('administrador');
+        if (!isAdminRole) return { ...prev!, modulos: [] };
+        const rolesModulo = modulosProyecto.find(m => String(m.nombre || '').toLowerCase().includes('rol'));
+        const keepId = rolesModulo ? rolesModulo.id : undefined;
+        const base = keepId ? [keepId] : [];
+        return { ...prev!, modulos: base };
+      });
     } else {
       setNuevoRol((prev) => ({ ...prev, modulos: [] }));
     }
