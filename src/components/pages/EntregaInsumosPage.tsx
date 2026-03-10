@@ -113,6 +113,13 @@ export function EntregaInsumosPage() {
   const [cantidadInsumoInput, setCantidadInsumoInput] = useState('');
   const [tarjetaInputsEntrega, setTarjetaInputsEntrega] = useState<Record<number, { cantidad?: string }>>({});
   const { created, error, AlertContainer } = useCustomAlert();
+  const lastStockToastAtRef = useRef<number>(0);
+  const reportStockInsuficiente = (stockDisponible: number) => {
+    const now = Date.now();
+    if (now - lastStockToastAtRef.current < 250) return;
+    lastStockToastAtRef.current = now;
+    toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+  };
 
   const shakeClass = entregaValidationAttempt % 2 === 0 ? 'input-required-shake-a' : 'input-required-shake-b';
   const barberoInputRef = useRef<HTMLInputElement | null>(null);
@@ -524,7 +531,7 @@ export function EntregaInsumosPage() {
     const cantidadFinal = cantidad > stockDisponible ? stockDisponible : cantidad;
 
     if (cantidadFinal !== cantidad) {
-      toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+      reportStockInsuficiente(stockDisponible);
       setTarjetaInputsEntrega((prev) => ({
         ...prev,
         [insumoId]: { ...prev[insumoId], cantidad: String(cantidadFinal) }
@@ -585,7 +592,7 @@ export function EntregaInsumosPage() {
     // Verificar stock disponible (usar stock de insumos si está disponible)
     const stockDisponible = insumo.stockInsumos ?? insumo.stock;
     if (cantidadInsumo > stockDisponible) {
-      toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+      reportStockInsuficiente(stockDisponible);
       console.warn('🟡 No se agregó: stock insuficiente', {
         id: insumo.id,
         nombre: insumo.nombre,
@@ -603,7 +610,7 @@ export function EntregaInsumosPage() {
       const nuevaCantidad = existeInsumo.cantidad + cantidadInsumo;
       const stockDisponible = insumo.stockInsumos ?? insumo.stock;
       if (nuevaCantidad > stockDisponible) {
-        toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+        reportStockInsuficiente(stockDisponible);
         return;
       }
 
@@ -699,6 +706,20 @@ export function EntregaInsumosPage() {
         }
         (productosAgregadosRef.current ?? addProductoRowRef.current)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
+      return;
+    }
+
+    // Validación de stock antes de crear
+    const violacion = (nuevaEntrega.insumos || []).find((i) => {
+      const base = insumos.find(b => Number(b.id) === Number(i.id));
+      const disponible = base ? (base.stockInsumos ?? base.stock) : Number.POSITIVE_INFINITY;
+      return Number(i.cantidad) > Number(disponible);
+    });
+    if (violacion) {
+      const base = insumos.find(b => Number(b.id) === Number(violacion.id));
+      const disponible = base ? (base.stockInsumos ?? base.stock) : 0;
+      reportStockInsuficiente(Number(disponible));
+      setEntregaValidationAttempt(prev => prev + 1);
       return;
     }
 

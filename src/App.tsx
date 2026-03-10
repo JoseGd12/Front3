@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./components/AuthContext";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "./components/ThemeContext";
 import { AlertProvider, GlobalAlertContainer } from "./components/ui/custom-alert";
+import { patchSonnerToasts } from "./components/ui/dark-toasts";
 import { Dashboard } from "./components/Dashboard";
 import { ClienteDashboard } from "./components/ClienteDashboard";
 import { LandingPage } from "./components/LandingPage";
@@ -10,6 +11,7 @@ import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { EmailVerificationPage } from "./components/EmailVerificationPage";
 
+patchSonnerToasts();
 function AppContent() {
   const { isAuthenticated, isAdmin, isCliente } = useAuth();
   const [publicView, setPublicView] = useState<"landing" | "login" | "register" | "verify">("landing");
@@ -113,12 +115,17 @@ export default function App() {
             <Toaster
               position="bottom-right"
               duration={8000}
-              closeButton
+              closeButton={false}
+              theme="dark"
+              richColors
+              offset={16}
               toastOptions={{
                 style: {
-                  fontSize: '0.95rem',
-                  lineHeight: '1.4',
-                  zIndex: 100000
+                  zIndex: 100000,
+                  background: 'transparent',
+                  border: 'none',
+                  boxShadow: 'none',
+                  padding: 0
                 },
               }}
             />
