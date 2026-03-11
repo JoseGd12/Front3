@@ -31,12 +31,13 @@ interface SyncOptions {
 
 // Mapeo de roles según la documentación y análisis de Firebase
 export enum AppRole {
-  ADMIN = 1,
+  SUPER_ADMIN = 1,
   BARBERO = 2,
   CLIENTE = 3,
   RECEPCIONISTA = 4,
   GERENTE = 5,
-  CAJERO = 6
+  CAJERO = 6,
+  ADMIN = 18
 }
 
 export class AuthSyncService {
@@ -375,6 +376,8 @@ export class AuthSyncService {
   // Convertir rolId a nombre de rol
   getRoleName(rolId: number | null): string {
     switch (rolId) {
+      case AppRole.SUPER_ADMIN:
+        return 'super_admin';
       case AppRole.ADMIN:
         return 'admin';
       case AppRole.BARBERO:
@@ -398,7 +401,11 @@ export class AuthSyncService {
     }
 
     switch (roleName.toLowerCase()) {
+      case 'super_admin':
+      case 'super administrador':
+        return AppRole.SUPER_ADMIN;
       case 'admin':
+      case 'administrador':
         return AppRole.ADMIN;
       case 'barbero':
         return AppRole.BARBERO;

@@ -190,8 +190,8 @@ export function VentasPage() {
 
   // Versión optimizada que recibe los Map ya construidos
   const enriquecerVentaConClienteOptimizado = (
-    venta: Venta, 
-    clientesById: Map<number, any>, 
+    venta: Venta,
+    clientesById: Map<number, any>,
     clientesByDocumento: Map<string, any>
   ): Venta => {
     if (!venta) return venta;
@@ -746,11 +746,11 @@ export function VentasPage() {
     const iva = Number((selectedVenta as any).iva || 0);
     const descuento = Number(selectedVenta.descuento || 0);
     const total = Number(selectedVenta.total || 0);
-    
+
     // El saldo usado es la diferencia entre lo que debería costar (Subtotal + IVA - Descuento) y lo que se cobró (Total)
     const shouldBe = subtotal + iva - descuento;
     const diff = shouldBe - total;
-    
+
     // Retornar la diferencia si es positiva (tolerancia por decimales)
     return diff > 0.01 ? diff : 0;
   }, [selectedVenta]);
@@ -1256,7 +1256,7 @@ export function VentasPage() {
       const subtotal = calcularSubtotal();
       const iva = calcularIva(subtotal);
       const descuento = calcularDescuento(subtotal);
-      
+
       // Calcular el monto usado de saldo a favor si aplica
       let montoSaldoUsado = 0;
       if (nuevaVenta.usarSaldoAFavor && nuevaVenta.clienteId) {
@@ -2135,31 +2135,29 @@ export function VentasPage() {
                                 </p>
                               </div>
                             </div>
-                            
+
                             {/* Checkbox para usar saldo - Estilo Mejorado */}
                             {(clientesDisponibles.find(c => c.id === Number(nuevaVenta.clienteId))?.saldoAFavor || 0) > 0 && (
-                              <div 
-                                className={`flex items-center space-x-3 px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                                  nuevaVenta.usarSaldoAFavor 
-                                    ? 'bg-blue-500/10 border-blue-500/30' 
-                                    : 'bg-gray-dark border-gray-medium/30 hover:bg-gray-dark/80'
-                                }`}
+                              <div
+                                className={`flex items-center space-x-3 px-4 py-2 rounded-lg border transition-all cursor-pointer ${nuevaVenta.usarSaldoAFavor
+                                  ? 'bg-blue-500/10 border-blue-500/30'
+                                  : 'bg-gray-dark border-gray-medium/30 hover:bg-gray-dark/80'
+                                  }`}
                                 onClick={() => setNuevaVenta({ ...nuevaVenta, usarSaldoAFavor: !nuevaVenta.usarSaldoAFavor })}
                               >
-                                <Checkbox 
-                                  id="usar-saldo" 
+                                <Checkbox
+                                  id="usar-saldo"
                                   checked={nuevaVenta.usarSaldoAFavor}
                                   onCheckedChange={(checked) => {
-                                      setNuevaVenta({ ...nuevaVenta, usarSaldoAFavor: checked === true });
+                                    setNuevaVenta({ ...nuevaVenta, usarSaldoAFavor: checked === true });
                                   }}
                                   className={`border-2 ${nuevaVenta.usarSaldoAFavor ? 'border-blue-400 bg-blue-500 text-white' : 'border-gray-400'}`}
                                   checkClassName="stroke-[3.5] w-3 h-3"
                                 />
-                                <label 
-                                  htmlFor="usar-saldo" 
-                                  className={`text-sm font-semibold leading-none cursor-pointer select-none ${
-                                    nuevaVenta.usarSaldoAFavor ? 'text-blue-400' : 'text-gray-light'
-                                  }`}
+                                <label
+                                  htmlFor="usar-saldo"
+                                  className={`text-sm font-semibold leading-none cursor-pointer select-none ${nuevaVenta.usarSaldoAFavor ? 'text-blue-400' : 'text-gray-light'
+                                    }`}
                                 >
                                   Usar saldo en esta venta
                                 </label>
@@ -2362,8 +2360,9 @@ export function VentasPage() {
                                           type="number"
                                           min={0}
                                           value={getTarjetaProductoInput(producto.id, 'precio', producto.precio)}
-                                          onChange={(e) => onTarjetaProductoInputChange(producto.id, 'precio', e.target.value)}
-                                          className="w-20 h-7 text-xs text-right tabular-nums elegante-input no-spin py-0 px-1.5"
+                                          disabled
+                                          readOnly
+                                          className="w-20 h-7 text-xs text-right tabular-nums elegante-input no-spin py-0 px-1.5 bg-gray-medium cursor-not-allowed"
                                         />
                                       </div>
 
@@ -2403,7 +2402,7 @@ export function VentasPage() {
                                 <User className="w-4 h-4 text-orange-primary" />
                                 Barbero {serviciosAgregados.length > 0 ? "*" : "(opcional)"}
                               </Label>
-                              <Select 
+                              <Select
                                 value={nuevaVenta.barberoId ? nuevaVenta.barberoId.toString() : VALOR_SIN_BARBERO}
                                 onValueChange={(value) => {
                                   if (value === VALOR_SIN_BARBERO) {
@@ -2727,14 +2726,14 @@ export function VentasPage() {
                               const saldoUsado = expSaldo > 0
                                 ? expSaldo
                                 : (() => {
-                                    const should = (Number(venta.subtotal) || 0) + (Number((venta as any).iva) || 0) - (Number(venta.descuento) || 0);
-                                    const diff = should - (Number(venta.total) || 0);
-                                    return diff > 0.01 ? diff : 0;
-                                  })();
+                                  const should = (Number(venta.subtotal) || 0) + (Number((venta as any).iva) || 0) - (Number(venta.descuento) || 0);
+                                  const diff = should - (Number(venta.total) || 0);
+                                  return diff > 0.01 ? diff : 0;
+                                })();
                               const listadoTotalAjustado = Math.max(0, (Number(venta.subtotal) || 0) - saldoUsado - sumDev);
                               return formatCurrency(listadoTotalAjustado);
                             })()}
-                          </span> 
+                          </span>
                         </td>
                         <td className="py-4 px-4 text-center">
                           <span className="text-gray-lighter">{formatDate(venta.fecha)}</span>
@@ -3116,7 +3115,7 @@ export function VentasPage() {
                     </div>
                   )}
 
-                  
+
 
                   <div className="bg-gray-darker p-4 rounded-xl border border-gray-dark space-y-3">
                     {/* Subtotal Original */}
@@ -3146,7 +3145,7 @@ export function VentasPage() {
                     {/* Total Ajustado - Grande y Naranja */}
                     <div className="flex justify-between items-end">
                       <span className="text-white-primary font-bold text-xl">Total Ajustado:</span>
-                       <span className="text-orange-primary font-bold  text-xl">
+                      <span className="text-orange-primary font-bold  text-xl">
                         ${formatCurrency(
                           Math.max(0, (selectedVenta.subtotal || 0) - (saldoUsadoDetalle || 0) - (totalMontoDevuelto || 0))
                         )}

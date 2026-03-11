@@ -275,7 +275,13 @@ export function Dashboard() {
   const filteredMenuSections = menuSections.map(section => {
     return {
       ...section,
-      items: section.items.filter(item => checkModuleAccess(item.label))
+      items: section.items.filter(item => {
+        // Filtro adicional: Solo el 'super_admin' puede ver el módulo de Roles
+        if (item.label === "Roles" && user?.role !== 'super_admin') {
+          return false;
+        }
+        return checkModuleAccess(item.label);
+      })
     };
   }).filter(section => section.items.length > 0);
 
@@ -449,7 +455,9 @@ export function Dashboard() {
               </div>
               <div className="flex flex-col">
                 <p className="text-sm font-semibold text-white-primary">{user?.name || "Usuario"}</p>
-                <p className="text-xs text-gray-lighter">Administrador</p>
+                <p className="text-xs text-gray-lighter">
+                  {user?.role === 'super_admin' ? 'Super Administrador' : user?.role === 'admin' ? 'Administrador' : user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Usuario'}
+                </p>
               </div>
             </div>
 
@@ -557,7 +565,7 @@ export function Dashboard() {
                     <h3 className="text-lg font-semibold text-white-primary">{user.name}</h3>
                     <p className="text-sm text-gray-lighter">{user.email || "No especificado"}</p>
                     <span className="inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium bg-orange-primary text-black-primary">
-                      Administrador
+                      {user?.role === 'super_admin' ? 'Super Administrador' : user?.role === 'admin' ? 'Administrador' : user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Usuario'}
                     </span>
                   </div>
                 </div>

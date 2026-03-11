@@ -3,7 +3,7 @@ import { authSyncService, AppRole } from '../../features/auth/services/authSyncS
 import { firebaseAuthService } from '../services/firebase';
 import { apiService } from '../services/api';
 
-export type UserRole = 'admin' | 'cliente' | 'barbero';
+export type UserRole = 'admin' | 'cliente' | 'barbero' | 'super_admin';
 
 export interface User {
   id: string;
@@ -63,12 +63,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ROLE_CACHE_KEY = 'barbershop_role_cache';
 
   const roleToRolId = (role?: UserRole): number => {
+    if (role === 'super_admin') return AppRole.SUPER_ADMIN;
     if (role === 'admin') return AppRole.ADMIN;
     if (role === 'barbero') return AppRole.BARBERO;
     return AppRole.CLIENTE;
   };
 
   const rolIdToRole = (rolId?: number | null): UserRole | undefined => {
+    if (rolId === AppRole.SUPER_ADMIN) return 'super_admin';
     if (rolId === AppRole.ADMIN) return 'admin';
     if (rolId === AppRole.BARBERO) return 'barbero';
     if (rolId === AppRole.CLIENTE || rolId === AppRole.CAJERO) return 'cliente';
@@ -111,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const txt = String(value || '').trim().toLowerCase();
     if (!txt) return undefined;
-    if (txt === 'admin' || txt === 'administrador' || txt === '1') return 'admin';
+    if (txt === 'super_admin' || txt === 'super administrador') return 'super_admin';
+    if (txt === 'admin' || txt === 'administrador' || txt === '18') return 'admin';
     if (txt === 'barbero' || txt === '2') return 'barbero';
     if (txt === 'cliente' || txt === '3' || txt === 'cajero' || txt === '6') return 'cliente';
     return undefined;
@@ -123,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!firebaseUser) return undefined;
       const tokenResult = await firebaseUser.getIdTokenResult();
       const claims = tokenResult?.claims || {};
+      if ((claims as any).super_admin === true) return 'super_admin';
       if ((claims as any).admin === true) return 'admin';
 
       const candidates = [
@@ -378,7 +382,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const usuarios = await apiService.getUsuarios();
       return usuarios
-        .filter(u => u.rolId === AppRole.CLIENTE || u.rolId === AppRole.ADMIN)
+        .filter(u => u.rolId === AppRole.CLIENTE || u.rolId === AppRole.ADMIN || u.rolId === AppRole.SUPER_ADMIN)
         .map(u => ({
           id: u.id.toString(),
           name: `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.correo,
@@ -489,7 +493,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firebaseProfile,
         selectedRolId,
         undefined,
-        { allowCreateIfMissing: false }
+        { allowCreateIfMissing: true }
       );
 
       if (result.success && result.user) {
@@ -582,7 +586,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const isAdmin = () => user?.role === 'admin';
+  const isAdmin = () => user?.role === 'admin' || user?.role === 'super_admin';
   const isCliente = () => user?.role === 'cliente';
 
   return (

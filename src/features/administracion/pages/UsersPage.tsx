@@ -341,7 +341,7 @@ export function UsersPage() {
     };
     try {
       if (editingUser?.id) {
-        apiService.deleteUsuarioFoto(editingUser.id).catch(() => {});
+        apiService.deleteUsuarioFoto(editingUser.id).catch(() => { });
       }
     } finally {
       doClear();
@@ -1008,14 +1008,14 @@ export function UsersPage() {
                       </div>
                     </div>
 
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          checked={createInFirebase}
-                          onChange={(e) => setCreateInFirebase(e.target.checked)}
-                        />
-                        <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
-                      </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={createInFirebase}
+                        onChange={(e) => setCreateInFirebase(e.target.checked)}
+                      />
+                      <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
+                    </div>
 
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
                       <button
@@ -1133,17 +1133,19 @@ export function UsersPage() {
                         </td>
                         <td className="text-right py-4 px-4">
                           <div className="flex justify-end gap-1">
-                            <button
-                              onClick={() => toggleUserStatus(user.id)}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title={user.status ? "Desactivar usuario" : "Activar usuario"}
-                            >
-                              {user.status ? (
-                                <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
-                              ) : (
-                                <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
-                              )}
-                            </button>
+                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin'].includes(user.rol?.toLowerCase() || '')) && (
+                              <button
+                                onClick={() => toggleUserStatus(user.id)}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title={user.status ? "Desactivar usuario" : "Activar usuario"}
+                              >
+                                {user.status ? (
+                                  <ToggleRight className="w-4 h-4 text-gray-lightest group-hover:text-green-400" />
+                                ) : (
+                                  <ToggleLeft className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                                )}
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 setSelectedUser(user);
@@ -1154,13 +1156,15 @@ export function UsersPage() {
                             >
                               <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
                             </button>
-                            <button
-                              onClick={() => handleEditUser(user)}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title="Editar usuario"
-                            >
-                              <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
-                            </button>
+                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin'].includes(user.rol?.toLowerCase() || '')) && (
+                              <button
+                                onClick={() => handleEditUser(user)}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title="Editar usuario"
+                              >
+                                <Edit className="w-4 h-4 text-gray-lightest group-hover:text-blue-400" />
+                              </button>
+                            )}
                             <button
                               onClick={() => handleSendPasswordSetup(user.correo)}
                               className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -1168,13 +1172,15 @@ export function UsersPage() {
                             >
                               <KeyRound className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteUser(user.id)}
-                              className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
-                              title="Eliminar usuario"
-                            >
-                              <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
-                            </button>
+                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin', 'administrador', 'admin'].includes(user.rol?.toLowerCase() || '')) && (
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
+                                title="Eliminar usuario"
+                              >
+                                <Trash2 className="w-4 h-4 text-gray-lightest group-hover:text-red-400" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

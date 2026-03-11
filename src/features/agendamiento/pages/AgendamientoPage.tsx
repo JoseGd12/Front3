@@ -205,18 +205,30 @@ export function AgendamientoPage() {
     }
   };
 
-  // Verifica disponibilidad del barbero en la fecha/hora/duración seleccionadas y horario laboral
-  const isBarberoDisponible = (barberoId: number): boolean => {
-    if (!nuevaCita.fecha || !nuevaCita.hora) return true;
+  const validarDisponibilidadBarbero = (barberoId: number): string | null => {
+    if (!nuevaCita.fecha || !nuevaCita.hora) return null;
+
+    // Validar fecha anterior al día actual
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (nuevaCita.fecha < todayStr) {
+      return "No se permite agendar citas en días anteriores al día actual.";
+    }
+
     const durNueva = Number(nuevaCita.duracion || 60);
     const [hhStr, mmStr = '0'] = String(nuevaCita.hora).split(':');
     const startNueva = (parseInt(hhStr || '0', 10) * 60) + (parseInt(mmStr || '0', 10));
     const endNueva = startNueva + durNueva;
 
-    const fechaObj = new Date(`${nuevaCita.fecha}T00:00:00`);
+    // Obtener las citas del día para este barbero, para considerarlo en el error
+    const fechaObj = new Date(`${nuevaCita.fecha}T12:00:00`); // 12:00 pm para evitar desfases
     const dayIndex = fechaObj.getDay(); // 0=Domingo..6=Sábado
-    const diaStr = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][dayIndex];
+    const diaStr = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][dayIndex];
     const horariosBarbero = horariosList.filter((h: any) => Number(h.barberoId) === Number(barberoId) && String(h.dia) === diaStr && h.estado === true);
+
+    if (horariosBarbero.length === 0) {
+      return `El barbero no trabaja los días ${diaStr}.`;
+    }
+
     const dentroHorario = horariosBarbero.some((h: any) => {
       const [hIniH, hIniM] = String(h.horaInicio || '00:00').split(':').map((x: string) => parseInt(x || '0', 10));
       const [hFinH, hFinM] = String(h.horaFin || '23:59').split(':').map((x: string) => parseInt(x || '0', 10));
@@ -224,9 +236,14 @@ export function AgendamientoPage() {
       const endH = hFinH * 60 + hFinM;
       return startNueva >= startH && endNueva <= endH;
     });
-    if (!dentroHorario) return false;
 
-    return !citas.some((cita: any) => {
+    if (!dentroHorario) {
+      // Retornar las horas disponibles para decirle al usuario
+      const horasDisponiblesStr = horariosBarbero.map((h: any) => `${h.horaInicio} a ${h.horaFin}`).join(", ");
+      return `La hora seleccionada está fuera de su horario laboral. Las horas disponibles de este barbero son: ${horasDisponiblesStr}.`;
+    }
+
+    const solapa = citas.find((cita: any) => {
       if (cita.fecha !== nuevaCita.fecha) return false;
       if (Number(cita.barberoId) !== Number(barberoId)) return false;
       // Ignorar la propia cita cuando estamos editando
@@ -241,6 +258,12 @@ export function AgendamientoPage() {
       // Se solapan si inician antes de que termine la otra y terminan después de que empiece
       return startNueva < endExist && startExist < endNueva;
     });
+
+    if (solapa) {
+      return `El barbero ya tiene otra cita ocupada de ${solapa.hora} a ${solapa.hora} (+${solapa.duracion}min). Por favor selecciona otro horario.`;
+    }
+
+    return null; // Todo correcto
   };
 
   const getEstadoInfo = (estado: string) => {
@@ -321,8 +344,9 @@ export function AgendamientoPage() {
     }
     setShowFormErrors(false);
 
-    if (!isBarberoDisponible(nuevaCita.barberoId)) {
-      error("Barbero no disponible", "La hora seleccionada está fuera del horario o se solapa con otra cita.");
+    const errorDisponibilidad = validarDisponibilidadBarbero(nuevaCita.barberoId);
+    if (errorDisponibilidad) {
+      error("No disponible", errorDisponibilidad);
       return;
     }
 
@@ -399,8 +423,9 @@ export function AgendamientoPage() {
     }
     setShowFormErrors(false);
 
-    if (!isBarberoDisponible(nuevaCita.barberoId)) {
-      error("Barbero no disponible", "La hora seleccionada está fuera del horario o se solapa con otra cita.");
+    const errorDisponibilidad = validarDisponibilidadBarbero(nuevaCita.barberoId);
+    if (errorDisponibilidad) {
+      error("No disponible", errorDisponibilidad);
       return;
     }
 
@@ -625,62 +650,76 @@ export function AgendamientoPage() {
 
               {/* Grid de horarios */}
               <div className="relative">
-                {horasDelDia.map((hora) => (
-                  <div key={hora} className="grid grid-cols-8 gap-1 h-16 border-b border-gray-dark">
-                    <div className="flex items-center justify-center text-xs text-gray-light font-medium">
-                      {formatHora12(hora)}
-                    </div>
-                    {diasSemana.map((dia) => {
-                      const citasEnSlot = getCitasEnSlot(dia, hora);
+                {(() => {
+                  const weekDays = getCurrentWeekDays();
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  return horasDelDia.map((hora) => (
+                    <div key={hora} className="grid grid-cols-8 gap-1 h-16 border-b border-gray-dark">
+                      <div className="flex items-center justify-center text-xs text-gray-light font-medium">
+                        {formatHora12(hora)}
+                      </div>
+                      {diasSemana.map((dia) => {
+                        const citasEnSlot = getCitasEnSlot(dia, hora);
+                        const dayInfo = weekDays.find(d => d.dia === dia);
+                        const isPastDay = dayInfo ? dayInfo.fechaCompleta < todayStr : false;
 
-                      return (
-                        <div
-                          key={`${dia}-${hora}`}
-                          className="relative rounded border transition-all duration-200 bg-gray-darker border-gray-dark hover:bg-gray-dark hover:border-orange-primary/50 cursor-pointer group"
-                          onClick={() => handleSlotClick(dia, hora)}
-                          title={`Gestionar citas de ${dia} a las ${hora}:00`}
-                        >
-                          {/* Indicador de citas */}
-                          {citasEnSlot.length > 0 && (
-                            <div className="absolute top-1 right-1 bg-orange-primary text-black-primary text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
-                              {citasEnSlot.length}
-                            </div>
-                          )}
-
-                          {/* Overlay hover */}
-                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <div className="text-center">
-                              <MoreHorizontal className="w-6 h-6 text-orange-primary mx-auto mb-1" />
-                              <span className="text-xs text-orange-primary">Gestionar</span>
-                            </div>
-                          </div>
-
-                          {/* Vista previa de citas */}
-                          <div className="p-1 space-y-1 max-h-14 overflow-hidden">
-                            {citasEnSlot.slice(0, 2).map((cita) => (
-                              <div
-                                key={cita.id}
-                                className="text-xs p-1 rounded truncate"
-                                style={{
-                                  backgroundColor: getCitaColor(cita.estado) + '40',
-                                  color: getCitaColor(cita.estado),
-                                  border: `1px solid ${getCitaColor(cita.estado)}`
-                                }}
-                              >
-                                {cita.clienteNombre}
-                              </div>
-                            ))}
-                            {citasEnSlot.length > 2 && (
-                              <div className="text-xs text-gray-light text-center">
-                                +{citasEnSlot.length - 2} más
+                        return (
+                          <div
+                            key={`${dia}-${hora}`}
+                            className={`relative rounded border transition-all duration-200 ${isPastDay
+                                ? "bg-gray-darkest border-gray-dark/40 cursor-not-allowed opacity-60"
+                                : "bg-gray-darker border-gray-dark hover:bg-gray-dark hover:border-orange-primary/50 cursor-pointer group"
+                              }`}
+                            onClick={() => {
+                              if (!isPastDay) handleSlotClick(dia, hora);
+                            }}
+                            title={isPastDay ? "Fecha pasada" : `Gestionar citas de ${dia} a las ${hora}:00`}
+                          >
+                            {/* Indicador de citas */}
+                            {citasEnSlot.length > 0 && (
+                              <div className={`absolute top-1 right-1 text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold ${isPastDay ? "bg-gray-dark text-gray-light" : "bg-orange-primary text-black-primary"
+                                }`}>
+                                {citasEnSlot.length}
                               </div>
                             )}
+
+                            {/* Overlay hover */}
+                            {!isPastDay && (
+                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                <div className="text-center">
+                                  <MoreHorizontal className="w-6 h-6 text-orange-primary mx-auto mb-1" />
+                                  <span className="text-xs text-orange-primary">Gestionar</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Vista previa de citas */}
+                            <div className="p-1 space-y-1 max-h-14 overflow-hidden">
+                              {citasEnSlot.slice(0, 2).map((cita) => (
+                                <div
+                                  key={cita.id}
+                                  className="text-xs p-1 rounded truncate"
+                                  style={{
+                                    backgroundColor: getCitaColor(cita.estado) + (isPastDay ? '20' : '40'),
+                                    color: getCitaColor(cita.estado),
+                                    border: `1px solid ${getCitaColor(cita.estado)}`
+                                  }}
+                                >
+                                  {cita.clienteNombre}
+                                </div>
+                              ))}
+                              {citasEnSlot.length > 2 && (
+                                <div className="text-xs text-gray-light text-center">
+                                  +{citasEnSlot.length - 2} más
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           </div>
@@ -1006,7 +1045,6 @@ export function AgendamientoPage() {
                           <div className="absolute z-50 w-full mt-1 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-52 overflow-y-auto">
                             {barberosList
                               .filter(b => `${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase()))
-                              .filter(b => isBarberoDisponible(b.id))
                               .map(barbero => (
                                 <div
                                   key={barbero.id}
@@ -1030,10 +1068,9 @@ export function AgendamientoPage() {
                             }
                             {barberosList.filter(b =>
                               (`${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase()))
-                              && isBarberoDisponible(b.id)
                             ).length === 0 && (
-                              <div className="p-3 text-center text-gray-lightest text-sm italic">No se encontraron barberos</div>
-                            )}
+                                <div className="p-3 text-center text-gray-lightest text-sm italic">No se encontraron barberos</div>
+                              )}
                           </div>
                         )}
                       </div>
@@ -1052,6 +1089,7 @@ export function AgendamientoPage() {
                       <Label className="text-white-primary  mb-2">Fecha*</Label>
                       <Input
                         type="date"
+                        min={new Date().toISOString().split('T')[0]}
                         value={nuevaCita.fecha}
                         onChange={(e) => setNuevaCita({ ...nuevaCita, fecha: e.target.value })}
                         className="elegante-input"
@@ -1077,11 +1115,14 @@ export function AgendamientoPage() {
                       <Input
                         type="number"
                         value={nuevaCita.duracion}
+                        readOnly
+                        aria-readonly="true"
                         onChange={(e) => setNuevaCita({ ...nuevaCita, duracion: parseInt(e.target.value) })}
-                        className="elegante-input"
+                        className="elegante-input opacity-60 cursor-not-allowed"
                         step="15"
                         min="15"
                         max="180"
+                        title="La duración no se puede editar desde el agendamiento."
                       />
                     </div>
                   </div>
@@ -1095,9 +1136,12 @@ export function AgendamientoPage() {
                     <Input
                       type="number"
                       value={nuevaCita.precio}
+                      readOnly
+                      aria-readonly="true"
                       onChange={(e) => setNuevaCita({ ...nuevaCita, precio: parseFloat(e.target.value) })}
-                      className="elegante-input"
+                      className="elegante-input opacity-60 cursor-not-allowed"
                       step="1000"
+                      title="El precio no se puede editar desde el agendamiento."
                     />
                   </div>
                 </div>
@@ -1188,13 +1232,13 @@ export function AgendamientoPage() {
                   >
                     Volver a Lista
                   </button>
-                      <button
-                        onClick={() => handleChangeEstado(selectedCita.id, 'Completada')}
-                        className="elegante-button-primary"
-                        title="Marcar como Completada y generar venta"
-                      >
-                        Completar Cita
-                      </button>
+                  <button
+                    onClick={() => handleChangeEstado(selectedCita.id, 'Completada')}
+                    className="elegante-button-primary"
+                    title="Marcar como Completada y generar venta"
+                  >
+                    Completar Cita
+                  </button>
                   <button
                     onClick={() => handleEditCita(selectedCita)}
                     className="elegante-button-primary"

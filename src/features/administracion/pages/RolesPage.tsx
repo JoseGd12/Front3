@@ -148,9 +148,10 @@ export function RolesPage() {
         if (!prev) return prev;
         const moduloInfo = modulosProyecto.find(m => m.id === moduloId);
         const isRolesModule = !!moduloInfo && String(moduloInfo.nombre || '').toLowerCase().includes('rol');
-        const isAdminRole = String(prev.nombre || '').toLowerCase().includes('administrador');
-        if (isAdminRole && isRolesModule && prev.modulos.includes(moduloId)) {
-          showError('Módulo obligatorio', 'El módulo "Roles" no puede ser removido del rol Administrador.');
+        const roleName = String(prev.nombre || '').toLowerCase();
+        const isSuperAdminOrGerente = ['super administrador', 'gerente', 'super_admin'].includes(roleName);
+        if (isSuperAdminOrGerente && isRolesModule && prev.modulos.includes(moduloId)) {
+          showError('Módulo obligatorio', 'El módulo "Roles" no puede ser removido de Super Administrador o Gerente.');
           return prev;
         }
         const newModulos = prev.modulos.includes(moduloId)
@@ -242,8 +243,9 @@ export function RolesPage() {
     if (isEditing) {
       setEditingRole((prev) => {
         if (!prev) return prev!;
-        const isAdminRole = String(prev.nombre || '').toLowerCase().includes('administrador');
-        if (!isAdminRole) return { ...prev!, modulos: [] };
+        const roleName = String(prev.nombre || '').toLowerCase();
+        const isSuperAdminOrGerente = ['super administrador', 'gerente', 'super_admin'].includes(roleName);
+        if (!isSuperAdminOrGerente) return { ...prev!, modulos: [] };
         const rolesModulo = modulosProyecto.find(m => String(m.nombre || '').toLowerCase().includes('rol'));
         const keepId = rolesModulo ? rolesModulo.id : undefined;
         const base = keepId ? [keepId] : [];
@@ -252,7 +254,7 @@ export function RolesPage() {
     } else {
       setNuevoRol((prev) => ({ ...prev, modulos: [] }));
     }
-  }, []);
+  }, [modulosProyecto]);
 
   // Función para crear nuevo rol
   const handleCreateRole = useCallback(async () => {

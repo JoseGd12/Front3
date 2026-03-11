@@ -755,6 +755,31 @@ export function ClientesPage() {
       return;
     }
 
+    // Verificar si el cliente está relacionado con un Super Administrador o Gerente
+    const docCliente = String(cliente.numeroDocumento || '').trim();
+    const emailCliente = String(cliente.email || '').trim().toLowerCase();
+
+    const isRelatedToSuperAdmin = usuariosAll.some((u: any) => {
+      const docUsuario = String(u.documento || '').trim();
+      const emailUsuario = String(u.correo || '').trim().toLowerCase();
+
+      const matchDoc = docCliente !== '' && docUsuario === docCliente;
+      const matchEmail = emailCliente !== '' && emailUsuario === emailCliente;
+
+      const rolName = String(u.rol?.nombre || u.rol || '').toLowerCase();
+      const isSuperAdminOrGerente =
+        u.rolId === 1 ||
+        u.rolId === 5 ||
+        ['super administrador', 'gerente', 'super_admin'].includes(rolName);
+
+      return (matchDoc || matchEmail) && isSuperAdminOrGerente;
+    });
+
+    if (isRelatedToSuperAdmin) {
+      error('Acción denegada', 'Este cliente está vinculado a una cuenta de Super Administrador o Gerente y no puede ser eliminado.');
+      return;
+    }
+
     confirmDeleteAction(
       "confirmar",
       async () => {

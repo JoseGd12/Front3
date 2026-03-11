@@ -60,8 +60,8 @@ const getVentas = async (): Promise<Venta[]> => {
       v.cliente?.usuario
         ? `${v.cliente.usuario.nombre ?? ""} ${v.cliente.usuario.apellido ?? ""}`.trim()
         : (v.Cliente?.Usuario
-            ? `${v.Cliente.Usuario.Nombre ?? ""} ${v.Cliente.Usuario.Apellido ?? ""}`.trim()
-            : null),
+          ? `${v.Cliente.Usuario.Nombre ?? ""} ${v.Cliente.Usuario.Apellido ?? ""}`.trim()
+          : null),
     productosDetalle: [],
     serviciosDetalle: []
   }));
