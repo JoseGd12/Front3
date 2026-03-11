@@ -1527,14 +1527,60 @@ export function VentasPage() {
     );
   };
 
-  const generateVentaPDF = (venta: any) => {
-    // Crear el contenido HTML del PDF con la misma estructura del modal de detalle
+  const generateVentaPDF = async (venta: any) => {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Generando documento...</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #333; }
+            .loading { text-align: center; margin-top: 40px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="loading">Generando PDF de la venta ${venta?.id || ''}...</div>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+
+    let ventaData = venta;
+    try {
+      const noTieneDetalles =
+        !(Array.isArray(venta?.productosDetalle) && venta.productosDetalle.length > 0) &&
+        !(Array.isArray(venta?.serviciosDetalle) && venta.serviciosDetalle.length > 0);
+      if (noTieneDetalles && Number(venta?.id) > 0) {
+        const ventaDetallada = await ventaService.getVentaById(Number(venta.id));
+        if (ventaDetallada) {
+          ventaData = {
+            ...venta,
+            ...ventaDetallada,
+            productosDetalle:
+              (ventaDetallada.productosDetalle && ventaDetallada.productosDetalle.length > 0)
+                ? ventaDetallada.productosDetalle
+                : (venta.productosDetalle || []),
+            serviciosDetalle:
+              (ventaDetallada.serviciosDetalle && ventaDetallada.serviciosDetalle.length > 0)
+                ? ventaDetallada.serviciosDetalle
+                : (venta.serviciosDetalle || []),
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('No se pudieron cargar los detalles completos de la venta para el PDF:', e);
+    }
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Detalle de Venta ${venta.id}</title>
+        <title>Detalle de Venta ${ventaData.id}</title>
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -1713,7 +1759,7 @@ export function VentasPage() {
       <body>
         <div class="header">
           <div class="company-name">MANITO BARBERSHOP</div>
-          <div class="invoice-title">Detalles de Venta ${venta.id}</div>
+          <div class="invoice-title">Detalles de Venta ${ventaData.id}</div>
           <div class="invoice-subtitle">Información completa de la transacción</div>
         </div>
 
@@ -1722,19 +1768,19 @@ export function VentasPage() {
           <div class="section-grid">
             <div class="field">
               <div class="field-label">📋 Número de Venta</div>
-              <div class="field-value">${venta.id}</div>
+              <div class="field-value">${ventaData.id}</div>
             </div>
             <div class="field">
               <div class="field-label">📅 Fecha de Registro</div>
-              <div class="field-value">${formatDate(venta.fecha)}</div>
+              <div class="field-value">${formatDate(ventaData.fecha)}</div>
             </div>
             <div class="field">
               <div class="field-label">👤 Cliente</div>
-              <div class="field-value">${normalizeCliente(venta.cliente)}</div>
+              <div class="field-value">${normalizeCliente(ventaData.cliente)}</div>
             </div>
             <div class="field">
               <div class="field-label">💳 Método de Pago</div>
-              <div class="field-value">${venta.metodoPago}</div>
+              <div class="field-value">${ventaData.metodoPago}</div>
             </div>
           </div>
         </div>
@@ -1743,8 +1789,8 @@ export function VentasPage() {
         <div class="section">
           <div class="section-title">🛍️ Productos</div>
           <div class="products-section">
-            ${venta.productosDetalle && venta.productosDetalle.length > 0 ?
-        venta.productosDetalle.map((producto: any) => `
+            ${ventaData.productosDetalle && ventaData.productosDetalle.length > 0 ?
+        ventaData.productosDetalle.map((producto: any) => `
                 <div class="item-card">
                   <div class="item-details">
                     <div class="item-name">${producto.nombre}</div>
@@ -1762,8 +1808,8 @@ export function VentasPage() {
         <div class="section">
           <div class="section-title">✂️ Servicios</div>
           <div class="services-section">
-            ${venta.serviciosDetalle && venta.serviciosDetalle.length > 0 ?
-        venta.serviciosDetalle.map((servicio: any) => `
+            ${ventaData.serviciosDetalle && ventaData.serviciosDetalle.length > 0 ?
+        ventaData.serviciosDetalle.map((servicio: any) => `
                 <div class="item-card">
                   <div class="item-details">
                     <div class="item-name">${servicio.nombre}</div>
@@ -1783,11 +1829,13 @@ export function VentasPage() {
           <div class="section-grid">
             <div class="field">
               <div class="field-label">📈 IVA (%)</div>
-              <div class="field-value">19</div>
+              <div class="field-value">${(Number(ventaData.subtotal) > 0 && Number(ventaData.iva) >= 0)
+                ? Math.round((Number(ventaData.iva) / Number(ventaData.subtotal)) * 100)
+                : 0}</div>
             </div>
             <div class="field">
               <div class="field-label">📉 Descuento (%)</div>
-              <div class="field-value">${venta.descuento > 0 ? Math.round((venta.descuento / venta.subtotal) * 100) : "0"}</div>
+              <div class="field-value">${ventaData.descuento > 0 ? Math.round((ventaData.descuento / ventaData.subtotal) * 100) : "0"}</div>
             </div>
           </div>
         </div>
@@ -1798,21 +1846,21 @@ export function VentasPage() {
           <div class="totals-section">
             <div class="total-row">
               <span class="total-label">Subtotal:</span>
-              <span class="total-value">${formatCurrency(venta.subtotal)}</span>
+              <span class="total-value">${formatCurrency(ventaData.subtotal)}</span>
             </div>
             <div class="total-row">
               <span class="total-label">IVA (19%):</span>
-              <span class="total-value">${formatCurrency(venta.iva)}</span>
+              <span class="total-value">${formatCurrency(ventaData.iva)}</span>
             </div>
-            ${venta.descuento > 0 ? `
+            ${ventaData.descuento > 0 ? `
             <div class="total-row">
               <span class="total-label">Descuento:</span>
-              <span class="total-value" style="color: #DC2626;">-${formatCurrency(venta.descuento)}</span>
+              <span class="total-value" style="color: #DC2626;">-${formatCurrency(ventaData.descuento)}</span>
             </div>
             ` : ''}
             <div class="total-row final-total">
               <span class="total-label">Total:</span>
-              <span class="total-value">${formatCurrency(venta.total)}</span>
+              <span class="total-value">${formatCurrency(ventaData.total)}</span>
             </div>
           </div>
         </div>
@@ -1823,14 +1871,14 @@ export function VentasPage() {
           <div class="info-grid">
             <div>
               <div class="field-label">Barbero asignado:</div>
-              <div style="color: #333; font-weight: 500; margin-top: 5px;">${normalizeBarbero(venta.barbero)}</div>
+              <div style="color: #333; font-weight: 500; margin-top: 5px;">${normalizeBarbero(ventaData.barbero)}</div>
               <div class="field-label" style="margin-top: 8px;">ID Barbero</div>
-              <div class="field-value">${String((venta as any).barberoId ?? '')}</div>
+              <div class="field-value">${String((ventaData as any).barberoId ?? '')}</div>
             </div>
             <div>
               <div class="field-label">Estado de la venta:</div>
               <div style="margin-top: 8px;">
-                <span class="status-badge">${venta.estado}</span>
+                <span class="status-badge">${ventaData.estado}</span>
               </div>
             </div>
           </div>
@@ -1853,8 +1901,6 @@ export function VentasPage() {
       </html>
     `;
 
-    // Crear y abrir una nueva ventana con el contenido del PDF
-    const printWindow = window.open('', '_blank');
     if (printWindow) {
       printWindow.document.write(htmlContent);
       printWindow.document.close();
@@ -1867,7 +1913,7 @@ export function VentasPage() {
       };
     }
 
-    created("PDF generado ✔️", `La factura de la venta ${venta.id} ha sido generada y está lista para imprimir.`);
+    created("PDF generado ✔️", `La factura de la venta ${ventaData.id} ha sido generada y está lista para imprimir.`);
   };
 
   const totalVentas = ventas.reduce((sum, venta) => sum + venta.total, 0);
