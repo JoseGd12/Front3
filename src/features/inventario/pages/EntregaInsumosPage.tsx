@@ -518,7 +518,7 @@ export function EntregaInsumosPage() {
     const cantidadFinal = cantidad > stockDisponible ? stockDisponible : cantidad;
 
     if (cantidadFinal !== cantidad) {
-      toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+      error('Stock insuficiente', `No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
       setTarjetaInputsEntrega((prev) => ({
         ...prev,
         [insumoId]: { ...prev[insumoId], cantidad: String(cantidadFinal) }
@@ -571,7 +571,7 @@ export function EntregaInsumosPage() {
     const insumo = insumos.find(i => Number(i.id) === selectedId);
     console.log('🧪 Producto seleccionado encontrado:', { selectedId, insumo });
     if (!insumo) {
-      toast.error('Producto no encontrado');
+      error('Producto no encontrado', 'El producto seleccionado no existe o no está disponible.');
       console.error('❌ Producto no encontrado. insumoSeleccionado=', insumoSeleccionado, 'insumos=', insumos);
       return;
     }
@@ -579,7 +579,7 @@ export function EntregaInsumosPage() {
     // Verificar stock disponible (usar stock de insumos si está disponible)
     const stockDisponible = insumo.stockInsumos ?? insumo.stock;
     if (cantidadInsumo > stockDisponible) {
-      toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+      error('Stock insuficiente', `No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
       console.warn('🟡 No se agregó: stock insuficiente', {
         id: insumo.id,
         nombre: insumo.nombre,
@@ -597,7 +597,7 @@ export function EntregaInsumosPage() {
       const nuevaCantidad = existeInsumo.cantidad + cantidadInsumo;
       const stockDisponible = insumo.stockInsumos ?? insumo.stock;
       if (nuevaCantidad > stockDisponible) {
-        toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+        error('Stock insuficiente', `No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
         return;
       }
 
@@ -1643,13 +1643,7 @@ export function EntregaInsumosPage() {
                           <div className="mt-1">
                             {(nuevaEntrega.insumos || []).length === 0 ? (
                               <p className="text-gray-lightest">No hay productos agregados</p>
-                            ) : (
-                              <p className="text-gray-lightest text-sm leading-relaxed">
-                                {(nuevaEntrega.insumos || [])
-                                  .map((i) => `${i.nombre} (${i.cantidad})`)
-                                  .join(', ')}
-                              </p>
-                            )}
+                            ) : null}
                           </div>
                           <div className="pt-3 mt-3 border-t border-gray-medium flex items-center justify-between">
                             <span className="text-gray-lightest">Total productos</span>
