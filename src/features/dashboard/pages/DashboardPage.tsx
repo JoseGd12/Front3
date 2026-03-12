@@ -1672,7 +1672,7 @@ export function DashboardPage() {
                 <div>
                   <h3 className="text-xl font-bold text-white-primary mb-2">Ventas recientes</h3>
                   <p className="text-gray-lightest text-sm">
-                    Ingresos y unidades por {tipoRecientes === "productos" ? "producto" : "servicios/paquetes"} en las últimas ventas.
+                    Ingresos y unidades por {tipoRecientes === "productos" ? "producto" : "servicios"} en las últimas ventas.
                   </p>
                 </div>
                 <div className="flex items-center rounded-full border border-gray-dark overflow-hidden">
@@ -1685,7 +1685,7 @@ export function DashboardPage() {
                         : "text-gray-lightest hover:bg-white/5"
                         }`}
                     >
-                      {t === "productos" ? "Productos" : "Servicios/Paquetes"}
+                      {t === "productos" ? "Productos" : "Servicios"}
                     </button>
                   ))}
                 </div>
