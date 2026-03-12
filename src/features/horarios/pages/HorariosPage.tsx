@@ -216,7 +216,17 @@ export function HorariosPage() {
       return;
     }
 
-    const nuevosBloques = diasSeleccionados.map(dia => ({
+    // Filtrar días que ya están en el horario para evitar duplicados
+    const diasSinDuplicados = diasSeleccionados.filter(dia => 
+      !nuevoHorario.bloques.some(b => b.dia === dia)
+    );
+
+    if (diasSinDuplicados.length === 0) {
+      error("Días duplicados", "Los días seleccionados ya tienen un bloque de horario asignado.");
+      return;
+    }
+
+    const nuevosBloques = diasSinDuplicados.map(dia => ({
       ...nuevoBloque,
       dia,
       estado: true
@@ -775,10 +785,12 @@ export function HorariosPage() {
                       <div className="flex flex-wrap gap-2">
                         {diasSemana.map((dia) => {
                           const isSelected = diasSeleccionados.includes(dia);
+                          const isAlreadyAdded = nuevoHorario.bloques.some(b => b.dia === dia);
                           return (
                             <button
                               key={dia}
                               type="button"
+                              disabled={isAlreadyAdded}
                               onClick={() => {
                                 if (isSelected) {
                                   setDiasSeleccionados(diasSeleccionados.filter((d) => d !== dia));
@@ -786,12 +798,16 @@ export function HorariosPage() {
                                   setDiasSeleccionados([...diasSeleccionados, dia]);
                                 }
                               }}
-                              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${isSelected
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border flex items-center gap-1 ${isSelected
                                 ? "bg-orange-primary text-black-primary border-orange-primary shadow-[0_0_10px_rgba(216,176,129,0.3)]"
-                                : "bg-gray-dark hover:bg-gray-medium text-gray-lightest border-gray-medium"
+                                : isAlreadyAdded
+                                  ? "bg-green-600/10 text-green-400 border-green-500/30 cursor-not-allowed opacity-80"
+                                  : "bg-gray-dark hover:bg-gray-medium text-gray-lightest border-gray-medium"
                                 }`}
+                              title={isAlreadyAdded ? "Este día ya tiene un bloque asignado" : ""}
                             >
                               {dia}
+                              {isAlreadyAdded && <CheckCircle className="w-3 h-3" />}
                             </button>
                           );
                         })}

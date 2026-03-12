@@ -54,6 +54,7 @@ const getFullName = (nombre?: string, apellido?: string) => {
 };
 
 import { useAuth } from "../../../shared/contexts/AuthContext"; // Import newly added
+import manitoLogo from "../../../assets/Manito.jpeg";
 
 export function EntregaInsumosPage() {
   const { user } = useAuth(); // Get user from context
@@ -887,286 +888,191 @@ export function EntregaInsumosPage() {
   };
 
   // Generar reporte PDF individual por entrega
-  const generateIndividualEntregaPDF = (entrega: EntregaInsumo) => {
-    const barberoNombre = (entrega as any).barbero
-      ? String((entrega as any).barbero)
-      : getBarberoNombreById((entrega as any).barberoId);
-    const reportContent = `
-      <!DOCTYPE html>
-      <html lang="es">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Entrega ${entrega.id} - EDWINS BARBER</title>
-        <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          
-          body {
-            font-family: 'Inter', sans-serif;
-            background: #ffffff;
-            color: #333;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-          }
-          
-          .header {
-            background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
-            color: #d8b081;
-            padding: 30px;
-            text-align: center;
-            margin-bottom: 30px;
-            border-radius: 12px;
-          }
-          
-          .logo {
-            font-size: 28px;
-            font-weight: bold;
-            margin-bottom: 8px;
-            color: #d8b081;
-          }
-          
-          .subtitle {
-            font-size: 18px;
-            color: #aaaaaa;
-            margin-bottom: 15px;
-          }
-          
-          .entrega-id {
-            font-size: 16px;
-            background: #d8b081;
-            color: #000000;
-            padding: 8px 16px;
-            border-radius: 20px;
-            display: inline-block;
-            font-weight: bold;
-          }
-          
-          .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 0 20px;
-          }
-          
-          .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-          }
-          
-          .info-card {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #d8b081;
-          }
-          
-          .info-label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-            font-weight: bold;
-          }
-          
-          .info-value {
-            font-size: 16px;
-            color: #000;
-            font-weight: bold;
-          }
-          
-          .section {
-            margin-bottom: 40px;
-          }
-          
-          .section-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #000;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #d8b081;
-          }
-          
-          .table {
-            width: 100%;
-            border-collapse: collapse;
-            background: #fff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-          }
-          
-          .table th {
-            background: #1a1a1a;
-            color: #d8b081;
-            padding: 12px;
-            text-align: left;
-            font-weight: bold;
-            font-size: 14px;
-          }
-          
-          .table td {
-            padding: 12px;
-            border-bottom: 1px solid #eee;
-            font-size: 13px;
-          }
-          
-          .table tr:nth-child(even) {
-            background: #f8f9fa;
-          }
-          
-          .highlight {
-            color: #d8b081;
-            font-weight: bold;
-          }
-          
-          .total-box {
-            background: #d8b081;
-            color: #000;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            margin: 20px 0;
-          }
-          
-          .total-label {
-            font-size: 14px;
-            margin-bottom: 5px;
-          }
-          
-          .total-value {
-            font-size: 24px;
-            font-weight: bold;
-          }
-          
-          .footer {
-            background: #1a1a1a;
-            color: #aaa;
-            text-align: center;
-            padding: 20px;
-            margin-top: 40px;
-            font-size: 12px;
-            border-radius: 8px;
-          }
-          
-          .status-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            display: inline-block;
-            ${isCompletadaEstado(entrega.estado || '') ? 'background: #10B981; color: white;' : 'background: #EF4444; color: white;'}
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="logo">✂️ EDWINS BARBER</div>
-          <div class="subtitle">Reporte de Entrega Individual</div>
-          <div class="entrega-id">${entrega.id}</div>
-        </div>
-        
-        <div class="container">
-          <!-- Información General -->
-          <div class="info-grid">
-            <div class="info-card">
-              <div class="info-label">Barbero</div>
-              <div class="info-value">${barberoNombre}</div>
-            </div>
-            <div class="info-card">
-              <div class="info-label">Fecha y Hora</div>
-              <div class="info-value">${entrega.fecha} - ${entrega.hora}</div>
-            </div>
-            <div class="info-card">
-              <div class="info-label">Estado</div>
-              <div class="info-value">
-                <span class="status-badge">${getEstadoDisplay(entrega.estado || '')}</span>
-              </div>
-            </div>
-            <div class="info-card">
-              <div class="info-label">Responsable</div>
-              <div class="info-value">${entrega.responsable}</div>
-            </div>
-          </div>
+  const generateIndividualEntregaPDF = async (entrega: EntregaInsumo) => {
+    try {
+      toast.loading("Generando comprobante PDF...", { id: "loading-pdf" });
+      
+      // 1. Asegurarse de tener la data completa (detalles de insumos)
+      let entregaFull = entrega;
+      const initialDetails = getDetalleInsumosNormalized(entrega);
+      
+      if (initialDetails.length === 0) {
+        console.log('🔍 El objeto de entrega no tiene detalles, intentando obtener de la API...');
+        const fetched = await entregaInsumosService.getEntregaById(entrega.id.toString());
+        if (fetched) {
+          entregaFull = fetched;
+        }
+      }
 
-          <!-- Resumen -->
-          <div class="total-box">
-            <div class="total-label">Total de Insumos: ${entrega.cantidadTotal} unidades</div>
-            <div class="total-value">${formatCurrency(entrega.valorTotal)}</div>
-          </div>
+      const detallesNormalized = getDetalleInsumosNormalized(entregaFull);
+      const jsPDF = (await import('jspdf')).default;
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const hMargin = 20;
+
+      // --- ENCABEZADO ---
+      doc.setFillColor(26, 26, 26);
+      doc.rect(0, 0, pageWidth, 65, 'F'); // Aumentado para el logo más grande
+
+      // Agregar Logo
+      try {
+        // Logo más grande (25x25) y centrado
+        doc.addImage(manitoLogo, 'JPEG', pageWidth / 2 - 12.5, 5, 25, 25);
+      } catch (e) {
+        console.warn("No se pudo cargar el logo en el PDF", e);
+      }
+
+      doc.setTextColor(216, 176, 129); // Dorado
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(24);
+      // Texto más alejado del logo (y=40)
+      doc.text("MANITO BARBERSHOP", pageWidth / 2, 40, { align: "center" });
+
+      doc.setFontSize(10);
+      doc.setTextColor(170, 170, 170);
+      doc.text("Comprobante de Entrega de Insumos", pageWidth / 2, 48, { align: "center" });
+
+      // Badge ID
+      doc.setFillColor(216, 176, 129);
+      doc.roundedRect(pageWidth / 2 - 25, 52, 50, 7, 3.5, 3.5, 'F');
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      const deliveryId = String((entregaFull as any).documento || entregaFull.id || 'N/A');
+      doc.text(`ENTREGA #${deliveryId}`, pageWidth / 2, 56.5, { align: "center" });
+
+      // --- INFORMACIÓN GENERAL ---
+      let y = 80; // Bajado más para compensar el header más grande y el logo
+      doc.setTextColor(40, 40, 40);
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("INFORMACIÓN GENERAL", hMargin, y);
+      
+      doc.setDrawColor(216, 176, 129);
+      doc.setLineWidth(0.5);
+      doc.line(hMargin, y + 2, 85, y + 2);
+      
+      y += 15;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Barbero:", hMargin, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(getBarberoDisplay(entregaFull), hMargin + 40, y);
+
+      y += 8;
+      doc.setFont("helvetica", "bold");
+      doc.text("Fecha y Hora:", hMargin, y);
+      doc.setFont("helvetica", "normal");
+      const horaText = entregaFull.hora ? ` a las ${entregaFull.hora}` : '';
+      doc.text(`${formatDate(entregaFull.fecha || '')}${horaText}`, hMargin + 40, y);
+
+      y += 8;
+      doc.setFont("helvetica", "bold");
+      doc.text("Estado:", hMargin, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(getEstadoDisplay(entregaFull.estado || ''), hMargin + 40, y);
+
+      y += 8;
+      doc.setFont("helvetica", "bold");
+      doc.text("Responsable:", hMargin, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(getResponsableDisplay(entregaFull), hMargin + 40, y);
+
+      // Resumen de Totales
+      y += 15;
+      doc.setFillColor(248, 249, 250);
+      doc.roundedRect(hMargin, y, pageWidth - (hMargin * 2), 22, 2, 2, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(0, 0, 0);
+      doc.text(`TOTAL INSUMOS: ${entregaFull.cantidadTotal} UNIDADES`, pageWidth / 2, y + 8, { align: "center" });
+      
+      doc.setFontSize(14);
+      doc.setTextColor(216, 176, 129);
+      doc.text(`VALOR TOTAL: $ ${formatCurrency(entregaFull.valorTotal)}`, pageWidth / 2, y + 17, { align: "center" });
+
+      // --- TABLA DE INSUMOS ---
+      y += 35;
+      doc.setFontSize(14);
+      doc.setTextColor(40, 40, 40);
+      doc.setFont("helvetica", "bold");
+      doc.text("DETALLE DE INSUMOS", hMargin, y);
+      doc.line(hMargin, y + 2, 80, y + 2);
+
+      y += 12;
+      // Headers Tabla
+      doc.setFillColor(26, 26, 26);
+      doc.rect(hMargin, y, pageWidth - (hMargin * 2), 10, 'F');
+      doc.setTextColor(216, 176, 129);
+      doc.setFontSize(9);
+      doc.text("INSUMO", hMargin + 2, y + 6.5);
+      doc.text("CATEGORÍA", hMargin + 60, y + 6.5);
+      doc.text("CANT.", hMargin + 100, y + 6.5, { align: "right" });
+      doc.text("PREC. UNIT", hMargin + 130, y + 6.5, { align: "right" });
+      doc.text("SUBTOTAL", hMargin + 160, y + 6.5, { align: "right" });
+
+      y += 10;
+      doc.setTextColor(40, 40, 40);
+      doc.setFont("helvetica", "normal");
+
+      if (detallesNormalized.length === 0) {
+        doc.setFont("helvetica", "italic");
+        doc.text("No hay detalles disponibles para esta entrega.", pageWidth / 2, y + 10, { align: "center" });
+      } else {
+        detallesNormalized.forEach((insumo, index) => {
+          if (y > 250) {
+            doc.addPage();
+            y = 20;
+          }
+
+          if (index % 2 === 0) {
+            doc.setFillColor(248, 249, 250);
+            doc.rect(hMargin, y, pageWidth - (hMargin * 2), 8, 'F');
+          }
+
+          doc.setFontSize(8);
+          // Truncar nombre si es muy largo
+          const nombreTruncado = insumo.nombre.length > 35 ? insumo.nombre.substring(0, 32) + "..." : insumo.nombre;
+          doc.text(nombreTruncado, hMargin + 2, y + 5.5);
           
-          <!-- Detalle de Insumos -->
-          <div class="section">
-            <h2 class="section-title">📦 Insumos Entregados</h2>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Insumo</th>
-                  <th>Categoría</th>
-                  <th>Cantidad</th>
-                  <th>Precio Unit.</th>
-                  <th>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${entrega.insumosDetalle.map(insumo => `
-                  <tr>
-                    <td><strong>${insumo.nombre}</strong></td>
-                    <td>${insumo.categoria}</td>
-                    <td class="highlight">${insumo.cantidad}</td>
-                    <td>${formatCurrency(insumo.precio)}</td>
-                    <td class="highlight">${formatCurrency(insumo.cantidad * insumo.precio)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        
-        <div class="footer">
-          <p>Reporte generado automáticamente el ${new Date().toLocaleString('es-ES')}</p>
-          <p><strong class="highlight">EDWINS BARBER</strong> - Sistema de Gestión de Insumos</p>
-          <p>Entrega: ${entrega.id} | Barbero: ${barberoNombre}</p>
-        </div>
-      </body>
-      </html>
-    `;
+          const catTruncada = (insumo.categoria || 'N/A').length > 20 ? (insumo.categoria || '').substring(0, 17) + "..." : (insumo.categoria || 'N/A');
+          doc.text(catTruncada, hMargin + 60, y + 5.5);
 
-    const blob = new Blob([reportContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
+          doc.setFont("helvetica", "bold");
+          doc.text(String(insumo.cantidad), hMargin + 100, y + 5.5, { align: "right" });
+          doc.setFont("helvetica", "normal");
+          doc.text(`$${formatCurrency(insumo.precio)}`, hMargin + 125, y + 5.5, { align: "right" });
+          doc.setFont("helvetica", "bold");
+          doc.text(`$${formatCurrency(insumo.cantidad * insumo.precio)}`, hMargin + 160, y + 5.5, { align: "right" });
+          doc.setFont("helvetica", "normal");
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Entrega_${entrega.id}_${String(barberoNombre).replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+          y += 8;
+        });
+      }
 
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(reportContent);
-      printWindow.document.close();
+      // --- PIE DE PÁGINA ---
+      y = 275;
+      doc.setDrawColor(216, 176, 129);
+      doc.line(hMargin, y, pageWidth - hMargin, y);
+      
+      y += 8;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`Documento generado automáticamente el ${new Date().toLocaleString('es-CO')}`, pageWidth / 2, y, { align: "center" });
+      doc.text("MANITO BARBERSHOP - Sistema de Gestión de Insumos", pageWidth / 2, y + 4, { align: "center" });
 
-      setTimeout(() => {
-        printWindow.print();
-      }, 1000);
+      // Guardar
+      const fileName = `Entrega_${deliveryId}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+
+      toast.dismiss("loading-pdf");
+      toast.success("PDF generado exitosamente");
+    } catch (err) {
+      console.error("Error generando PDF:", err);
+      toast.dismiss("loading-pdf");
+      toast.error("Error al generar el PDF");
     }
-
-    toast.success(`Reporte PDF generado para la entrega ${entrega.id}`, {
-      style: {
-        background: 'var(--color-gray-darkest)',
-        border: '1px solid var(--color-orange-primary)',
-        color: 'var(--color-white-primary)',
-      },
-    });
   };
 
   // Estadísticas
@@ -2123,15 +2029,13 @@ export function EntregaInsumosPage() {
                   {isAnuladaEstado(String((selectedEntrega as any).estado || '')) ? 'Entrega Anulada' : 'Anular Entrega'}
                 </button>
               )}
-              {selectedEntrega && (
                 <button
                   onClick={() => generateIndividualEntregaPDF(selectedEntrega)}
-                  className="elegante-button-primary"
+                  className="elegante-button-primary flex items-center gap-2"
                 >
-                  
+                  <FileText className="w-4 h-4" />
                   Descargar PDF
                 </button>
-              )}
             </div>
           </DialogContent>
         </Dialog>

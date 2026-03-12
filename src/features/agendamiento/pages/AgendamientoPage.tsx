@@ -1210,7 +1210,13 @@ export function AgendamientoPage() {
                         {showBarberoFormResults && barberoFormSearchTerm.trim() && (
                           <div className="absolute z-50 w-full mt-1 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-52 overflow-y-auto">
                             {barberosList
-                              .filter(b => `${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase()))
+                              .filter(b => {
+                                const searchMatch = `${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase());
+                                if (nuevaCita.fecha && nuevaCita.hora) {
+                                  return searchMatch && !validarDisponibilidadBarbero(b.id);
+                                }
+                                return searchMatch;
+                              })
                               .map(barbero => (
                                 <div
                                   key={barbero.id}
@@ -1232,10 +1238,14 @@ export function AgendamientoPage() {
                                 </div>
                               ))
                             }
-                            {barberosList.filter(b =>
-                              (`${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase()))
-                            ).length === 0 && (
-                                <div className="p-3 text-center text-gray-lightest text-sm italic">No se encontraron barberos</div>
+                            {barberosList.filter(b => {
+                              const searchMatch = `${b.nombres || b.nombre} ${b.apellidos || b.apellido || ''}`.toLowerCase().includes(barberoFormSearchTerm.toLowerCase());
+                              if (nuevaCita.fecha && nuevaCita.hora) {
+                                return searchMatch && !validarDisponibilidadBarbero(b.id);
+                              }
+                              return searchMatch;
+                            }).length === 0 && (
+                                <div className="p-3 text-center text-gray-lightest text-sm italic">No se encontraron barberos disponibles</div>
                               )}
                           </div>
                         )}
