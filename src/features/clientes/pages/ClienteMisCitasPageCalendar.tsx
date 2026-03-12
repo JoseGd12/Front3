@@ -1,1110 +1,998 @@
-import { useState } from "react";
-import { Calendar, Clock, User, Scissors, ChevronLeft, ChevronRight, Edit, Trash2, Plus, AlertTriangle, CheckCircle, Phone } from "lucide-react";
+import { useState, useEffect } from "react";
+import { 
+  Calendar, 
+  Clock, 
+  User, 
+  Scissors, 
+  ChevronLeft, 
+  ChevronRight, 
+  Edit, 
+  Trash2, 
+  Plus, 
+  AlertTriangle, 
+  CheckCircle, 
+  Phone,
+  MoreVertical,
+  Search,
+  CheckCircle2,
+  CalendarDays
+} from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../../shared/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../../../shared/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../shared/components/ui/select";
 import { Label } from "../../../shared/components/ui/label";
 import { Input } from "../../../shared/components/ui/input";
+import { Textarea } from "../../../shared/components/ui/textarea";
 import { useCustomAlert } from "../../../shared/components/ui/custom-alert";
+import { useAuth } from "../../../shared/contexts/AuthContext";
+import { agendamientoService } from "../../agendamiento/services/agendamientoService";
+import { barberosService } from "../../administracion/services/barberosService";
+import { servicioService } from "../../servicios/services/servicioService";
+import { clientesService } from "../../clientes/services/clientesService";
+import { apiService } from "../../../shared/services/api";
+import { horariosService } from "../../agendamiento/services/horariosService";
 
-const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-const horasDelDia = Array.from({ length: 15 }, (_, i) => i + 7); // 7:00 AM a 9:00 PM
+const diasSemana = ['Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado', 'Domingo'];
+const horasDelDia = Array.from({ length: 15 }, (_, i) => i + 9); // 9:00 AM a 11:00 PM (Admin style)
 
-// Barberos disponibles
-const barberos = [
-  { id: "1", nombre: "Miguel Rodriguez", especialidad: "Corte Clásico y Barba" },
-  { id: "2", nombre: "Sofia Martinez", especialidad: "Cortes Modernos y Tinturado" },
-  { id: "3", nombre: "Carlos Mendoza", especialidad: "Barba y Bigote" },
-];
-
-// Servicios disponibles
-const servicios = [
-  { id: "1", nombre: "Corte de Cabello", precio: 35000, duracion: 45 },
-  { id: "2", nombre: "Arreglo de Barba", precio: 20000, duracion: 30 },
-  { id: "3", nombre: "Corte + Barba", precio: 50000, duracion: 60 },
-  { id: "4", nombre: "Tinturado", precio: 55000, duracion: 90 },
-  { id: "5", nombre: "Paquete Premium", precio: 80000, duracion: 120 },
-];
-
-// Función para obtener fechas dinámicas
-const getHoy = () => {
-  const today = new Date();
-  return today.toISOString().split('T')[0];
+const formatHora12 = (hora: number): string => {
+  const ampm = hora >= 12 ? 'PM' : 'AM';
+  const h12 = hora % 12 === 0 ? 12 : hora % 12;
+  return `${h12}:00 ${ampm}`;
 };
-
-const getManana = () => {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return tomorrow.toISOString().split('T')[0];
-};
-
-const getPasadoManana = () => {
-  const dayAfter = new Date();
-  dayAfter.setDate(dayAfter.getDate() + 2);
-  return dayAfter.toISOString().split('T')[0];
-};
-
-// Datos de citas del cliente actual (simulación)
-const citasClienteData = [
-  {
-    id: 1,
-    cliente: "Juan Pérez", // Cliente actual (autenticado)
-    telefono: "+57 300 123 4567",
-    servicio: "Corte + Barba",
-    barbero: "Miguel Rodriguez",
-    fecha: getHoy(),
-    hora: "10:00",
-    duracion: 60,
-    precio: 50000,
-    estado: "confirmada",
-    notas: "Corte degradado"
-  },
-  {
-    id: 2,
-    cliente: "Juan Pérez",
-    telefono: "+57 300 123 4567",
-    servicio: "Corte de Cabello",
-    barbero: "Sofia Martinez",
-    fecha: getManana(),
-    hora: "14:00",
-    duracion: 45,
-    precio: 35000,
-    estado: "pendiente",
-    notas: ""
-  },
-  {
-    id: 3,
-    cliente: "Juan Pérez",
-    telefono: "+57 300 123 4567",
-    servicio: "Arreglo de Barba",
-    barbero: "Carlos Mendoza",
-    fecha: getPasadoManana(),
-    hora: "11:00",
-    duracion: 30,
-    precio: 20000,
-    estado: "confirmada",
-    notas: ""
-  }
-];
 
 const estados = [
-  { value: "pendiente", label: "Pendiente", color: "bg-orange-primary" },
-  { value: "confirmada", label: "Confirmada", color: "bg-orange-primary text-black-primary" },
-  { value: "en-curso", label: "En Curso", color: "bg-green-600" },
-  { value: "completada", label: "Completada", color: "bg-blue-600" },
-  { value: "cancelada", label: "Cancelada", color: "bg-red-600" }
+  { value: "Pendiente", label: "Pendiente", color: "bg-orange-primary" },
+  { value: "Confirmada", label: "Confirmada", color: "bg-orange-primary text-black-primary" },
+  { value: "En Proceso", label: "En Proceso", color: "bg-green-600" },
+  { value: "Completada", label: "Completada", color: "bg-blue-600" },
+  { value: "Cancelada", label: "Cancelada", color: "bg-red-600" }
 ];
 
-// Función para formatear precios
-const formatearPrecio = (precio: number): string => {
-  const precioEntero = Math.round(precio);
+const formatearPrecio = (precio: any): string => {
+  const p = Number(precio) || 0;
+  const precioEntero = Math.round(p);
   return `$ ${precioEntero.toLocaleString('es-CO')}`;
 };
 
+const getCitaColor = (estado: string) => {
+  switch (estado) {
+    case 'Confirmada': return '#d8b081';
+    case 'En Proceso': return '#22C55E';
+    case 'Completada': return '#3B82F6';
+    case 'Cancelada': return '#EF4444';
+    case 'Pendiente': return '#d8b081';
+    default: return '#d8b081';
+  }
+};
+
 export function ClienteMisCitasPageCalendar() {
+  const { user } = useAuth();
   const { success, error, AlertContainer } = useCustomAlert();
-  const [citas, setCitas] = useState(citasClienteData);
+  const [citas, setCitas] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentCliente, setCurrentCliente] = useState<any>(null);
+
+  // Listas para los selects
+  const [serviciosList, setServiciosList] = useState<any[]>([]);
+  const [paquetesList, setPaquetesList] = useState<any[]>([]);
+  const [barberosList, setBarberosList] = useState<any[]>([]);
+  const [horariosList, setHorariosList] = useState<any[]>([]);
+
   const [currentWeek, setCurrentWeek] = useState(0);
-  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [selectedCita, setSelectedCita] = useState<any>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [citaToDelete, setCitaToDelete] = useState<any>(null);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
-  const [citaConfirmada, setCitaConfirmada] = useState<any>(null);
-  const [nuevaCita, setNuevaCita] = useState({
-    barbero: "",
-    servicio: "",
-    fecha: "",
-    hora: "",
-    notas: ""
-  });
-  const [editandoCita, setEditandoCita] = useState<any>(null);
-  const [citaEditada, setCitaEditada] = useState({
-    barbero: "",
-    servicio: "",
-    fecha: "",
-    hora: "",
-    notas: ""
-  });
 
-  // Funciones auxiliares para el calendario
-  const getCurrentWeekDays = () => {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() + (currentWeek * 7));
-    return diasSemana.map((dia, index) => {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + index);
-      return {
-        dia,
-        fecha: date.toISOString().split('T')[0],
-        displayDate: date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })
+  // Cargar datos al montar
+  useEffect(() => {
+    fetchData();
+  }, [user]);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      if (!user?.email) {
+        setIsLoading(false);
+        return;
+      }
+
+      const allClientes = await clientesService.getClientes();
+      const cliente = allClientes.find(c => (c.correo || '').toLowerCase() === user.email.toLowerCase());
+      
+      if (!cliente) {
+        error("Error de perfil", "No se encontrÃ³ tu perfil de cliente en el sistema.");
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log("Cargando datos para cliente ID:", cliente.id);
+      setCurrentCliente(cliente);
+
+      let citasData: any[] = [];
+      try {
+        citasData = await agendamientoService.getAgendamientosByClienteId(Number(cliente.id));
+      } catch (apiErr: any) {
+        console.warn("Endpoint especÃ­fico de cliente no encontrado, filtrando todos los agendamientos:", apiErr);
+        const allCitas = await agendamientoService.getAgendamientos();
+        citasData = allCitas.filter(c => Number(c.clienteId) === Number(cliente.id));
+      }
+
+      const [barberosData, serviciosData, paquetesData, horariosData] = await Promise.all([
+        barberosService.getBarberos().catch(() => []),
+        servicioService.getServicios().catch(() => []),
+        apiService.getPaquetes().catch(() => []),
+        horariosService.getHorarios().catch(() => [])
+      ]);
+
+      console.log("Datos recibidos:", { 
+        citas: citasData.length, 
+        barberos: barberosData.length, 
+        servicios: serviciosData.length, 
+        paquetes: paquetesData.length,
+        horarios: horariosData.length
+      });
+
+      setCitas(citasData);
+      
+      const isRecordActive = (item: any) => {
+        if (!item) return false;
+        const val = item.estado !== undefined ? item.estado : (item.activo !== undefined ? item.activo : true);
+        return val === true || val === 1 || val === 'true' || val === 'Active' || val === 'Activo';
       };
-    });
-  };
 
-  const getCitasPorDia = (fecha: string) => {
-    return citas.filter(cita => cita.fecha === fecha);
-  };
+      const barberosConHorarioActivo = new Set(
+        (Array.isArray(horariosData) ? horariosData : [])
+          .filter(h => isRecordActive(h))
+          .map((h: any) => Number(h.barberoId))
+      );
 
-  const getCitaDuration = (duracion: number) => {
-    return (duracion / 60) * 64; // 64px por hora
-  };
-
-  const getCitaColor = (estado: string) => {
-    switch (estado) {
-      case 'confirmada': return '#d8b081';
-      case 'en-curso': return '#22C55E';
-      case 'completada': return '#3B82F6';
-      case 'cancelada': return '#EF4444';
-      case 'pendiente': return '#d8b081';
-      default: return '#d8b081';
+      const filteredBarberos = (Array.isArray(barberosData) ? barberosData : []).filter((b: any) => {
+        return isRecordActive(b) && barberosConHorarioActivo.has(Number(b.id));
+      });
+      
+      console.log("Barberos filtrados (activos y con horario):", filteredBarberos.length);
+      setBarberosList(filteredBarberos);
+      
+      setServiciosList((Array.isArray(serviciosData) ? serviciosData : []).filter(s => isRecordActive(s)));
+      setPaquetesList((Array.isArray(paquetesData) ? paquetesData : []).filter(p => isRecordActive(p))); 
+      setHorariosList(horariosData || []);
+    } catch (err) {
+      console.error("Error al cargar datos:", err);
+      error("Error de carga", "No se pudieron sincronizar los datos. Verifica tu conexiÃ³n.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleViewDetail = (cita: any) => {
-    setSelectedCita(cita);
-    setIsDetailDialogOpen(true);
+  // Estados para modales
+  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedCita, setSelectedCita] = useState<any>(null);
+  const [citaToDelete, setCitaToDelete] = useState<any>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  const [nuevaCita, setNuevaCita] = useState({
+    barberoId: 0,
+    barbero: '', // Almacenar nombre para el autocomplete
+    servicioId: null as number | null,
+    paqueteId: null as number | null,
+    servicio: '',
+    fecha: '',
+    hora: '',
+    notas: '',
+    duracion: 60,
+    precio: 0,
+    estado: 'Pendiente'
+  });
+
+  const [barberoFormSearchTerm, setBarberoFormSearchTerm] = useState('');
+  const [showBarberoFormResults, setShowBarberoFormResults] = useState(false);
+  const [showFormErrors, setShowFormErrors] = useState(false);
+
+  const getMondayOfWeek = (weekOffset: number) => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday + (weekOffset * 7));
+    monday.setHours(0, 0, 0, 0);
+    return monday;
   };
 
-  const handleDeleteCita = (cita: any) => {
-    setCitaToDelete(cita);
-    setIsDeleteDialogOpen(true);
+  const toLocalDateString = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
-  // Manejar clic en celda vacía para crear nueva cita
-  const handleCeldaClick = (fecha: string, hora: number) => {
-    const horaString = `${hora.toString().padStart(2, '0')}:00`;
-
-    // Verificar si ya hay una cita en esa hora
-    const citaExistente = citas.find(c =>
-      c.fecha === fecha && parseInt(c.hora.split(':')[0]) === hora
-    );
-
-    if (citaExistente) {
-      // Si hay una cita, abrir el detalle
-      handleViewDetail(citaExistente);
-      return;
-    }
-
-    // Si no hay cita, abrir formulario de creación
-    setNuevaCita({
-      barbero: "",
-      servicio: "",
-      fecha: fecha,
-      hora: horaString,
-      notas: ""
-    });
-    setIsCreateDialogOpen(true);
-  };
-
-  // Verificar si una hora está ocupada para un barbero específico
-  const isHoraOcupadaPorBarbero = (fecha: string, hora: number, barberoId: string, duracionServicio: number = 0) => {
-    if (!barberoId) return false;
-
-    const horaString = `${hora.toString().padStart(2, '0')}:00`;
-
-    return citas.some(cita => {
-      // Buscar barbero por nombre (ya que las citas tienen nombre, no ID)
-      const barbero = barberos.find(b => b.id === barberoId);
-      if (!barbero || cita.barbero !== barbero.nombre || cita.fecha !== fecha) return false;
-
-      const citaHora = parseInt(cita.hora.split(':')[0]);
-      const citaFin = citaHora + Math.ceil(cita.duracion / 60);
-      const nuevaFin = hora + Math.ceil(duracionServicio / 60);
-
-      // Verificar si hay superposición
-      return (hora < citaFin && nuevaFin > citaHora);
-    });
-  };
-
-  // Crear nueva cita
-  const handleCreateCita = () => {
-    if (!nuevaCita.barbero || !nuevaCita.servicio || !nuevaCita.fecha || !nuevaCita.hora) {
-      error("Campos requeridos", "Por favor completa todos los campos obligatorios.");
-      return;
-    }
-
-    const selectedService = servicios.find(s => s.id === nuevaCita.servicio);
-    const selectedBarberoData = barberos.find(b => b.id === nuevaCita.barbero);
-    const hora = parseInt(nuevaCita.hora.split(':')[0]);
-
-    // Verificar disponibilidad
-    if (isHoraOcupadaPorBarbero(nuevaCita.fecha, hora, nuevaCita.barbero, selectedService?.duracion || 0)) {
-      error("Hora no disponible", `${selectedBarberoData?.nombre} ya tiene una cita en este horario.`);
-      return;
-    }
-
-    // Crear la nueva cita
-    const nuevaCitaCompleta = {
-      id: citas.length + 1,
-      cliente: "Juan Pérez", // Cliente actual autenticado
-      telefono: "+57 300 123 4567",
-      servicio: selectedService?.nombre || "",
-      barbero: selectedBarberoData?.nombre || "",
-      fecha: nuevaCita.fecha,
-      hora: nuevaCita.hora,
-      duracion: selectedService?.duracion || 60,
-      precio: selectedService?.precio || 0,
-      estado: "pendiente",
-      notas: nuevaCita.notas
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const monday = getMondayOfWeek(currentWeek);
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+    return {
+      dia: diasSemana[i],
+      fecha: date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
+      fechaCompleta: toLocalDateString(date)
     };
+  });
 
-    setCitas([...citas, nuevaCitaCompleta]);
-
-    // Preparar información para el alert de éxito
-    setCitaConfirmada({
-      barbero: selectedBarberoData?.nombre || "Barbero",
-      barberoEspecialidad: selectedBarberoData?.especialidad || "",
-      servicio: selectedService?.nombre || "Servicio",
-      precio: selectedService?.precio || 0,
-      duracion: selectedService?.duracion || 0,
-      fecha: nuevaCita.fecha,
-      hora: nuevaCita.hora,
-      notas: nuevaCita.notas
-    });
-
-    // Cerrar dialog y mostrar confirmación
-    setIsCreateDialogOpen(false);
-    setShowSuccessAlert(true);
-
-    // Reset form
-    setNuevaCita({
-      barbero: "",
-      servicio: "",
-      fecha: "",
-      hora: "",
-      notas: ""
+  const getCitasEnSlot = (diaFechaCompleta: string, hora: number) => {
+    return citas.filter(cita => {
+      if (cita.fecha !== diaFechaCompleta) return false;
+      const horaSplit = (cita.hora || '').split(':');
+      if (horaSplit.length < 1) return false;
+      const horaInicio = parseInt(horaSplit[0]);
+      const horaFin = horaInicio + Math.ceil((cita.duracion || 60) / 60);
+      return horaInicio <= hora && hora < horaFin;
     });
   };
 
-  const confirmDeleteCita = () => {
-    if (citaToDelete) {
-      setCitas(citas.filter(cita => cita.id !== citaToDelete.id));
-      setIsDeleteDialogOpen(false);
-      setCitaToDelete(null);
-      success("¡Cita cancelada exitosamente!", `Tu cita del ${citaToDelete.fecha} a las ${citaToDelete.hora} ha sido cancelada.`);
+  const validarDisponibilidad = (barberoId: number, fecha: string, hora: string, duracion: number, ignoreCitaId?: number): string | null => {
+    if (!fecha || !hora) return null;
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    if (fecha < todayStr) return "No puedes agendar en el pasado.";
+
+    const [hh, mm] = hora.split(':').map(Number);
+    const startNueva = hh * 60 + mm;
+    const endNueva = startNueva + duracion;
+
+    if (fecha === todayStr) {
+      const current = today.getHours() * 60 + today.getMinutes();
+      // Desactivar si el slot ya pasÃ³ por mÃ¡s de 30 minutos (gracia) o requiere 30 min de preaviso
+      if (startNueva <= current + 30) return "Debes agendar con al menos 30 minutos de anticipaciÃ³n.";
     }
+
+    // Verificar horario laboral
+    const dateObj = new Date(`${fecha}T12:00:00`);
+    const dayIndex = dateObj.getDay();
+    const dayStr = ['Domingo', 'Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado'][dayIndex];
+    const turnos = horariosList.filter((h: any) => h.barberoId === barberoId && h.dia === dayStr && h.estado);
+
+    if (turnos.length === 0) return `${barberosList.find(b => b.id === barberoId)?.nombre} no trabaja los ${dayStr}.`;
+
+    const enHorario = turnos.some((h: any) => {
+      const [hIh, hIm] = h.horaInicio.split(':').map(Number);
+      const [hFh, hFm] = h.horaFin.split(':').map(Number);
+      return startNueva >= (hIh * 60 + hIm) && endNueva <= (hFh * 60 + hFm);
+    });
+
+    if (!enHorario) return "La hora estÃ¡ fuera del horario laboral del barbero.";
+
+    // Solapamiento con cualquier cita del barbero (backend lo valida, pero aquÃ­ verificamos las del cliente)
+    // El administrador puede ver todas las citas, el cliente solo las suyas. 
+    // Para una validaciÃ³n real el backend es el que manda, pero validamos localmente lo que tenemos.
+    const solapa = citas.find((cita: any) => {
+        if (cita.fecha !== fecha) return false;
+        if (Number(cita.barberoId) !== Number(barberoId)) return false;
+        if (ignoreCitaId && cita.id === ignoreCitaId) return false;
+        if (cita.estado === 'Cancelada') return false;
+
+        const [ch, cm] = (cita.hora || '').split(':').map(Number);
+        const startExist = ch * 60 + cm;
+        const endExist = startExist + (cita.duracion || 60);
+
+        return startNueva < endExist && startExist < endNueva;
+    });
+
+    if (solapa) return "Ese barbero ya tiene una cita en ese horario.";
+
+    return null;
   };
 
-  // Abrir modal de edición de cita
-  const handleEditCita = (cita: any) => {
-    // Obtener el ID del barbero
-    const barberoData = barberos.find(b => b.nombre === cita.barbero);
-    const servicioData = servicios.find(s => s.nombre === cita.servicio);
+  const getHorasDisponiblesParaDia = (fechaStr: string, barberoId: number, duracion: number) => {
+    if (!fechaStr || !barberoId) return [];
+    
+    // Obtener el dÃ­a de la semana
+    const fechaObj = new Date(`${fechaStr}T12:00:00`);
+    const dayIndex = fechaObj.getDay(); // 0=Domingo..6=SÃ¡bado
+    const diaStr = ['Domingo', 'Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado'][dayIndex];
+    
+    // Obtener horarios para ese dÃ­a
+    const horariosBarbero = horariosList.filter((h: any) => Number(h.barberoId) === Number(barberoId) && String(h.dia) === diaStr && h.estado === true);
+    
+    if (horariosBarbero.length === 0) return [];
 
-    setEditandoCita(cita);
-    setCitaEditada({
-      barbero: barberoData?.id || "",
-      servicio: servicioData?.id || "",
+    let availableSlots: string[] = [];
+
+    // Para cada franja horaria de este dÃ­a
+    horariosBarbero.forEach((h: any) => {
+      const [hIniH, hIniM] = String(h.horaInicio || '00:00').split(':').map((x: string) => parseInt(x || '0', 10));
+      const [hFinH, hFinM] = String(h.horaFin || '23:59').split(':').map((x: string) => parseInt(x || '0', 10));
+      
+      const startH = hIniH * 60 + hIniM;
+      const endH = hFinH * 60 + hFinM;
+
+      // Generar slots cada 30 minutos (ajustable)
+      for (let time = startH; time + duracion <= endH; time += 30) {
+        const hh = Math.floor(time / 60);
+        const mm = time % 60;
+        const horaStr = `${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}`;
+        
+        // Verificar si estÃ¡ en el pasado
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        if (fechaStr === todayStr) {
+          const currentMinutesWithLead = today.getHours() * 60 + today.getMinutes() + 30;
+          if (time <= currentMinutesWithLead) continue;
+        }
+
+        // Verificar si solapa con alguna cita existente
+        const solapa = citas.find((cita: any) => {
+          if (cita.fecha !== fechaStr) return false;
+          if (Number(cita.barberoId) !== Number(barberoId)) return false;
+          if (isEditMode && selectedCita && cita.id === selectedCita.id) return false;
+          if (cita.estado === 'Cancelada') return false;
+          
+          const [ch, cm] = String(cita.hora || '').split(':').map(Number);
+          const startExist = (ch * 60) + cm;
+          const endExist = startExist + (cita.duracion || 60);
+          
+          return time < endExist && startExist < (time + duracion);
+        });
+
+        if (!solapa) {
+          availableSlots.push(horaStr);
+        }
+      }
+    });
+
+    return [...new Set(availableSlots)].sort();
+  };
+
+  const handleOpenCreate = () => {
+    setIsEditMode(false);
+    setBarberoFormSearchTerm('');
+    setNuevaCita({
+      barberoId: 0,
+      barbero: '',
+      servicioId: null,
+      paqueteId: null,
+      servicio: '',
+      fecha: '',
+      hora: '',
+      notas: '',
+      duracion: 60,
+      precio: 0,
+      estado: 'Pendiente'
+    });
+    setIsFormDialogOpen(true);
+  };
+
+  const handleSlotClick = (fechaCompleta: string, hora: number) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    // Evitar crear citas en dÃ­as pasados
+    if (fechaCompleta < todayStr) return;
+
+    setIsEditMode(false);
+    setBarberoFormSearchTerm('');
+    setNuevaCita({
+      barberoId: 0,
+      barbero: '',
+      servicioId: null,
+      paqueteId: null,
+      servicio: '',
+      fecha: fechaCompleta,
+      hora: `${hora.toString().padStart(2, '0')}:00`,
+      notas: '',
+      duracion: 60,
+      precio: 0,
+      estado: 'Pendiente'
+    });
+    setIsFormDialogOpen(true);
+  };
+
+  const handleOpenEdit = (cita: any) => {
+    setIsEditMode(true);
+    setSelectedCita(cita);
+    setBarberoFormSearchTerm(cita.barberoNombre || '');
+    setNuevaCita({
+      barberoId: cita.barberoId,
+      barbero: cita.barberoNombre || '',
+      servicioId: cita.servicioId,
+      paqueteId: cita.paqueteId,
+      servicio: cita.servicioNombre || cita.paqueteNombre || '',
       fecha: cita.fecha,
       hora: cita.hora,
-      notas: cita.notas || ""
+      notas: cita.notas || '',
+      duracion: cita.duracion || 60,
+      precio: cita.precio || 0,
+      estado: cita.estado
     });
     setIsDetailDialogOpen(false);
-    setIsEditDialogOpen(true);
+    setIsFormDialogOpen(true);
   };
 
-  // Actualizar cita existente
-  const handleUpdateCita = () => {
-    if (!citaEditada.barbero || !citaEditada.servicio || !citaEditada.fecha || !citaEditada.hora) {
-      error("Campos requeridos", "Por favor completa todos los campos obligatorios.");
+  const handleSaveCita = async () => {
+    if (!nuevaCita.barberoId || (!nuevaCita.servicioId && !nuevaCita.paqueteId) || !nuevaCita.fecha || !nuevaCita.hora) {
+      setShowFormErrors(true);
       return;
     }
 
-    const selectedService = servicios.find(s => s.id === citaEditada.servicio);
-    const selectedBarberoData = barberos.find(b => b.id === citaEditada.barbero);
-    const hora = parseInt(citaEditada.hora.split(':')[0]);
-
-    // Verificar disponibilidad (excluyendo la cita actual)
-    const citasSinActual = citas.filter(c => c.id !== editandoCita.id);
-    const horaOcupada = citasSinActual.some(cita => {
-      const barbero = barberos.find(b => b.id === citaEditada.barbero);
-      if (!barbero || cita.barbero !== barbero.nombre || cita.fecha !== citaEditada.fecha) return false;
-
-      const citaHora = parseInt(cita.hora.split(':')[0]);
-      const citaFin = citaHora + Math.ceil(cita.duracion / 60);
-      const nuevaFin = hora + Math.ceil((selectedService?.duracion || 0) / 60);
-
-      return (hora < citaFin && nuevaFin > citaHora);
-    });
-
-    if (horaOcupada) {
-      error("Hora no disponible", `${selectedBarberoData?.nombre} ya tiene una cita en este horario.`);
+    const errorDisp = validarDisponibilidad(nuevaCita.barberoId, nuevaCita.fecha, nuevaCita.hora, nuevaCita.duracion, selectedCita?.id);
+    if (errorDisp) {
+      error("No disponible", errorDisp);
       return;
     }
 
-    // Actualizar la cita
-    const citaActualizada = {
-      ...editandoCita,
-      servicio: selectedService?.nombre || "",
-      barbero: selectedBarberoData?.nombre || "",
-      fecha: citaEditada.fecha,
-      hora: citaEditada.hora,
-      duracion: selectedService?.duracion || 60,
-      precio: selectedService?.precio || 0,
-      notas: citaEditada.notas
-    };
+    try {
+      if (isEditMode && selectedCita) {
+        await agendamientoService.updateAgendamiento(selectedCita.id, {
+          clienteId: Number(currentCliente.id),
+          barberoId: nuevaCita.barberoId,
+          servicioId: nuevaCita.servicioId,
+          paqueteId: nuevaCita.paqueteId,
+          fecha: nuevaCita.fecha,
+          hora: nuevaCita.hora,
+          duracion: nuevaCita.duracion,
+          precio: nuevaCita.precio,
+          estado: nuevaCita.estado,
+          notas: nuevaCita.notas
+        });
+        success("Â¡Cita actualizada!", "Tus cambios han sido guardados.");
+      } else {
+        await agendamientoService.createAgendamiento({
+          clienteId: Number(currentCliente.id),
+          barberoId: nuevaCita.barberoId,
+          servicioId: nuevaCita.servicioId,
+          paqueteId: nuevaCita.paqueteId,
+          fecha: nuevaCita.fecha,
+          hora: nuevaCita.hora,
+          duracion: nuevaCita.duracion,
+          precio: nuevaCita.precio,
+          estado: 'Pendiente',
+          notas: nuevaCita.notas
+        });
+        success("Â¡Cita agendada!", "Tu cita ha sido registrada exitosamente.");
+      }
 
-    setCitas(citas.map(c => c.id === editandoCita.id ? citaActualizada : c));
-    setIsEditDialogOpen(false);
-    setEditandoCita(null);
-    setCitaEditada({
-      barbero: "",
-      servicio: "",
-      fecha: "",
-      hora: "",
-      notas: ""
-    });
-
-    success("¡Cita actualizada exitosamente!", `Tu cita ha sido modificada correctamente.`);
+      await fetchData();
+      setIsFormDialogOpen(false);
+    } catch (err: any) {
+      error("Error", err.message || "No se pudo procesar la solicitud.");
+    }
   };
 
-  const getEstadoInfo = (estado: string) => {
-    const estadoInfo = estados.find(e => e.value === estado);
-    return estadoInfo || { value: estado, label: estado, color: "bg-gray-medium" };
+  const handleCancelCita = async () => {
+    if (!citaToDelete) return;
+    try {
+      await agendamientoService.updateAgendamientoStatus(citaToDelete.id, "Cancelada");
+      await fetchData();
+      setIsDeleteDialogOpen(false);
+      success("Cita cancelada", "Tu cita ha sido cancelada correctamente.");
+    } catch (err: any) {
+      error("Error", "No se pudo cancelar la cita.");
+    }
   };
 
-  const weekDays = getCurrentWeekDays();
+  const handleItemChange = (value: string) => {
+    if (value.startsWith('p-')) {
+      const id = parseInt(value.replace('p-', ''));
+      const paquete = paquetesList.find(p => p.id === id);
+      setNuevaCita({
+        ...nuevaCita,
+        paqueteId: id,
+        servicioId: null,
+        precio: paquete?.precio || 0,
+        duracion: paquete?.duracion || 60
+      });
+    } else {
+      const id = parseInt(value);
+      const servicio = serviciosList.find(s => s.id === id);
+      setNuevaCita({
+        ...nuevaCita,
+        servicioId: id,
+        paqueteId: null,
+        precio: servicio?.precio || 0,
+        duracion: servicio?.duracion || 60
+      });
+    }
+  };
 
   return (
     <>
       <AlertContainer />
-
-      {/* Header */}
+      
       <header className="bg-black-primary border-b border-gray-dark px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-white-primary">Mis Citas Agendadas</h1>
-            <p className="text-sm text-gray-lightest mt-1">
-              Visualiza y gestiona todas tus citas programadas
-            </p>
+            <h1 className="text-2xl font-bold text-white-primary">Mis Citas</h1>
+            <p className="text-sm text-gray-lightest mt-1">Gestiona tu agenda y programa nuevas visitas</p>
           </div>
+          <button 
+            onClick={handleOpenCreate}
+            className="elegante-button-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Agendar Nueva Cita
+          </button>
         </div>
       </header>
 
-      {/* Contenido principal */}
       <main className="flex-1 overflow-auto p-8 bg-black-primary">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Navegación de semana */}
-          <div className="elegante-card">
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setCurrentWeek(currentWeek - 1)}
-                className="p-2 rounded-lg bg-gray-medium hover:bg-gray-dark border border-gray-dark transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5 text-white-primary" />
-              </button>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-orange-primary animate-pulse text-xl font-medium">Cargando tus citas...</div>
+          </div>
+        ) : (
+          <div className="max-w-7xl mx-auto space-y-8">
 
-              <div className="text-center">
-                <h2 className="text-white-primary">
-                  {currentWeek === 0 ? 'Semana Actual' : `Semana ${currentWeek > 0 ? '+' : ''}${currentWeek}`}
-                </h2>
-                <p className="text-sm text-gray-lightest">
-                  {weekDays[0].displayDate} - {weekDays[6].displayDate}
-                </p>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentWeek(0)}
-                  className="px-3 py-2 rounded-lg bg-gray-medium hover:bg-gray-dark border border-gray-dark transition-colors text-sm text-white-primary"
+            {/* NavegaciÃ³n Semanal */}
+            <div className="elegante-card">
+              <div className="flex items-center justify-between">
+                <button 
+                  onClick={() => setCurrentWeek(currentWeek - 1)}
+                  className="p-2 rounded-lg bg-gray-darker hover:bg-gray-medium border border-gray-dark transition-colors"
                 >
-                  Hoy
+                  <ChevronLeft className="w-5 h-5 text-white-primary" />
                 </button>
-                <button
-                  onClick={() => setCurrentWeek(currentWeek + 1)}
-                  className="p-2 rounded-lg bg-gray-medium hover:bg-gray-dark border border-gray-dark transition-colors"
-                >
-                  <ChevronRight className="w-5 h-5 text-white-primary" />
-                </button>
+                
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-white-primary">
+                    {currentWeek === 0 ? 'Esta Semana' : `Semana ${currentWeek > 0 ? '+' : ''}${currentWeek}`}
+                  </h3>
+                  <p className="text-xs text-gray-lightest">{weekDays[0].fecha} - {weekDays[6].fecha}</p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setCurrentWeek(0)}
+                    className="elegante-button-secondary text-xs py-2"
+                  >
+                    Hoy
+                  </button>
+                  <button 
+                    onClick={() => setCurrentWeek(currentWeek + 1)}
+                    className="p-2 rounded-lg bg-gray-darker hover:bg-gray-medium border border-gray-dark transition-colors"
+                  >
+                    <ChevronRight className="w-5 h-5 text-white-primary" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Calendario semanal estilo Google */}
-          <div className="elegante-card overflow-x-auto">
-            <div className="min-w-[1200px]">
-              {/* Header de días */}
-              <div className="grid grid-cols-8 border-b border-gray-dark">
-                <div className="p-4 border-r border-gray-dark sticky left-0 bg-[#1F1F1F] z-10">
-                  <span className="text-gray-lightest">Hora</span>
-                </div>
-                {weekDays.map((day, index) => (
-                  <div key={index} className="p-4 text-center border-r border-gray-dark last:border-r-0">
-                    <div className="text-white-primary">{day.dia}</div>
-                    <div className="text-sm text-gray-lightest">{day.displayDate}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Grid de horas */}
-              <div className="relative">
-                {horasDelDia.map((hora) => (
-                  <div key={hora} className="grid grid-cols-8 border-b border-gray-dark last:border-b-0">
-                    {/* Columna de hora */}
-                    <div className="p-4 border-r border-gray-dark flex items-start sticky left-0 bg-[#1F1F1F] z-10 min-h-[80px]">
-                      <span className="text-gray-lightest text-sm">
-                        {hora.toString().padStart(2, '0')}:00
-                      </span>
+            {/* Grid Calendario */}
+            <div className="elegante-card">
+              <div className="overflow-x-auto">
+                <div className="min-w-[1200px]">
+                  {/* Header DÃ­as */}
+                  <div className="grid grid-cols-8 gap-1 mb-4 border-b border-gray-dark pb-4">
+                    <div className="text-center">
+                      <span className="text-sm font-semibold text-gray-light font-black uppercase tracking-tighter">Horas</span>
                     </div>
+                    {weekDays.map(day => (
+                      <div key={day.dia} className="text-center">
+                        <h4 className="font-semibold text-white-primary uppercase text-[10px] tracking-tighter">{day.dia}</h4>
+                        <p className="text-[10px] text-gray-lightest">{day.fecha}</p>
+                        <div className="text-[9px] text-orange-primary mt-1 font-bold">
+                          {citas.filter(c => c.fecha === day.fechaCompleta && c.estado !== 'Cancelada').length} citas
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-                    {/* Columnas de días */}
-                    {weekDays.map((day, dayIndex) => {
-                      const citasDelDia = getCitasPorDia(day.fecha);
-                      const citasEnHora = citasDelDia.filter(cita => {
-                        const citaHora = parseInt(cita.hora.split(':')[0]);
-                        return citaHora === hora;
-                      });
+                  {/* Grid de horarios */}
+                  <div className="relative">
+                    {(() => {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      const now = new Date();
+                      const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
 
-                      return (
-                        <div
-                          key={dayIndex}
-                          className="border-r border-gray-dark last:border-r-0 min-h-[80px] relative bg-gray-darker/30 hover:bg-gray-darker/50 transition-colors p-2 cursor-pointer group"
-                          onClick={() => handleCeldaClick(day.fecha, hora)}
-                        >
-                          {citasEnHora.length > 0 ? (
-                            <div className="space-y-1">
-                              {citasEnHora.map((cita) => (
-                                <div
-                                  key={cita.id}
-                                  className="rounded-lg p-3 cursor-pointer transition-all hover:shadow-lg border-l-4"
-                                  style={{
-                                    backgroundColor: `${getCitaColor(cita.estado)}20`,
-                                    borderLeftColor: getCitaColor(cita.estado)
-                                  }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleViewDetail(cita);
-                                  }}
-                                >
-                                  <div className="flex items-start justify-between mb-1">
-                                    <div className="flex-1">
-                                      <p className="text-white-primary text-sm truncate">
-                                        {cita.servicio}
-                                      </p>
-                                      <p className="text-xs text-gray-lightest truncate mt-1">
-                                        <Clock className="w-3 h-3 inline mr-1" />
-                                        {cita.hora} - {cita.duracion} min
-                                      </p>
-                                      <p className="text-xs text-gray-lightest truncate">
-                                        <User className="w-3 h-3 inline mr-1" />
-                                        {cita.barbero}
-                                      </p>
+                      return horasDelDia.map((hora) => (
+                        <div key={hora} className="grid grid-cols-8 gap-1 h-20 border-b border-gray-dark">
+                          <div className="flex items-center justify-center text-[10px] text-gray-light font-bold">
+                            {formatHora12(hora)}
+                          </div>
+                          {weekDays.map((day) => {
+                            const citasEnSlot = getCitasEnSlot(day.fechaCompleta, hora);
+                            
+                            let isPastSlot = false;
+                            if (day.fechaCompleta < todayStr) {
+                              isPastSlot = true;
+                            } else if (day.fechaCompleta === todayStr) {
+                              // Se desactiva solo si han pasado mÃ¡s de 30 minutos de la hora de inicio
+                              if ((hora * 60) <= currentTotalMinutes - 30) isPastSlot = true;
+                            }
+
+                            return (
+                              <div
+                                key={`${day.dia}-${hora}`}
+                                className={`relative rounded border transition-all duration-200 p-1 flex flex-col gap-1 ${
+                                  isPastSlot && citasEnSlot.length === 0
+                                    ? "bg-gray-darkest border-gray-dark/40 cursor-not-allowed opacity-60"
+                                    : "bg-gray-darker border-gray-dark hover:bg-gray-dark hover:border-orange-primary/50 cursor-pointer group"
+                                }`}
+                                onClick={() => {
+                                  if (!isPastSlot && citasEnSlot.length === 0) {
+                                    handleSlotClick(day.fechaCompleta, hora);
+                                  }
+                                }}
+                              >
+                                {citasEnSlot.map(cita => (
+                                  <div
+                                    key={cita.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedCita(cita);
+                                      setIsDetailDialogOpen(true);
+                                    }}
+                                    className="text-[10px] p-1.5 rounded truncate font-bold border transition-transform hover:scale-[1.02] cursor-pointer"
+                                    style={{
+                                      backgroundColor: getCitaColor(cita.estado) + (isPastSlot ? '15' : '25'),
+                                      color: getCitaColor(cita.estado),
+                                      borderColor: getCitaColor(cita.estado) + '50'
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getCitaColor(cita.estado) }} />
+                                      {cita.servicioNombre || cita.paqueteNombre}
+                                    </div>
+                                    <div className="text-[8px] opacity-70 mt-0.5 ml-3 truncate">
+                                      {cita.barberoNombre} â€¢ {cita.hora}
                                     </div>
                                   </div>
-                                  <div className="flex items-center justify-between mt-2">
-                                    <span
-                                      className={`text-xs px-2 py-0.5 rounded ${getEstadoInfo(cita.estado).color}`}
-                                    >
-                                      {getEstadoInfo(cita.estado).label}
-                                    </span>
-                                    <span className="text-xs text-orange-primary">
-                                      {formatearPrecio(cita.precio)}
-                                    </span>
+                                ))}
+
+                                {citasEnSlot.length === 0 && !isPastSlot && (
+                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Plus className="w-4 h-4 text-orange-primary/50" />
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <div className="flex flex-col items-center gap-1">
-                                <Plus className="w-5 h-5 text-orange-primary" />
-                                <span className="text-xs text-gray-light">Agendar</span>
+                                )}
                               </div>
-                            </div>
-                          )}
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      ));
+                    })()}
                   </div>
-                ))}
+                </div>
               </div>
             </div>
           </div>
-
-          {/* Leyenda */}
-          <div className="elegante-card">
-            <h3 className="text-white-primary mb-3">Estados de las citas</h3>
-            <div className="flex flex-wrap gap-4">
-              {estados.map((estado) => (
-                <div key={estado.value} className="flex items-center gap-2">
-                  <div className={`w-4 h-4 rounded ${estado.color}`}></div>
-                  <span className="text-sm text-gray-lightest">{estado.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        )}
       </main>
 
-      {/* Dialog de detalle de cita */}
-      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl max-h-[90vh] overflow-y-auto">
+    {/* Modal Crear / Editar Cita */}
+      <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
+        <DialogContent className="bg-gray-darkest border-gray-dark text-white-primary max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="text-white-primary flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-orange-primary" />
-              Detalles de la Cita
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <CalendarDays className="w-6 h-6 text-orange-primary" />
+              {isEditMode ? 'Editar tu ReservaciÃ³n' : 'Programar Nueva Cita'}
             </DialogTitle>
-            <DialogDescription className="text-gray-lightest">
-              Información completa de tu cita agendada
+            <DialogDescription className="text-gray-lightest border-b border-gray-dark pb-3">
+              {isEditMode ? 'Modifica los detalles de tu cita para ajustarla a tu necesidad.' : 'Completa los detalles para asegurar tu espacio con nosotros.'}
             </DialogDescription>
           </DialogHeader>
 
+          <div className="py-4 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Columna Izquierda: QuÃ© y QuiÃ©n */}
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label className="text-sm font-bold text-gray-lightest flex items-center gap-2">
+                    <Scissors className="w-4 h-4 text-orange-primary" />
+                    Servicio o Paquete *
+                  </Label>
+                  <Select 
+                    value={nuevaCita.paqueteId ? `p-${nuevaCita.paqueteId}` : (nuevaCita.servicioId ? nuevaCita.servicioId.toString() : undefined)} 
+                    onValueChange={handleItemChange}
+                  >
+                    <SelectTrigger className="elegante-input h-11">
+                      <SelectValue placeholder="Busca un servicio o paquete..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-darkest border-gray-dark max-h-72">
+                      <div className="px-3 py-2 text-[10px] font-black text-orange-primary/60 uppercase tracking-widest border-b border-gray-dark/40 mb-1">Servicios EstÃ¡ndar</div>
+                      {serviciosList.map(s => (
+                        <SelectItem key={s.id} value={s.id.toString()} className="text-white-primary focus:bg-orange-primary/10 focus:text-orange-primary">
+                          {s.nombre} &bull; <span className="text-orange-primary font-bold">{formatearPrecio(s.precio)}</span>
+                        </SelectItem>
+                      ))}
+                      {paquetesList.length > 0 && (
+                        <>
+                          <div className="px-3 py-2 mt-2 text-[10px] font-black text-orange-primary/60 uppercase tracking-widest border-b border-gray-dark/40 mb-1">Paquetes Especiales</div>
+                          {paquetesList.map(p => (
+                            <SelectItem key={`p-${p.id}`} value={`p-${p.id}`} className="text-white-primary focus:bg-orange-primary/10 focus:text-orange-primary">
+                              {p.nombre} &bull; <span className="text-orange-primary font-bold">{formatearPrecio(p.precio)}</span>
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {showFormErrors && !nuevaCita.servicioId && !nuevaCita.paqueteId && (
+                    <p className="text-[10px] text-red-400 italic font-medium">Por favor selecciona lo que deseas hacerte.</p>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-sm font-bold text-gray-lightest flex items-center gap-2">
+                    <User className="w-4 h-4 text-orange-primary" />
+                    Barbero de Preferencia *
+                  </Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-lighter pointer-events-none z-10" />
+                    <Input 
+                      placeholder="Busca a tu barbero..."
+                      value={barberoFormSearchTerm}
+                      onChange={(e) => { setBarberoFormSearchTerm(e.target.value); setShowBarberoFormResults(true); }}
+                      onFocus={() => setShowBarberoFormResults(true)}
+                      onBlur={() => setTimeout(() => setShowBarberoFormResults(false), 200)}
+                      className="elegante-input pl-10 h-11"
+                    />
+                    {showBarberoFormResults && barberoFormSearchTerm.trim() && (
+                      <div className="absolute z-50 w-full mt-1 bg-gray-darkest border border-gray-dark rounded-xl shadow-2xl max-h-52 overflow-y-auto custom-scrollbar">
+                        {barberosList
+                          .filter(b => {
+                            const fullName = `${b.nombre || b.nombres || ''} ${b.apellido || b.apellidos || ''}`.toLowerCase();
+                            const searchMatch = fullName.includes(barberoFormSearchTerm.toLowerCase());
+                            if (nuevaCita.fecha && nuevaCita.hora) {
+                              const errorDisp = validarDisponibilidad(b.id, nuevaCita.fecha, nuevaCita.hora, nuevaCita.duracion, selectedCita?.id);
+                              return searchMatch && !errorDisp;
+                            }
+                            return searchMatch;
+                          })
+                          .map(barbero => (
+                            <div
+                              key={barbero.id}
+                              onMouseDown={() => {
+                                const name = `${barbero.nombre || barbero.nombres || ''} ${barbero.apellido || barbero.apellidos || ''}`.trim();
+                                setNuevaCita({
+                                  ...nuevaCita,
+                                  barberoId: barbero.id,
+                                  barbero: name
+                                });
+                                setBarberoFormSearchTerm(name);
+                                setShowBarberoFormResults(false);
+                              }}
+                              className="p-3 border-b border-gray-dark last:border-0 hover:bg-gray-dark cursor-pointer group"
+                            >
+                              <p className="text-white-primary text-sm font-medium group-hover:text-orange-primary transition-colors">
+                                {barbero.nombre || barbero.nombres} {barbero.apellido || barbero.apellidos || ''}
+                              </p>
+                            </div>
+                          ))
+                        }
+                        {barberosList.filter(b => {
+                          const fullName = `${b.nombre || b.nombres || ''} ${b.apellido || b.apellidos || ''}`.toLowerCase();
+                          const searchMatch = fullName.includes(barberoFormSearchTerm.toLowerCase());
+                          if (nuevaCita.fecha && nuevaCita.hora) {
+                            const errorDisp = validarDisponibilidad(b.id, nuevaCita.fecha, nuevaCita.hora, nuevaCita.duracion, selectedCita?.id);
+                            return searchMatch && !errorDisp;
+                          }
+                          return searchMatch;
+                        }).length === 0 && (
+                          <div className="p-3 text-center text-gray-lightest text-sm italic">
+                            {nuevaCita.fecha && nuevaCita.hora ? 'No hay barberos disponibles para este horario' : 'No se encontraron barberos'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {showFormErrors && !nuevaCita.barberoId && (
+                    <p className="text-[10px] text-red-400 italic font-medium">Debes seleccionar un barbero para continuar.</p>
+                  )}
+                  
+
+                </div>
+              </div>
+
+              {/* Columna Derecha: CuÃ¡ndo */}
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <Label className="text-sm font-bold text-gray-lightest flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-orange-primary" />
+                      Fecha *
+                    </Label>
+                    <Input 
+                      type="date" 
+                      value={nuevaCita.fecha} 
+                      onChange={(e) => setNuevaCita({...nuevaCita, fecha: e.target.value})}
+                      className="elegante-input h-11"
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-sm font-bold text-gray-lightest flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-orange-primary" />
+                      Hora *
+                    </Label>
+                    <Input 
+                      type="time" 
+                      value={nuevaCita.hora} 
+                      onChange={(e) => setNuevaCita({...nuevaCita, hora: e.target.value})}
+                      className="elegante-input h-11"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-sm font-bold text-gray-lightest flex items-center gap-2">
+                    <Edit className="w-4 h-4 text-orange-primary" />
+                    Notas Adicionales
+                  </Label>
+                  <Textarea 
+                    value={nuevaCita.notas}
+                    onChange={(e) => setNuevaCita({...nuevaCita, notas: e.target.value})}
+                    placeholder="Â¿AlgÃºn detalle especial que debamos saber?"
+                    className="elegante-input min-h-[120px] resize-none pt-3"
+                  />
+                </div>
+
+                {isEditMode && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-bold text-gray-lightest">Actualizar Estado</Label>
+                    <Select value={nuevaCita.estado} onValueChange={(v) => setNuevaCita({...nuevaCita, estado: v})}>
+                      <SelectTrigger className="elegante-input h-11">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-darkest border-gray-dark">
+                        <SelectItem value={selectedCita.estado} className="text-white-primary">{selectedCita.estado}</SelectItem>
+                        {selectedCita.estado !== 'Cancelada' && (
+                            <SelectItem value="Cancelada" className="text-white-primary text-red-500">Cancelar Cita</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer de Precio y Acciones */}
+            <div className="pt-6 border-t border-gray-dark">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  {nuevaCita.precio > 0 && (
+                    <div className="bg-orange-primary/10 px-6 py-3 rounded-2xl border border-orange-primary/20">
+                      <p className="text-[10px] font-black text-orange-primary uppercase tracking-widest mb-1">Total Estimado</p>
+                      <p className="text-2xl font-bold text-white-primary leading-none">{formatearPrecio(nuevaCita.precio)}</p>
+                    </div>
+                  )}
+                  <div className="text-gray-lightest text-[10px] max-w-[200px] leading-relaxed italic">
+                    * El precio puede variar ligeramente segÃºn el detalle final del servicio en la barberÃ­a.
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 w-full md:w-auto">
+                  <button onClick={() => setIsFormDialogOpen(false)} className="elegante-button-secondary flex-1 md:flex-none py-3 px-8">
+                    Cancelar
+                  </button>
+                  <button onClick={handleSaveCita} className="elegante-button-primary flex-1 md:flex-none py-3 px-8 shadow-lg shadow-orange-primary/10">
+                    {isEditMode ? 'Guardar Cambios' : 'Confirmar ReservaciÃ³n'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Detalle Cita */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="bg-gray-darkest border-gray-dark text-white-primary max-w-lg">
+          <DialogHeader>
+            <div className="flex items-center justify-between border-b border-gray-dark pb-3">
+                <DialogTitle className="text-xl">Detalle de tu ReservaciÃ³n</DialogTitle>
+                {selectedCita && selectedCita.estado !== 'Cancelada' && selectedCita.estado !== 'Completada' && (
+                    <button 
+                        onClick={() => handleOpenEdit(selectedCita)}
+                        className="p-2.5 bg-orange-primary/10 hover:bg-orange-primary/20 rounded-xl transition-all border border-orange-primary/20 group"
+                        title="Modificar cita"
+                    >
+                        <Edit className="w-5 h-5 text-orange-primary group-hover:scale-110 transition-transform" />
+                    </button>
+                )}
+            </div>
+          </DialogHeader>
           {selectedCita && (
-            <div className="space-y-6 py-4">
-              {/* Estado */}
-              <div className="flex items-center justify-between p-4 rounded-lg bg-gray-darker border border-gray-dark">
-                <span className="text-gray-lightest">Estado de la cita:</span>
-                <span className={`px-3 py-1 rounded ${getEstadoInfo(selectedCita.estado).color}`}>
-                  {getEstadoInfo(selectedCita.estado).label}
-                </span>
-              </div>
-
-              {/* Información del servicio */}
-              <div className="elegante-card">
-                <h3 className="text-white-primary mb-4 flex items-center gap-2">
-                  <Scissors className="w-4 h-4 text-orange-primary" />
-                  Servicio
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-lightest">Servicio:</span>
-                    <span className="text-white-primary">{selectedCita.servicio}</span>
+            <div className="space-y-8 py-6">
+              {/* Header con Servicio y Estado */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-orange-primary/10 rounded-2xl flex items-center justify-center border border-orange-primary/20">
+                    <Scissors className="text-orange-primary w-7 h-7" />
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-lightest">Duración:</span>
-                    <span className="text-white-primary">{selectedCita.duracion} minutos</span>
+                  <div>
+                    <h3 className="text-xl font-bold text-white-primary">{selectedCita.servicioNombre || selectedCita.paqueteNombre}</h3>
+                    <p className="text-sm text-gray-lightest flex items-center gap-2">
+                       <Clock className="w-3.5 h-3.5" /> {selectedCita.duracion} min &bull; 
+                       <span className="text-orange-primary font-bold">{formatearPrecio(selectedCita.precio)}</span>
+                    </p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-lightest">Precio:</span>
-                    <span className="text-orange-primary">{formatearPrecio(selectedCita.precio)}</span>
-                  </div>
+                </div>
+                <div className="flex flex-col items-end">
+                   <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                      selectedCita.estado === 'Pendiente' ? 'bg-orange-primary/10 text-orange-primary border-orange-primary/30' :
+                      selectedCita.estado === 'Confirmada' ? 'bg-green-500/10 text-green-500 border-green-500/30' :
+                      selectedCita.estado === 'Completada' ? 'bg-blue-500/10 text-blue-500 border-blue-500/30' : 
+                      'bg-red-500/10 text-red-500 border-red-500/30'
+                   }`}>
+                     {selectedCita.estado}
+                   </div>
                 </div>
               </div>
 
-              {/* Información de fecha y hora */}
-              <div className="elegante-card">
-                <h3 className="text-white-primary mb-4 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-orange-primary" />
-                  Fecha y Hora
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-lightest">Fecha:</span>
-                    <span className="text-white-primary">
-                      {new Date(selectedCita.fecha + 'T00:00:00').toLocaleDateString('es-ES', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-lightest">Hora:</span>
-                    <span className="text-white-primary">{selectedCita.hora}</span>
-                  </div>
+              {/* Grid de informaciÃ³n */}
+              <div className="grid grid-cols-2 gap-6 bg-black/20 p-5 rounded-2xl border border-gray-dark/50">
+                <div className="space-y-1">
+                  <p className="text-gray-lightest text-[10px] uppercase font-black tracking-tighter opacity-50">Barbero Asignado</p>
+                  <p className="font-bold flex items-center gap-2 text-white-primary">
+                    <User className="w-4 h-4 text-orange-primary/70" /> 
+                    {selectedCita.barberoNombre}
+                  </p>
                 </div>
-              </div>
-
-              {/* Información del barbero */}
-              <div className="elegante-card">
-                <h3 className="text-white-primary mb-4 flex items-center gap-2">
-                  <User className="w-4 h-4 text-orange-primary" />
-                  Barbero
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-lightest">Barbero asignado:</span>
-                    <span className="text-white-primary">{selectedCita.barbero}</span>
-                  </div>
+                <div className="space-y-1">
+                  <p className="text-gray-lightest text-[10px] uppercase font-black tracking-tighter opacity-50">Fecha Programada</p>
+                  <p className="font-bold flex items-center gap-2 text-white-primary">
+                    <Calendar className="w-4 h-4 text-orange-primary/70" /> 
+                    {selectedCita.fecha}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-lightest text-[10px] uppercase font-black tracking-tighter opacity-50">Hora de Inicio</p>
+                  <p className="font-bold flex items-center gap-2 text-white-primary text-lg">
+                    <Clock className="w-4 h-4 text-orange-primary/70" /> 
+                    {selectedCita.hora}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-lightest text-[10px] uppercase font-black tracking-tighter opacity-50">Telf. Contacto</p>
+                  <p className="font-bold flex items-center gap-2 text-white-primary">
+                    <Phone className="w-4 h-4 text-orange-primary/70" /> 
+                    BarberÃ­a Elite
+                  </p>
                 </div>
               </div>
 
               {/* Notas */}
               {selectedCita.notas && (
-                <div className="elegante-card">
-                  <h3 className="text-white-primary mb-4">Notas</h3>
-                  <p className="text-gray-lightest">{selectedCita.notas}</p>
+                <div className="space-y-2">
+                   <p className="text-gray-lightest text-[10px] font-bold uppercase ml-1">Observaciones / Preferencias</p>
+                   <div className="p-4 bg-gray-darker/50 rounded-xl text-sm border border-gray-dark italic text-gray-lighter leading-relaxed">
+                     "{selectedCita.notas}"
+                   </div>
                 </div>
               )}
 
-              {/* Acciones */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setIsDetailDialogOpen(false)}
-                  className="elegante-button-secondary flex-1"
-                >
-                  Cerrar
-                </button>
-                {selectedCita.estado !== 'completada' && selectedCita.estado !== 'cancelada' && (
-                  <button
+              {/* Footer de cancelaciÃ³n */}
+              {selectedCita.estado !== 'Cancelada' && selectedCita.estado !== 'Completada' && (
+                <div className="pt-4 flex flex-col gap-3">
+                  <div className="h-px bg-gray-dark w-full mb-2" />
+                  <p className="text-[10px] text-gray-lightest text-center italic">
+                    Â¿No puedes asistir? Por favor cancela con al menos 2 horas de anticipaciÃ³n.
+                  </p>
+                  <button 
                     onClick={() => {
+                      setCitaToDelete(selectedCita);
                       setIsDetailDialogOpen(false);
-                      handleDeleteCita(selectedCita);
+                      setIsDeleteDialogOpen(true);
                     }}
-                    className="elegante-button-primary bg-red-600 hover:bg-red-700 flex-1"
+                    className="w-full py-3 bg-red-500/5 text-red-500 border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white transition-all text-xs font-black uppercase tracking-widest shadow-lg shadow-red-500/5"
                   >
-                    Cancelar Cita
+                    Anular reservaciÃ³n
                   </button>
-                )}
-                {selectedCita.estado !== 'completada' && selectedCita.estado !== 'cancelada' && (
-                  <button
-                    onClick={() => handleEditCita(selectedCita)}
-                    className="elegante-button-primary bg-blue-600 hover:bg-blue-700 flex-1"
-                  >
-                    Editar Cita
-                  </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Alert de confirmación para eliminar */}
+      {/* Confirmar CancelaciÃ³n */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="elegante-card">
+        <AlertDialogContent className="bg-gray-darkest border-gray-dark">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-white-primary flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-400" />
-              ¿Cancelar esta cita?
-            </AlertDialogTitle>
+            <AlertDialogTitle className="text-white-primary">Â¿EstÃ¡s seguro de cancelar tu cita?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-lightest">
-              {citaToDelete && (
-                <div className="mt-4 space-y-2">
-                  <p>Estás a punto de cancelar la siguiente cita:</p>
-                  <div className="elegante-card mt-3">
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-lightest">Servicio:</span>
-                        <span className="text-white-primary">{citaToDelete.servicio}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-lightest">Fecha:</span>
-                        <span className="text-white-primary">{citaToDelete.fecha}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-lightest">Hora:</span>
-                        <span className="text-white-primary">{citaToDelete.hora}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-lightest">Barbero:</span>
-                        <span className="text-white-primary">{citaToDelete.barbero}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-sm mt-3">Esta acción no se puede deshacer.</p>
-                </div>
-              )}
+              Esta acciÃ³n informarÃ¡ a la barberÃ­a y liberarÃ¡ el horario. No se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setIsDeleteDialogOpen(false)}
-              className="elegante-button-secondary"
-            >
-              No, mantener cita
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteCita}
-              className="elegante-button-primary bg-red-600 hover:bg-red-700"
-            >
-              Sí, cancelar cita
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Dialog para crear nueva cita */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-white-primary flex items-center gap-2">
-              <Plus className="w-5 h-5 text-orange-primary" />
-              Agendar Nueva Cita
-            </DialogTitle>
-            <DialogDescription className="text-gray-lightest">
-              Completa la información para agendar tu cita
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6 py-4">
-            {/* Fecha y Hora (prellenados) */}
-            <div className="elegante-card">
-              <h3 className="text-white-primary mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-primary" />
-                Fecha y Hora Seleccionadas
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-lightest">Fecha:</span>
-                  <span className="text-white-primary">
-                    {nuevaCita.fecha && new Date(nuevaCita.fecha + 'T00:00:00').toLocaleDateString('es-ES', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-lightest">Hora:</span>
-                  <span className="text-white-primary">{nuevaCita.hora}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Selección de Barbero */}
-            <div className="space-y-2">
-              <Label className="text-white-primary flex items-center gap-2">
-                <User className="w-4 h-4 text-orange-primary" />
-                Barbero *
-              </Label>
-              <Select value={nuevaCita.barbero} onValueChange={(value) => setNuevaCita({ ...nuevaCita, barbero: value })}>
-                <SelectTrigger className="elegante-input">
-                  <SelectValue placeholder="Selecciona un barbero" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-darkest border-gray-dark">
-                  {barberos.map((barbero) => (
-                    <SelectItem key={barbero.id} value={barbero.id} className="text-white-primary">
-                      <div>
-                        <div>{barbero.nombre}</div>
-                        <div className="text-xs text-gray-lightest">{barbero.especialidad}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Selección de Servicio */}
-            <div className="space-y-2">
-              <Label className="text-white-primary flex items-center gap-2">
-                <Scissors className="w-4 h-4 text-orange-primary" />
-                Servicio *
-              </Label>
-              <Select
-                value={nuevaCita.servicio}
-                onValueChange={(value) => setNuevaCita({ ...nuevaCita, servicio: value })}
-              >
-                <SelectTrigger className="elegante-input">
-                  <SelectValue placeholder="Selecciona un servicio" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-darkest border-gray-dark">
-                  {servicios.map((servicio) => (
-                    <SelectItem key={servicio.id} value={servicio.id} className="text-white-primary">
-                      <div className="flex justify-between items-center w-full">
-                        <div>
-                          <div>{servicio.nombre}</div>
-                          <div className="text-xs text-gray-lightest">{servicio.duracion} min</div>
-                        </div>
-                        <div className="text-orange-primary ml-4">
-                          {formatearPrecio(servicio.precio)}
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Precio (automático) */}
-            {nuevaCita.servicio && (
-              <div className="elegante-card">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-lightest">Precio del servicio:</span>
-                  <span className="text-orange-primary">
-                    {formatearPrecio(servicios.find(s => s.id === nuevaCita.servicio)?.precio || 0)}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Notas Adicionales */}
-            <div className="space-y-2">
-              <Label className="text-white-primary">
-                Notas Adicionales (Opcional)
-              </Label>
-              <textarea
-                value={nuevaCita.notas}
-                onChange={(e) => setNuevaCita({ ...nuevaCita, notas: e.target.value })}
-                className="elegante-input min-h-[100px] resize-none"
-                placeholder="Especifica alguna preferencia o comentario..."
-              />
-            </div>
-
-            {/* Botones de acción */}
-            <div className="flex gap-3 pt-4">
-              <button
-                onClick={() => setIsCreateDialogOpen(false)}
-                className="elegante-button-secondary flex-1"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleCreateCita}
-                disabled={!nuevaCita.barbero || !nuevaCita.servicio}
-                className="elegante-button-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Confirmar Cita
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para editar cita */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="bg-gray-darkest border-gray-dark max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-white-primary flex items-center gap-2">
-              <Edit className="w-5 h-5 text-orange-primary" />
-              Editar Cita
-            </DialogTitle>
-            <DialogDescription className="text-gray-lightest">
-              Completa la información para editar tu cita
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6 py-4">
-            {/* Fecha y Hora (prellenados) */}
-            <div className="elegante-card">
-              <h3 className="text-white-primary mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-primary" />
-                Fecha y Hora Seleccionadas
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-lightest">Fecha:</span>
-                  <span className="text-white-primary">
-                    {citaEditada.fecha && new Date(citaEditada.fecha + 'T00:00:00').toLocaleDateString('es-ES', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-lightest">Hora:</span>
-                  <span className="text-white-primary">{citaEditada.hora}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Selección de Barbero */}
-            <div className="space-y-2">
-              <Label className="text-white-primary flex items-center gap-2">
-                <User className="w-4 h-4 text-orange-primary" />
-                Barbero *
-              </Label>
-              <Select value={citaEditada.barbero} onValueChange={(value) => setCitaEditada({ ...citaEditada, barbero: value })}>
-                <SelectTrigger className="elegante-input">
-                  <SelectValue placeholder="Selecciona un barbero" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-darkest border-gray-dark">
-                  {barberos.map((barbero) => (
-                    <SelectItem key={barbero.id} value={barbero.id} className="text-white-primary">
-                      <div>
-                        <div>{barbero.nombre}</div>
-                        <div className="text-xs text-gray-lightest">{barbero.especialidad}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Selección de Servicio */}
-            <div className="space-y-2">
-              <Label className="text-white-primary flex items-center gap-2">
-                <Scissors className="w-4 h-4 text-orange-primary" />
-                Servicio *
-              </Label>
-              <Select
-                value={citaEditada.servicio}
-                onValueChange={(value) => setCitaEditada({ ...citaEditada, servicio: value })}
-              >
-                <SelectTrigger className="elegante-input">
-                  <SelectValue placeholder="Selecciona un servicio" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-darkest border-gray-dark">
-                  {servicios.map((servicio) => (
-                    <SelectItem key={servicio.id} value={servicio.id} className="text-white-primary">
-                      <div className="flex justify-between items-center w-full">
-                        <div>
-                          <div>{servicio.nombre}</div>
-                          <div className="text-xs text-gray-lightest">{servicio.duracion} min</div>
-                        </div>
-                        <div className="text-orange-primary ml-4">
-                          {formatearPrecio(servicio.precio)}
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Precio (automático) */}
-            {citaEditada.servicio && (
-              <div className="elegante-card">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-lightest">Precio del servicio:</span>
-                  <span className="text-orange-primary">
-                    {formatearPrecio(servicios.find(s => s.id === citaEditada.servicio)?.precio || 0)}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Notas Adicionales */}
-            <div className="space-y-2">
-              <Label className="text-white-primary">
-                Notas Adicionales (Opcional)
-              </Label>
-              <textarea
-                value={citaEditada.notas}
-                onChange={(e) => setCitaEditada({ ...citaEditada, notas: e.target.value })}
-                className="elegante-input min-h-[100px] resize-none"
-                placeholder="Especifica alguna preferencia o comentario..."
-              />
-            </div>
-
-            {/* Botones de acción */}
-            <div className="flex gap-3 pt-4">
-              <button
-                onClick={() => setIsEditDialogOpen(false)}
-                className="elegante-button-secondary flex-1"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleUpdateCita}
-                disabled={!citaEditada.barbero || !citaEditada.servicio}
-                className="elegante-button-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Actualizar Cita
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Alert Dialog de Confirmación Exitosa */}
-      <AlertDialog open={showSuccessAlert} onOpenChange={setShowSuccessAlert}>
-        <AlertDialogContent className="elegante-card max-w-lg">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-white-primary flex items-center gap-3">
-              <div className="w-12 h-12 bg-green-600/20 border border-green-600 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <span>¡Cita Agendada Exitosamente!</span>
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-lightest">
-              {citaConfirmada && (
-                <div className="space-y-4 mt-4">
-                  {/* Mensaje de éxito */}
-                  <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-4">
-                    <p className="text-white-primary text-center mb-1">
-                      Tu cita ha sido registrada correctamente
-                    </p>
-                    <p className="text-gray-lightest text-sm text-center">
-                      Recibirás un recordatorio antes de tu cita
-                    </p>
-                  </div>
-
-                  {/* Detalles de la cita */}
-                  <div className="bg-gray-darker border border-gray-dark rounded-lg p-5">
-                    <h4 className="text-white-primary mb-4 flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-orange-primary" />
-                      Detalles de tu Cita
-                    </h4>
-
-                    <div className="space-y-3">
-                      {/* Fecha y Hora */}
-                      <div className="flex items-start justify-between pb-3 border-b border-gray-dark">
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-lightest uppercase tracking-wide mb-1">Fecha y Hora</p>
-                          <p className="text-white-primary">
-                            {new Date(citaConfirmada.fecha + 'T00:00:00').toLocaleDateString('es-ES', {
-                              weekday: 'long',
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </p>
-                          <p className="text-orange-primary mt-1">
-                            {citaConfirmada.hora} ({citaConfirmada.duracion} min)
-                          </p>
-                        </div>
-                        <Clock className="w-5 h-5 text-gray-light mt-1" />
-                      </div>
-
-                      {/* Barbero */}
-                      <div className="flex items-start justify-between pb-3 border-b border-gray-dark">
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-lightest uppercase tracking-wide mb-1">Barbero</p>
-                          <p className="text-white-primary">{citaConfirmada.barbero}</p>
-                          <p className="text-gray-lightest text-sm">{citaConfirmada.barberoEspecialidad}</p>
-                        </div>
-                        <User className="w-5 h-5 text-gray-light mt-1" />
-                      </div>
-
-                      {/* Servicio */}
-                      <div className="flex items-start justify-between pb-3 border-b border-gray-dark">
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-lightest uppercase tracking-wide mb-1">Servicio</p>
-                          <p className="text-white-primary">{citaConfirmada.servicio}</p>
-                        </div>
-                        <Scissors className="w-5 h-5 text-gray-light mt-1" />
-                      </div>
-
-                      {/* Precio */}
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-lightest uppercase tracking-wide mb-1">Precio Total</p>
-                          <p className="text-orange-primary text-xl">
-                            {formatearPrecio(citaConfirmada.precio)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Notas si existen */}
-                      {citaConfirmada.notas && (
-                        <div className="pt-3 border-t border-gray-dark">
-                          <p className="text-xs text-gray-lightest uppercase tracking-wide mb-1">Notas</p>
-                          <p className="text-white-primary text-sm">{citaConfirmada.notas}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Recordatorio */}
-                  <div className="bg-orange-primary/10 border border-orange-primary/30 rounded-lg p-3">
-                    <p className="text-orange-primary text-sm text-center">
-                      ?? Por favor llega 5 minutos antes de tu cita
-                    </p>
-                  </div>
-                </div>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              onClick={() => {
-                setShowSuccessAlert(false);
-                setCitaConfirmada(null);
-              }}
-              className="elegante-button-primary w-full"
-            >
-              Perfecto, entendido
-            </AlertDialogAction>
+            <AlertDialogCancel className="bg-gray-darker text-white-primary border-gray-dark">Volver</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelCita} className="bg-red-600 hover:bg-red-700 text-white font-bold">SÃ­, cancelar cita</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

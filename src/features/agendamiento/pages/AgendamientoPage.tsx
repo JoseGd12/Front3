@@ -222,8 +222,8 @@ export function AgendamientoPage() {
     // Validar hora pasada si es el día de hoy
     if (nuevaCita.fecha === todayStr) {
       const currentMinutes = today.getHours() * 60 + today.getMinutes();
-      if (startNueva <= currentMinutes) {
-        return "No se permite agendar citas en horas que ya pasaron en el día de hoy.";
+      if (startNueva <= currentMinutes + 30) {
+        return "Debes agendar con al menos 30 minutos de anticipación.";
       }
     }
 
@@ -308,7 +308,7 @@ export function AgendamientoPage() {
 
       for (let currentSlotStart = startH; currentSlotStart + duracion <= endH; currentSlotStart += intervaloMinutos) {
         // Omitir bloques que ya pasaron si es el día de hoy
-        if (isToday && currentSlotStart <= currentMinutes) {
+        if (isToday && currentSlotStart <= currentMinutes + 30) {
           continue;
         }
 
@@ -776,8 +776,9 @@ export function AgendamientoPage() {
                               isPastSlot = true;
                            } else if (dayInfo.fechaCompleta === todayStr) {
                               const today = new Date();
-                              // Check if this hour is already past by comparing actual current hour
-                              if (hora <= today.getHours()) {
+                              const currentMinutesAdjusted = today.getHours() * 60 + today.getMinutes();
+                              // Se desactiva si han pasado más de 30 minutos desde el inicio de la hora
+                              if ((hora * 60) <= currentMinutesAdjusted - 30) {
                                 isPastSlot = true;
                               }
                            }
@@ -1174,7 +1175,7 @@ export function AgendamientoPage() {
                         <SelectContent className="bg-gray-darkest border-gray-dark max-h-80 overflow-y-auto">
                           <div className="px-2 py-1.5 text-xs font-semibold text-orange-primary/70 uppercase tracking-wider">Servicios</div>
                           {serviciosList.map((servicio) => (
-                            <SelectItem key={servicio.id} value={servicio.id.toString()} className="text-white-primary">
+                            <SelectItem key={servicio.id} value={servicio.id.toString()} className="text-white-primary focus:bg-orange-primary/10 focus:text-orange-primary">
                               {servicio.nombre} - {formatearPrecio(servicio.precio)}
                             </SelectItem>
                           ))}
@@ -1183,8 +1184,8 @@ export function AgendamientoPage() {
                             <>
                               <div className="px-2 py-1.5 mt-2 text-xs font-semibold text-orange-primary/70 uppercase tracking-wider">Paquetes Especiales</div>
                               {paquetesList.map((paquete) => (
-                                <SelectItem key={`p-${paquete.id}`} value={`p-${paquete.id}`} className="text-white-primary">
-                                  🎁 {paquete.nombre} - {formatearPrecio(paquete.precio)}
+                                <SelectItem key={`p-${paquete.id}`} value={`p-${paquete.id}`} className="text-white-primary focus:bg-orange-primary/10 focus:text-orange-primary">
+                                  {paquete.nombre} - {formatearPrecio(paquete.precio)}
                                 </SelectItem>
                               ))}
                             </>
@@ -1254,42 +1255,7 @@ export function AgendamientoPage() {
                     {showFormErrors && !nuevaCita.barberoId && (
                       <p className="text-xs text-red-400 mt-1">Este campo es obligatorio.</p>
                     )}
-                    {nuevaCita.barberoId > 0 && (
-                      <div className="mt-2 p-3 bg-gray-darker border border-gray-dark rounded-lg">
-                        <p className="text-[11px] font-semibold text-gray-light mb-2">
-                          Horas disponibles el {nuevaCita.fecha ? new Date(`${nuevaCita.fecha}T12:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' }) : 'día seleccionado'} (Click para usar):
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(() => {
-                            if (!nuevaCita.fecha) {
-                              return <div className="text-[11px] text-gray-lightest italic">Selecciona una fecha en 'Programación' primero</div>;
-                            }
 
-                            const horasLibres = getHorasDisponiblesParaDia(nuevaCita.fecha, nuevaCita.barberoId, nuevaCita.duracion || 60);
-                            
-                            if (horasLibres.length === 0) {
-                              return <div className="text-[11px] text-red-400 italic">El barbero no trabaja este día o ya no tiene disponibilidad.</div>;
-                            }
-
-                            return horasLibres.map((horaDisp, idx) => (
-                              <div 
-                                key={idx}
-                                className={`cursor-pointer text-[11px] px-2 py-1 rounded transition-all border flex items-center gap-1 ${
-                                  nuevaCita.hora === horaDisp 
-                                    ? "bg-orange-primary/20 border-orange-primary/80 shadow-[0_0_8px_rgba(216,176,129,0.3)]" 
-                                    : "bg-gray-darkest border-gray-dark hover:border-orange-primary/50 hover:bg-orange-primary/10"
-                                }`}
-                                onClick={() => setNuevaCita({ ...nuevaCita, hora: horaDisp })}
-                                title={`Seleccionar las ${horaDisp}`}
-                              >
-                                <Clock className="w-3 h-3 text-orange-primary/70" />
-                                <span className={nuevaCita.hora === horaDisp ? "text-orange-primary font-bold" : "text-gray-lightest"}>{horaDisp}</span>
-                              </div>
-                            ));
-                          })()}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 

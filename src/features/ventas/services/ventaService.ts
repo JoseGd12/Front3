@@ -370,6 +370,19 @@ class VentaService {
     };
   }
 
+  async getVentasByClienteId(clienteId: number): Promise<Venta[]> {
+    try {
+      const response = await this.request(`/Ventas/cliente/${clienteId}`);
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : [];
+      return Array.isArray(data) ? await Promise.all(data.map(item => this.normalizeVentaData(item))) : [];
+    } catch (error) {
+       console.warn('Error fetching ventas by clienteId, filtering local:', error);
+       const all = await this.getVentas();
+       return all.filter(v => Number(v.clienteId) === Number(clienteId));
+    }
+  }
+
   async getVentas(): Promise<Venta[]> {
     try {
       console.log('📥 Obteniendo ventas desde:', `${API_BASE_URL}/ventas`);

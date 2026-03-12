@@ -147,6 +147,21 @@ class AgendamientoService {
         };
     }
 
+    async getAgendamientosByClienteId(clienteId: number): Promise<Agendamiento[]> {
+        const response = await this.request(`/Agendamientos/cliente/${clienteId}`);
+        const text = await response.text();
+
+        if (!text || !text.trim()) return [];
+
+        try {
+            const data = JSON.parse(text);
+            return Array.isArray(data) ? data.map(item => this.mapApiToComponent(item)) : [];
+        } catch (e) {
+            console.warn('Error parsing agendamientos by cliente ID:', e);
+            return [];
+        }
+    }
+
     async getAgendamientos(): Promise<Agendamiento[]> {
         const response = await this.request('/Agendamientos');
         let text = await response.text();

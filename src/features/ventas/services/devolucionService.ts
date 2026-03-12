@@ -160,6 +160,18 @@ class DevolucionService {
         };
     }
 
+  async getDevolucionesByClienteId(clienteId: number): Promise<Devolucion[]> {
+    try {
+        const response = await this.request(`/Devoluciones/cliente/${clienteId}`);
+        const data = await response.json();
+        return await Promise.all(data.map((item: any) => this.normalizeDevolucionData(item)));
+    } catch (error) {
+        console.warn('Error fetching devoluciones by clienteId, filtering local:', error);
+        const all = await this.getDevoluciones();
+        return all.filter(d => Number(d.clienteId) === Number(clienteId));
+    }
+  }
+
     async getDevoluciones(): Promise<Devolucion[]> {
         try {
             const response = await this.request('/Devoluciones');
