@@ -1727,15 +1727,7 @@ export function ClientesPage() {
             </div>
 
 
-            {/* Contraseña temporal generada automáticamente al crear (no visible en el formulario) */}
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={createInFirebase}
-                onChange={(e) => setCreateInFirebase(e.target.checked)}
-              />
-              <Label className="text-white-primary">Crear en Firebase y enviar enlace de contraseña</Label>
-            </div>
+
 
             <div className="flex justify-end space-x-3 pt-4 border-t border-gray-dark">
               <button
