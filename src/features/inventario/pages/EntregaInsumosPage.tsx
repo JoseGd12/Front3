@@ -518,7 +518,7 @@ export function EntregaInsumosPage() {
     const cantidadFinal = cantidad > stockDisponible ? stockDisponible : cantidad;
 
     if (cantidadFinal !== cantidad) {
-      toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
+      error('Cantidad ajustada', `Se ajustó automáticamente al stock máximo disponible: ${stockDisponible} unidades`);
       setTarjetaInputsEntrega((prev) => ({
         ...prev,
         [insumoId]: { ...prev[insumoId], cantidad: String(cantidadFinal) }
@@ -571,22 +571,18 @@ export function EntregaInsumosPage() {
     const insumo = insumos.find(i => Number(i.id) === selectedId);
     console.log('🧪 Producto seleccionado encontrado:', { selectedId, insumo });
     if (!insumo) {
-      toast.error('Producto no encontrado');
+      error('Producto no encontrado', 'El producto seleccionado no existe o no está disponible.');
       console.error('❌ Producto no encontrado. insumoSeleccionado=', insumoSeleccionado, 'insumos=', insumos);
       return;
     }
 
     // Verificar stock disponible (usar stock de insumos si está disponible)
     const stockDisponible = insumo.stockInsumos ?? insumo.stock;
+    let cantidadAUsar = cantidadInsumo;
+
     if (cantidadInsumo > stockDisponible) {
-      toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
-      console.warn('🟡 No se agregó: stock insuficiente', {
-        id: insumo.id,
-        nombre: insumo.nombre,
-        solicitado: cantidadInsumo,
-        disponible: stockDisponible,
-      });
-      return;
+      error('Cantidad ajustada', `Se ajustó automáticamente al stock máximo disponible: ${stockDisponible}`);
+      cantidadAUsar = stockDisponible;
     }
 
     const insumosActuales = nuevaEntrega.insumos || [];
@@ -594,24 +590,25 @@ export function EntregaInsumosPage() {
     console.log('🧪 Estado antes de agregar', { insumosActuales, existeInsumo });
 
     if (existeInsumo) {
-      const nuevaCantidad = existeInsumo.cantidad + cantidadInsumo;
+      const nuevaCantidad = existeInsumo.cantidad + cantidadAUsar;
       const stockDisponible = insumo.stockInsumos ?? insumo.stock;
+      let cantidadFinal = nuevaCantidad;
       if (nuevaCantidad > stockDisponible) {
-        toast.error(`No hay suficiente stock de insumos. Disponible: ${stockDisponible} unidades`);
-        return;
+        error('Cantidad ajustada', `Se ajustó automáticamente al stock máximo disponible: ${stockDisponible}`);
+        cantidadFinal = stockDisponible;
       }
 
       setNuevaEntrega({
         ...nuevaEntrega,
         insumos: insumosActuales.map(i =>
           Number(i.id) === Number(insumo.id)
-            ? { ...i, cantidad: nuevaCantidad }
+            ? { ...i, cantidad: cantidadFinal }
             : i
         )
       });
       setTarjetaInputsEntrega((prev) => ({
         ...prev,
-        [insumo.id]: { ...prev[insumo.id], cantidad: String(nuevaCantidad) }
+        [insumo.id]: { ...prev[insumo.id], cantidad: String(cantidadFinal) }
       }));
     } else {
       setNuevaEntrega({
@@ -620,14 +617,14 @@ export function EntregaInsumosPage() {
           id: insumo.id,
           nombre: insumo.nombre,
           categoria: insumo.categoria,
-          cantidad: cantidadInsumo,
+          cantidad: cantidadAUsar,
           precio: Number(insumo.precio) || 0,
           imagen: insumo.imagen
         }]
       });
       setTarjetaInputsEntrega((prev) => ({
         ...prev,
-        [insumo.id]: { ...prev[insumo.id], cantidad: String(cantidadInsumo) }
+        [insumo.id]: { ...prev[insumo.id], cantidad: String(cantidadAUsar) }
       }));
     }
 
@@ -1449,16 +1446,40 @@ export function EntregaInsumosPage() {
                                         key={insumo.id}
                                         onMouseDown={(e) => {
                                           e.preventDefault();
-                                          setInsumoSeleccionado(Number(insumo.id));
+                                          const sid = Number(insumo.id);
+                                          setInsumoSeleccionado(sid);
                                           setInsumoSearchTerm(insumo.nombre);
                                           setShowInsumoResults(false);
                                           if (showAddInsumoErrors) setShowAddInsumoErrors(false);
+
+                                          // Ajustar cantidad si ya había algo escrito
+                                          const stockDispTotal = insumo.stockInsumos ?? insumo.stock;
+                                          const yaAgregado = (nuevaEntrega.insumos || []).find(it => Number(it.id) === sid);
+                                          const stockDisponibleReal = Math.max(0, (stockDispTotal ?? 0) - (yaAgregado?.cantidad || 0));
+
+                                          if (cantidadInsumo > stockDisponibleReal) {
+                                            error('Cantidad ajustada', `Se ajustó automáticamente al stock máximo disponible: ${stockDisponibleReal}`);
+                                            setCantidadInsumo(stockDisponibleReal);
+                                            setCantidadInsumoInput(String(stockDisponibleReal));
+                                          }
                                         }}
                                         onClick={() => {
-                                          setInsumoSeleccionado(Number(insumo.id));
+                                          const sid = Number(insumo.id);
+                                          setInsumoSeleccionado(sid);
                                           setInsumoSearchTerm(insumo.nombre);
                                           setShowInsumoResults(false);
                                           if (showAddInsumoErrors) setShowAddInsumoErrors(false);
+
+                                          // Ajustar cantidad si ya había algo escrito
+                                          const stockDispTotal = insumo.stockInsumos ?? insumo.stock;
+                                          const yaAgregado = (nuevaEntrega.insumos || []).find(it => Number(it.id) === sid);
+                                          const stockDisponibleReal = Math.max(0, (stockDispTotal ?? 0) - (yaAgregado?.cantidad || 0));
+
+                                          if (cantidadInsumo > stockDisponibleReal) {
+                                            error('Cantidad ajustada', `Se ajustó automáticamente al stock máximo disponible: ${stockDisponibleReal}`);
+                                            setCantidadInsumo(stockDisponibleReal);
+                                            setCantidadInsumoInput(String(stockDisponibleReal));
+                                          }
                                         }}
                                         className="p-3 border-b border-gray-dark hover:bg-gray-dark transition-colors cursor-pointer group"
                                       >
@@ -1519,9 +1540,25 @@ export function EntregaInsumosPage() {
                               }}
                               onChange={(e) => {
                                 const cleaned = e.target.value.replace(/\D+/g, '').slice(0, 2);
-                                setCantidadInsumoInput(cleaned);
-                                const n = Number(cleaned || 0);
-                                setCantidadInsumo(Number.isNaN(n) ? 0 : Math.max(0, Math.floor(n)));
+                                let n = Number(cleaned || 0);
+                                let valorFinal = Number.isNaN(n) ? 0 : Math.max(0, Math.floor(n));
+
+                                // Aplicar ajuste automático si hay un producto seleccionado
+                                if (insumoSeleccionado > 0) {
+                                  const selected = insumos.find(i => Number(i.id) === Number(insumoSeleccionado));
+                                  // Consideramos el stock total disponible menos lo que ya se agregó a la lista (opcional, pero mejor)
+                                  const yaAgregado = (nuevaEntrega.insumos || []).find(it => Number(it.id) === Number(insumoSeleccionado));
+                                  const stockDispTotal = selected ? (selected.stockInsumos ?? selected.stock) : Number.POSITIVE_INFINITY;
+                                  const stockDisponibleReal = Math.max(0, stockDispTotal - (yaAgregado?.cantidad || 0));
+
+                                  if (valorFinal > stockDisponibleReal) {
+                                    error('Cantidad ajustada', `Se ajustó automáticamente al stock máximo disponible: ${stockDisponibleReal}`);
+                                    valorFinal = stockDisponibleReal;
+                                  }
+                                }
+
+                                setCantidadInsumoInput(String(valorFinal));
+                                setCantidadInsumo(valorFinal);
                                 if (showAddInsumoErrors) setShowAddInsumoErrors(false);
                               }}
                             />
@@ -1643,13 +1680,7 @@ export function EntregaInsumosPage() {
                           <div className="mt-1">
                             {(nuevaEntrega.insumos || []).length === 0 ? (
                               <p className="text-gray-lightest">No hay productos agregados</p>
-                            ) : (
-                              <p className="text-gray-lightest text-sm leading-relaxed">
-                                {(nuevaEntrega.insumos || [])
-                                  .map((i) => `${i.nombre} (${i.cantidad})`)
-                                  .join(', ')}
-                              </p>
-                            )}
+                            ) : null}
                           </div>
                           <div className="pt-3 mt-3 border-t border-gray-medium flex items-center justify-between">
                             <span className="text-gray-lightest">Total productos</span>
