@@ -58,6 +58,7 @@ export function RolesPage() {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [hasTriedToSubmit, setHasTriedToSubmit] = useState(false);
   const [selectedRole, setSelectedRole] = useState<RoleWithModules | null>(null);
   const [editingRole, setEditingRole] = useState<RoleWithModules | null>(null);
   const [roleToDelete, setRoleToDelete] = useState<RoleWithModules | null>(null);
@@ -129,6 +130,10 @@ export function RolesPage() {
       return false;
     }
 
+    if (!roleData.modulos || roleData.modulos.length === 0) {
+      showError("Debe seleccionar al menos un módulo para este rol");
+      return false;
+    }
 
     const modulosValidos = roleData.modulos.every(id =>
       modulosProyecto.find(m => m.id === id)
@@ -258,6 +263,7 @@ export function RolesPage() {
 
   // Función para crear nuevo rol
   const handleCreateRole = useCallback(async () => {
+    setHasTriedToSubmit(true);
     if (!validateRoleData(nuevoRol)) return;
 
     try {
@@ -295,6 +301,7 @@ export function RolesPage() {
 
   // Función para editar rol
   const handleEditRole = useCallback(async () => {
+    setHasTriedToSubmit(true);
     if (!editingRole || !validateRoleData(editingRole)) return;
 
     try {
@@ -612,6 +619,7 @@ export function RolesPage() {
                     className="elegante-button-primary gap-2 flex items-center disabled:opacity-50"
                     onClick={() => {
                       setNuevoRol({ nombre: '', descripcion: '', modulos: [] });
+                      setHasTriedToSubmit(false);
                     }}
                     disabled={isCreating || isEditing || isDeleting}
                   >
@@ -638,8 +646,11 @@ export function RolesPage() {
                           value={nuevoRol.nombre}
                           onChange={(e) => setNuevoRol({ ...nuevoRol, nombre: e.target.value })}
                           placeholder="Ej: Content Manager"
-                          className="elegante-input w-full"
+                          className={`elegante-input w-full ${hasTriedToSubmit && !nuevoRol.nombre.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                         />
+                        {hasTriedToSubmit && !nuevoRol.nombre.trim() && (
+                          <p className="text-xs text-red-500 mt-1">Este campo es obligatorio.</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-white-primary flex items-center gap-2">
@@ -674,7 +685,7 @@ export function RolesPage() {
                     <button
                       onClick={handleCreateRole}
                       className="elegante-button-primary disabled:opacity-50"
-                      disabled={!nuevoRol.nombre || nuevoRol.modulos.length === 0 || isCreating}
+                      disabled={isCreating}
                     >
                       {isCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                       {isCreating ? 'Creando...' : 'Crear Rol'}
@@ -758,6 +769,7 @@ export function RolesPage() {
                           </button>
                           <button
                             onClick={async () => {
+                              setHasTriedToSubmit(false);
                               // Cargar rolesmodulos específicos del rol antes de editar
                               const rolesModulosData = await loadRolesModulosByRole(rol.id);
 
@@ -948,8 +960,11 @@ export function RolesPage() {
                     <Input
                       value={editingRole.nombre}
                       onChange={(e) => setEditingRole({ ...editingRole, nombre: e.target.value })}
-                      className="elegante-input"
+                      className={`elegante-input w-full ${hasTriedToSubmit && !editingRole.nombre.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                     />
+                    {hasTriedToSubmit && !editingRole.nombre.trim() && (
+                      <p className="text-xs text-red-500 mt-1">Este campo es obligatorio.</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label className="text-white-primary">Descripción</Label>
@@ -982,7 +997,7 @@ export function RolesPage() {
               <button
                 onClick={handleEditRole}
                 className="elegante-button-primary"
-                disabled={!editingRole?.nombre || editingRole?.modulos.length === 0 || isEditing}
+                disabled={isEditing}
               >
                 {isEditing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 {isEditing ? 'Actualizando...' : 'Actualizar Rol'}

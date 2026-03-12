@@ -91,6 +91,16 @@ export class AuthSyncService {
 
         if (necesitaActualizacion) {
           const datosActualizacion: Partial<ApiUser> = {
+            id: usuarioExistente.id,
+            nombre: usuarioExistente.nombre || firebaseProfile.displayName?.split(' ')[0] || 'Usuario',
+            apellido: usuarioExistente.apellido || firebaseProfile.displayName?.split(' ').slice(1).join(' ') || '',
+            documento: usuarioExistente.documento,
+            tipoDocumento: usuarioExistente.tipoDocumento,
+            telefono: usuarioExistente.telefono,
+            direccion: usuarioExistente.direccion,
+            barrio: usuarioExistente.barrio,
+            fechaNacimiento: usuarioExistente.fechaNacimiento,
+            fotoPerfil: usuarioExistente.fotoPerfil,
             correo: correo,
             contrasena: 'firebase_auth', // Contraseña por defecto para usuarios de Firebase
             rolId: rolParaPersistir,

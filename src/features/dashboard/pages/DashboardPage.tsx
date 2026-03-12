@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "../../../shared/components/ui/badge";
-import { Calendar, DollarSign, Users, Scissors, Package, Clock, Download, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { Calendar, DollarSign, Users, Scissors, Package, Clock, Download, ChevronDown, ChevronUp, RotateCcw, FileDown, FileSpreadsheet } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend, LineChart, Line, LegendType } from "recharts";
 import { useThemeColors } from "../../../shared/utils/themeColors";
 import { Skeleton } from "../../../shared/components/ui/skeleton";
+import { Input } from "../../../shared/components/ui/input";
+import { Label } from "../../../shared/components/ui/label";
+import * as XLSX from "xlsx";
 
 type PeriodoClave = "semanal" | "mensual" | "anual";
 
@@ -11,6 +14,13 @@ type VentaDetalle = {
   nombre: string;
   cantidad: number;
   precio: number;
+};
+
+type VentaServicioPaqueteDetalle = {
+  nombre: string;
+  cantidad: number;
+  precio: number;
+  tipo: "Servicio" | "Paquete";
 };
 
 type Venta = {
@@ -22,6 +32,7 @@ type Venta = {
   cliente?: string | null;
   productosDetalle: VentaDetalle[];
   serviciosDetalle: VentaDetalle[];
+  serviciosPaquetesDetalle?: VentaServicioPaqueteDetalle[];
 };
 
 type Agendamiento = {
@@ -47,8 +58,48 @@ type Insumo = {
 };
 
 const getVentas = async (): Promise<Venta[]> => {
-  const res = await fetch("/api/Ventas");
-  if (!res.ok) return [];
+  const dashRes = await fetch("/api/Dashboard").catch(() => null);
+  if (dashRes && dashRes.ok) {
+    const jd = await dashRes.json();
+    const lista = Array.isArray(jd?.ventas) ? jd.ventas : [];
+    const ventasDash: Venta[] = lista.map((v: any) => {
+      const productos = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+      const servicios = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+      const productosDetalle = productos.map((d: any) => ({
+        nombre: d.nombre ?? d.Nombre ?? "Producto",
+        cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
+        precio: Number((d.precio ?? d.Precio ?? d.precioUnitario ?? d.PrecioUnitario) ?? 0),
+      }));
+      const serviciosDetalle = servicios.map((d: any) => ({
+        nombre: d.nombre ?? d.Nombre ?? "Servicio",
+        cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
+        precio: Number((d.precio ?? d.Precio ?? d.precioUnitario ?? d.PrecioUnitario) ?? 0),
+      }));
+      const serviciosPaquetesDetalle = servicios.map((d: any) => {
+        const tipo = (d.tipo ?? d.Tipo) === "Paquete" ? "Paquete" : "Servicio";
+        return {
+          nombre: d.nombre ?? d.Nombre ?? "",
+          cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
+          precio: Number((d.precio ?? d.Precio ?? d.precioUnitario ?? d.PrecioUnitario) ?? 0),
+          tipo
+        };
+      });
+      return {
+        id: v.id ?? v.Id,
+        fecha: v.fecha ?? v.Fecha,
+        estado: v.estado ?? v.Estado,
+        total: Number((v.total ?? v.Total) ?? 0),
+        clienteId: (v.clienteId ?? v.ClienteId) ?? null,
+        cliente: v.cliente ?? null,
+        productosDetalle,
+        serviciosDetalle,
+        serviciosPaquetesDetalle,
+      } as Venta;
+    });
+    return ventasDash;
+  }
+  const res = await fetch("/api/Ventas").catch(() => null);
+  if (!res || !res.ok) return [];
   const raw = await res.json();
   const ventasBase: Venta[] = (Array.isArray(raw) ? raw : []).map((v: any) => ({
     id: v.id ?? v.Id,
@@ -63,7 +114,8 @@ const getVentas = async (): Promise<Venta[]> => {
           ? `${v.Cliente.Usuario.Nombre ?? ""} ${v.Cliente.Usuario.Apellido ?? ""}`.trim()
           : null),
     productosDetalle: [],
-    serviciosDetalle: []
+    serviciosDetalle: [],
+    serviciosPaquetesDetalle: []
   }));
   const ids = ventasBase.slice(0, 50).map(v => v.id);
   const detallesPorVenta = await Promise.all(ids.map(async id => {
@@ -75,7 +127,7 @@ const getVentas = async (): Promise<Venta[]> => {
   const mapa = new Map<number, any[]>(detallesPorVenta.map(d => [d.id, d.detalles]));
   ventasBase.forEach(v => {
     const dets = mapa.get(v.id) ?? [];
-    v.productosDetalle = dets.filter((d: any) => d.producto || d.Producto).map((d: any) => ({
+    const productos = dets.filter((d: any) => d.producto || d.Producto).map((d: any) => ({
       nombre: (d.producto?.nombre ?? d.Producto?.Nombre) ?? "Producto",
       cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
       precio: Number((d.precioUnitario ?? d.PrecioUnitario) ?? 0)
@@ -90,7 +142,12 @@ const getVentas = async (): Promise<Venta[]> => {
       cantidad: Number((d.cantidad ?? d.Cantidad) ?? 1),
       precio: Number((d.precioUnitario ?? d.PrecioUnitario) ?? 0)
     }));
+    v.productosDetalle = productos;
     v.serviciosDetalle = [...servicios, ...paquetes];
+    v.serviciosPaquetesDetalle = [
+      ...servicios.map(s => ({ ...s, tipo: "Servicio" as const })),
+      ...paquetes.map(p => ({ ...p, tipo: "Paquete" as const })),
+    ];
   });
   return ventasBase;
 };
@@ -147,6 +204,9 @@ const formatAxisValue = (value: number) => {
   return value.toLocaleString("es-CO");
 };
 
+const formatDateYMD = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 const periodoLabels: Record<PeriodoClave, string> = {
   semanal: "Semana",
   mensual: "Mes",
@@ -162,6 +222,21 @@ export function DashboardPage() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [showReport, setShowReport] = useState(false);
+  const [reportStart, setReportStart] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return formatDateYMD(d);
+  });
+  const [reportEnd, setReportEnd] = useState<string>(() => formatDateYMD(new Date()));
+  const reportButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [reportWidth, setReportWidth] = useState<number>(0);
+
+  useEffect(() => {
+    if (showReport && reportButtonRef.current) {
+      setReportWidth(reportButtonRef.current.offsetWidth);
+    }
+  }, [showReport]);
 
   useEffect(() => {
     let isMounted = true;
@@ -207,6 +282,7 @@ export function DashboardPage() {
     d.setHours(23, 59, 59, 999);
     return d;
   })();
+  const todayYMD = formatDateYMD(today);
 
   const ventasHoy = useMemo(() => {
     return ventas.filter(v => {
@@ -840,6 +916,164 @@ export function DashboardPage() {
 
   const datosPeriodoSeleccionado = ventasComparativasPorPeriodo[periodoIngresos];
 
+  const normalizarRango = (a: string, b: string) => {
+    const max = formatDateYMD(new Date());
+    let start = a <= b ? a : b;
+    let end = a <= b ? b : a;
+    if (end > max) end = max;
+    if (start > max) start = max;
+    return { start, end };
+  };
+
+  const exportReportExcel = () => {
+    const { start, end } = normalizarRango(reportStart, reportEnd);
+    const ventasRango = ventas.filter(v => v.fecha && v.fecha >= start && v.fecha <= end && isVentaActiva(v.estado));
+    const rows: Array<Record<string, any>> = [];
+    ventasRango.forEach(v => {
+      const cliente = v.cliente ?? "";
+      const fecha = v.fecha;
+      const pd = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+      const sd = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+      pd.forEach(d => {
+        const total = Number(d.precio || 0) * Number(d.cantidad || 1);
+        rows.push({
+          Fecha: fecha,
+          Cliente: cliente,
+          Tipo: "Producto",
+          Nombre: d.nombre || "Producto",
+          Cantidad: Number(d.cantidad || 1),
+          PrecioUnitario: Number(d.precio || 0),
+          Total: total
+        });
+      });
+      sd.forEach(d => {
+        const total = Number(d.precio || 0) * Number(d.cantidad || 1);
+        rows.push({
+          Fecha: fecha,
+          Cliente: cliente,
+          Tipo: "Servicio",
+          Nombre: d.nombre || "Servicio",
+          Cantidad: Number(d.cantidad || 1),
+          PrecioUnitario: Number(d.precio || 0),
+          Total: total
+        });
+      });
+    });
+    const wb = XLSX.utils.book_new();
+    const wsDetalle = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, wsDetalle, "Detalle");
+    const totalProductos = rows.filter(r => r.Tipo === "Producto").reduce((s, r) => s + Number(r.Total || 0), 0);
+    const totalServicios = rows.filter(r => r.Tipo === "Servicio").reduce((s, r) => s + Number(r.Total || 0), 0);
+    const resumen = [
+      { Concepto: "Total Productos", Monto: totalProductos },
+      { Concepto: "Total Servicios", Monto: totalServicios },
+      { Concepto: "Total General", Monto: totalProductos + totalServicios },
+      { Concepto: "Ventas en rango", Monto: ventasRango.length }
+    ];
+    const wsResumen = XLSX.utils.json_to_sheet(resumen);
+    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen");
+    XLSX.writeFile(wb, `Reporte_${start}_a_${end}.xlsx`);
+  };
+
+  const generateReportByDatePDF = () => {
+    const { start, end } = normalizarRango(reportStart, reportEnd);
+    const ventasRango = ventas.filter(v => v.fecha && v.fecha >= start && v.fecha <= end && isVentaActiva(v.estado));
+    const serviciosRealizados = agendamientos.filter(a => a.fecha && a.fecha >= start && a.fecha <= end && isCitaCompletada(a.estado)).length;
+    const filas = (() => {
+      const arr: { fecha: string; cliente: string; tipo: string; nombre: string; cantidad: number; total: number }[] = [];
+      ventasRango.forEach(v => {
+        const cliente = v.cliente ?? "";
+        const fecha = v.fecha;
+        const pd = Array.isArray(v.productosDetalle) ? v.productosDetalle : [];
+        const sd = Array.isArray(v.serviciosDetalle) ? v.serviciosDetalle : [];
+        pd.forEach(d => arr.push({ fecha, cliente, tipo: "Producto", nombre: d.nombre || "Producto", cantidad: Number(d.cantidad || 1), total: Number(d.precio || 0) * Number(d.cantidad || 1) }));
+        sd.forEach(d => arr.push({ fecha, cliente, tipo: "Servicio", nombre: d.nombre || "Servicio", cantidad: Number(d.cantidad || 1), total: Number(d.precio || 0) * Number(d.cantidad || 1) }));
+      });
+      return arr;
+    })();
+    const totalGeneral = filas.reduce((s, f) => s + f.total, 0);
+    const totalProductos = filas.filter(f => f.tipo === "Producto").reduce((s, f) => s + f.total, 0);
+    const totalServicios = filas.filter(f => f.tipo === "Servicio").reduce((s, f) => s + f.total, 0);
+    const rowsHtml = filas.slice(0, 50).map(f => `
+      <tr>
+        <td>${f.fecha}</td>
+        <td>${f.cliente}</td>
+        <td>${f.tipo}</td>
+        <td>${f.nombre}</td>
+        <td>${f.cantidad}</td>
+        <td class="mono">$${formatCurrencyValue(f.total)}</td>
+      </tr>
+    `).join("");
+    const reportContent = `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Reporte por Fecha</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 24px; }
+          .header { background: #0b0b0b; color: #d8b081; padding: 20px; border-radius: 12px; margin-bottom: 18px; text-align: center; }
+          .range { color: #fff; margin-top: 6px; font-size: 14px; }
+          .grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 18px; }
+          .card { border: 1px solid #d8b081; border-radius: 10px; padding: 12px; background: #fafafa; }
+          .title { font-size: 13px; color: #555; }
+          .value { font-size: 22px; font-weight: 700; color: #111; }
+          table { width: 100%; border-collapse: collapse; background: #fff; }
+          th { background: #1a1a1a; color: #d8b081; text-align: left; padding: 8px; font-size: 12px; }
+          td { padding: 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+          .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+          .note { color: #666; font-size: 12px; margin-top: 8px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div style="font-size: 22px; font-weight: 800;">MANITO BARBERSHOP</div>
+          <div style="font-size: 16px;">Reporte por Fecha</div>
+          <div class="range">Desde ${start} hasta ${end}</div>
+        </div>
+        <div class="grid">
+          <div class="card"><div class="title">Ventas en rango</div><div class="value">${ventasRango.length}</div></div>
+          <div class="card"><div class="title">Servicios realizados</div><div class="value">${serviciosRealizados}</div></div>
+          <div class="card"><div class="title">Total ingresos</div><div class="value">$${formatCurrencyValue(totalGeneral)}</div></div>
+          <div class="card"><div class="title">Productos</div><div class="value">$${formatCurrencyValue(totalProductos)}</div></div>
+          <div class="card"><div class="title">Servicios</div><div class="value">$${formatCurrencyValue(totalServicios)}</div></div>
+        </div>
+        <h3 style="margin:12px 0;">Detalle (máx. 50 filas)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Tipo</th>
+              <th>Nombre</th>
+              <th>Cant.</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <div class="note">Generado el ${new Date().toLocaleString('es-ES')}</div>
+      </body>
+      </html>
+    `;
+    const blob = new Blob([reportContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Reporte_${start}_a_${end}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(reportContent);
+      win.document.close();
+      setTimeout(() => win.print(), 600);
+    }
+  };
+
   type ItemComparativa = {
     grupo: "Productos" | "Servicios";
     groupLabel: string;
@@ -910,6 +1144,36 @@ export function DashboardPage() {
     });
     return Array.from(mapa.values()).sort((a, b) => b.ingresos - a.ingresos);
   }, [ventas]);
+
+  const ventasPorServicioPaquete = useMemo(() => {
+    const mapa = new Map<string, { producto: string; unidades: number; ingresos: number; tipo: "Servicio" | "Paquete" }>();
+    const ordenadas = [...ventas].filter(v => isVentaActiva(v.estado)).sort((a, b) => {
+      const da = new Date(a.fecha).getTime();
+      const db = new Date(b.fecha).getTime();
+      return db - da;
+    }).slice(0, 30);
+    ordenadas.forEach(v => {
+      const detalles = Array.isArray((v as any).serviciosPaquetesDetalle)
+        ? (v as any).serviciosPaquetesDetalle as { nombre: string; cantidad: number; precio: number; tipo: "Servicio" | "Paquete" }[]
+        : Array.isArray(v.serviciosDetalle)
+          ? v.serviciosDetalle.map(d => ({ ...d, tipo: "Servicio" as const }))
+          : [];
+      detalles.forEach(d => {
+        const nombre = d.nombre || (d.tipo === "Paquete" ? "Paquete" : "Servicio");
+        const unidades = Number(d.cantidad || 1);
+        const ingreso = Number(d.precio || 0) * unidades;
+        const key = `${d.tipo}|${nombre}`;
+        const actual = mapa.get(key) || { producto: nombre, unidades: 0, ingresos: 0, tipo: d.tipo };
+        actual.unidades += unidades;
+        actual.ingresos += ingreso;
+        mapa.set(key, actual);
+      });
+    });
+    return Array.from(mapa.values()).sort((a, b) => b.ingresos - a.ingresos);
+  }, [ventas]);
+
+  const [tipoRecientes, setTipoRecientes] = useState<"productos" | "servicios">("productos");
+  const dataRecientes = tipoRecientes === "productos" ? ventasPorProducto : ventasPorServicioPaquete;
 
   // removed unused totalIngresosRecientes
   const renderIngresosTooltip = ({ active, payload }: any) => {
@@ -1073,11 +1337,89 @@ export function DashboardPage() {
       <main className="flex-1 overflow-auto p-8 bg-black-primary">
         {/* Indicadores resumidos */}
         <section className="mt-5 mb-12">
-          <div className="mb-6">
-            <h3 className="text-2xl font-bold text-white-primary mb-2">Indicadores del Día</h3>
-            <p className="text-gray-lightest font-medium">
-              Estado rápido de ventas, citas, clientes y servicios.
-            </p>
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <h3 className="text-2xl font-bold text-white-primary mb-2">Indicadores del Día</h3>
+              <p className="text-gray-lightest font-medium">
+                Estado rápido de ventas, citas, clientes y servicios.
+              </p>
+            </div>
+            <div className="relative">
+              <button
+                ref={reportButtonRef}
+                onClick={() => setShowReport(!showReport)}
+                className="elegante-button-primary gap-2 flex items-center hover:scale-105 transition-transform"
+                title="Reporte por fecha"
+              >
+                <span>Reporte por fecha</span>
+                {showReport ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+              {showReport && (
+                <div
+                  className="absolute right-0 mt-2 p-4 rounded-xl border border-gray-dark bg-gray-darkest z-50 shadow-xl"
+                  style={{ width: reportWidth || undefined }}
+                >
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-orange-primary" />
+                        Desde
+                      </Label>
+                  <Input
+                    type="date"
+                    value={reportStart}
+                    max={todayYMD}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const capped = v > todayYMD ? todayYMD : v;
+                      setReportStart(capped);
+                      if (reportEnd < capped) setReportEnd(capped);
+                    }}
+                  />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-white-primary flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-orange-primary" />
+                        Hasta
+                      </Label>
+                  <Input
+                    type="date"
+                    value={reportEnd}
+                    max={todayYMD}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const capped = v > todayYMD ? todayYMD : v;
+                      setReportEnd(capped);
+                      if (capped < reportStart) setReportStart(capped);
+                    }}
+                  />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={generateReportByDatePDF}
+                        className="elegante-button-primary gap-2 flex items-center w-full justify-center"
+                        title="Exportar reporte en PDF"
+                      >
+                        <FileDown className="w-4 h-4" />
+                        PDF
+                      </button>
+                      <button
+                        onClick={exportReportExcel}
+                        className="elegante-button-primary gap-2 flex items-center w-full justify-center"
+                        title="Exportar reporte en Excel"
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Excel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           {errorMsg && (
             <div className="rounded-lg border border-red-600/40 bg-red-900/30 text-red-300 px-4 py-2 mb-4">
@@ -1326,17 +1668,35 @@ export function DashboardPage() {
           {/* Ventas recientes */}
           <div className="elegante-card">
             <div className="pb-6 border-b border-gray-dark">
-              <h3 className="text-xl font-bold text-white-primary mb-2">Ventas recientes por producto</h3>
-              <p className="text-gray-lightest text-sm">
-                Muestra los ingresos y unidades que aportó cada producto en las últimas ventas registradas.
-              </p>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-bold text-white-primary mb-2">Ventas recientes</h3>
+                  <p className="text-gray-lightest text-sm">
+                    Ingresos y unidades por {tipoRecientes === "productos" ? "producto" : "servicios/paquetes"} en las últimas ventas.
+                  </p>
+                </div>
+                <div className="flex items-center rounded-full border border-gray-dark overflow-hidden">
+                  {(["productos", "servicios"] as const).map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setTipoRecientes(t)}
+                      className={`px-4 py-1.5 text-sm font-medium transition-colors ${tipoRecientes === t
+                        ? "bg-orange-primary text-black-primary"
+                        : "text-gray-lightest hover:bg-white/5"
+                        }`}
+                    >
+                      {t === "productos" ? "Productos" : "Servicios/Paquetes"}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="pt-6" style={{ height: "360px" }}>
               {isLoading ? (
                 <Skeleton className="h-full w-full rounded-xl" />
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ventasPorProducto} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+                  <BarChart data={dataRecientes} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
                     <XAxis dataKey="producto" stroke="#888" tick={{ fill: '#ccc', fontSize: 12 }} />
                     <YAxis
@@ -1346,14 +1706,40 @@ export function DashboardPage() {
                     />
                     <Tooltip
                       cursor={{ fill: "#ffffff10" }}
-                      contentStyle={{ backgroundColor: "#0b0b0b", border: `1px solid ${colors.primary}` }}
+                      contentStyle={{ backgroundColor: "#0b0b0b", border: `1px solid ${colors.primary}`, color: "#ffffff" }}
+                      labelStyle={{ color: "#ffffff" }}
+                      itemStyle={{ color: "#ffffff" }}
                       formatter={(value: any, _name: any, props: any) => [
                         `$${formatCurrencyValue(value as number)} • ${props.payload.unidades} uds`,
                         props.payload.producto
                       ]}
                     />
-                    <Legend />
-                    <Bar dataKey="ingresos" name="Ingresos" radius={[12, 12, 0, 0]} fill="url(#productosGradient)" />
+                    <Legend
+                      payload={
+                        tipoRecientes === "productos"
+                          ? [
+                            { value: "Ingresos", type: "square", color: colors.gold }
+                          ]
+                          : [
+                            { value: "Servicios", type: "square", color: "#3b82f6" },
+                            { value: "Paquetes", type: "square", color: "#22c55e" },
+                          ]
+                      }
+                    />
+                    <Bar dataKey="ingresos" name="Ingresos" radius={[12, 12, 0, 0]}>
+                      {dataRecientes.map((entry: any, index: number) => (
+                        <Cell
+                          key={`cell-rec-${index}`}
+                          fill={
+                            tipoRecientes === "productos"
+                              ? "url(#productosGradient)"
+                              : entry.tipo === "Paquete"
+                                ? "#22c55e"
+                                : "#3b82f6"
+                          }
+                        />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )}
