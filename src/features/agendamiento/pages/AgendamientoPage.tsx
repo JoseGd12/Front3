@@ -209,7 +209,8 @@ export function AgendamientoPage() {
     if (!nuevaCita.fecha || !nuevaCita.hora) return null;
 
     // Validar fecha anterior al día actual
-    const todayStr = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
     if (nuevaCita.fecha < todayStr) {
       return "No se permite agendar citas en días anteriores al día actual.";
     }
@@ -217,6 +218,15 @@ export function AgendamientoPage() {
     const durNueva = Number(nuevaCita.duracion || 60);
     const [hhStr, mmStr = '0'] = String(nuevaCita.hora).split(':');
     const startNueva = (parseInt(hhStr || '0', 10) * 60) + (parseInt(mmStr || '0', 10));
+    
+    // Validar hora pasada si es el día de hoy
+    if (nuevaCita.fecha === todayStr) {
+      const currentMinutes = today.getHours() * 60 + today.getMinutes();
+      if (startNueva <= currentMinutes) {
+        return "No se permite agendar citas en horas que ya pasaron en el día de hoy.";
+      }
+    }
+
     const endNueva = startNueva + durNueva;
 
     // Obtener las citas del día para este barbero, para considerarlo en el error
@@ -264,6 +274,74 @@ export function AgendamientoPage() {
     }
 
     return null; // Todo correcto
+  };
+
+  const getHorasDisponiblesParaDia = (fechaStr: string, barberoId: number, duracion: number) => {
+    if (!fechaStr || !barberoId) return [];
+    
+    // Obtener el día de la semana
+    const fechaObj = new Date(`${fechaStr}T12:00:00`);
+    const dayIndex = fechaObj.getDay(); // 0=Domingo..6=Sábado
+    const diaStr = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][dayIndex];
+    
+    // Obtener horarios para ese día
+    const horariosBarbero = horariosList.filter((h: any) => Number(h.barberoId) === Number(barberoId) && String(h.dia) === diaStr && h.estado === true);
+    
+    if (horariosBarbero.length === 0) return [];
+
+    let availableSlots: string[] = [];
+
+    // Para cada franja horaria de este día
+    horariosBarbero.forEach((h: any) => {
+      const [hIniH, hIniM] = String(h.horaInicio || '00:00').split(':').map((x: string) => parseInt(x || '0', 10));
+      const [hFinH, hFinM] = String(h.horaFin || '23:59').split(':').map((x: string) => parseInt(x || '0', 10));
+      
+      const startH = hIniH * 60 + hIniM;
+      const endH = hFinH * 60 + hFinM;
+      
+      const intervaloMinutos = 30; // Mostrar intervalos de 30 minutos
+      
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const isToday = fechaStr === todayStr;
+      const currentMinutes = today.getHours() * 60 + today.getMinutes();
+
+      for (let currentSlotStart = startH; currentSlotStart + duracion <= endH; currentSlotStart += intervaloMinutos) {
+        // Omitir bloques que ya pasaron si es el día de hoy
+        if (isToday && currentSlotStart <= currentMinutes) {
+          continue;
+        }
+
+        // Verificar solapamiento
+        const solapa = citas.find((cita: any) => {
+          if (cita.fecha !== fechaStr) return false;
+          if (Number(cita.barberoId) !== Number(barberoId)) return false;
+          // Ignorar la propia cita cuando estamos editando
+          if (selectedCita && cita.id === selectedCita.id) return false;
+          // Ignorar canceladas
+          const estado = String(cita.estado || '');
+          if (estado.toLowerCase() === 'cancelada') return false;
+          
+          const [ch, cm = '0'] = String(cita.hora || '').split(':');
+          const startExist = (parseInt(ch || '0', 10) * 60) + (parseInt(cm || '0', 10));
+          const durExist = Number(cita.duracion || 60);
+          const endExist = startExist + durExist;
+          
+          const endCurrentSlot = currentSlotStart + duracion;
+          
+          // Se solapan si inician antes de que termine la otra y terminan después de que empiece
+          return currentSlotStart < endExist && startExist < endCurrentSlot;
+        });
+
+        if (!solapa) {
+          const hhStr = String(Math.floor(currentSlotStart / 60)).padStart(2, '0');
+          const mmStr = String(currentSlotStart % 60).padStart(2, '0');
+          availableSlots.push(`${hhStr}:${mmStr}`);
+        }
+      }
+    });
+
+    return Array.from(new Set(availableSlots)).sort();
   };
 
   const getEstadoInfo = (estado: string) => {
@@ -429,6 +507,19 @@ export function AgendamientoPage() {
       return;
     }
 
+    if (String(nuevaCita.estado).toLowerCase() === 'completada') {
+      const now = new Date();
+      const horaCompleta = nuevaCita.hora ? 
+        (String(nuevaCita.hora).includes(':') ? String(nuevaCita.hora) : `${nuevaCita.hora}:00`) 
+        : '00:00';
+      const horaFormateada = horaCompleta.length === 4 && horaCompleta.indexOf(':') === 1 ? `0${horaCompleta}` : horaCompleta; 
+      const citaDate = new Date(`${nuevaCita.fecha}T${horaFormateada}:00`);
+      if (citaDate > now) {
+        error("Acción no permitida", "No se puede establecer una fecha futura a una cita completada.");
+        return;
+      }
+    }
+
     try {
       await agendamientoService.updateAgendamiento(selectedCita.id, {
         clienteId: nuevaCita.clienteId,
@@ -491,11 +582,28 @@ export function AgendamientoPage() {
   // Cambiar estado de cita
   const handleChangeEstado = async (citaId: number, nuevoEstado: string) => {
     try {
+      const estadoLower = String(nuevoEstado).toLowerCase();
+      if (estadoLower === 'completada') {
+        const citaActual = citas.find(c => c.id === citaId);
+        if (citaActual) {
+          const now = new Date();
+          // Asegurar formato de hora válido, ej. '14:00'
+          const horaCompleta = citaActual.hora ? 
+            (citaActual.hora.includes(':') ? citaActual.hora : `${citaActual.hora}:00`) 
+            : '00:00';
+          const horaFormateada = horaCompleta.length === 4 && horaCompleta.indexOf(':') === 1 ? `0${horaCompleta}` : horaCompleta; 
+          const citaDate = new Date(`${citaActual.fecha}T${horaFormateada}:00`);
+          if (citaDate > now) {
+            error("Acción no permitida", "No se puede completar una cita futura.");
+            return;
+          }
+        }
+      }
+
       const result = await agendamientoService.updateAgendamientoStatus(citaId, nuevoEstado);
       setCitas(citas.map(cita =>
         cita.id === citaId ? { ...cita, estado: nuevoEstado } : cita
       ));
-      const estadoLower = String(nuevoEstado).toLowerCase();
       if (estadoLower === 'cancelada') {
         const ventaInfoCancel = result && (result.venta || result.Venta || null);
         const ventaIdCancel = Number(result?.ventaId || result?.VentaId || ventaInfoCancel?.id || ventaInfoCancel?.Id || 0);
@@ -661,30 +769,45 @@ export function AgendamientoPage() {
                       {diasSemana.map((dia) => {
                         const citasEnSlot = getCitasEnSlot(dia, hora);
                         const dayInfo = weekDays.find(d => d.dia === dia);
-                        const isPastDay = dayInfo ? dayInfo.fechaCompleta < todayStr : false;
+                        
+                        let isPastSlot = false;
+                        if (dayInfo) {
+                           if (dayInfo.fechaCompleta < todayStr) {
+                              isPastSlot = true;
+                           } else if (dayInfo.fechaCompleta === todayStr) {
+                              const today = new Date();
+                              // Check if this hour is already past by comparing actual current hour
+                              if (hora <= today.getHours()) {
+                                isPastSlot = true;
+                              }
+                           }
+                        }
 
                         return (
                           <div
                             key={`${dia}-${hora}`}
-                            className={`relative rounded border transition-all duration-200 ${isPastDay
+                            className={`relative rounded border transition-all duration-200 ${isPastSlot && citasEnSlot.length === 0
                                 ? "bg-gray-darkest border-gray-dark/40 cursor-not-allowed opacity-60"
-                                : "bg-gray-darker border-gray-dark hover:bg-gray-dark hover:border-orange-primary/50 cursor-pointer group"
+                                : isPastSlot && citasEnSlot.length > 0
+                                  ? "bg-gray-darker border-gray-dark hover:bg-gray-dark opacity-80 cursor-pointer hover:border-orange-primary/50 group"
+                                  : "bg-gray-darker border-gray-dark hover:bg-gray-dark hover:border-orange-primary/50 cursor-pointer group"
                               }`}
                             onClick={() => {
-                              if (!isPastDay) handleSlotClick(dia, hora);
+                              // Permitir clic si no es pasada o si es pasada pero tiene citas (para poder editarlas)
+                              if (!isPastSlot || citasEnSlot.length > 0) handleSlotClick(dia, hora);
                             }}
-                            title={isPastDay ? "Fecha pasada" : `Gestionar citas de ${dia} a las ${hora}:00`}
+                            title={isPastSlot && citasEnSlot.length === 0 ? "Franja pasada y sin citas" : `Gestionar citas de ${dia} a las ${hora}:00`}
                           >
                             {/* Indicador de citas */}
                             {citasEnSlot.length > 0 && (
-                              <div className={`absolute top-1 right-1 text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold ${isPastDay ? "bg-gray-dark text-gray-light" : "bg-orange-primary text-black-primary"
+                              <div className={`absolute top-1 right-1 text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold ${isPastSlot ? "bg-gray-dark text-gray-light" : "bg-orange-primary text-black-primary"
                                 }`}>
                                 {citasEnSlot.length}
                               </div>
                             )}
 
                             {/* Overlay hover */}
-                            {!isPastDay && (
+                            {(!isPastSlot || citasEnSlot.length > 0) && (
                               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                 <div className="text-center">
                                   <MoreHorizontal className="w-6 h-6 text-orange-primary mx-auto mb-1" />
@@ -700,7 +823,7 @@ export function AgendamientoPage() {
                                   key={cita.id}
                                   className="text-xs p-1 rounded truncate"
                                   style={{
-                                    backgroundColor: getCitaColor(cita.estado) + (isPastDay ? '20' : '40'),
+                                    backgroundColor: getCitaColor(cita.estado) + (isPastSlot ? '20' : '40'),
                                     color: getCitaColor(cita.estado),
                                     border: `1px solid ${getCitaColor(cita.estado)}`
                                   }}
@@ -750,36 +873,60 @@ export function AgendamientoPage() {
             >
               Lista de Citas
             </button>
-            <button
-              onClick={() => {
-                setActiveTab('crear');
-                setShowFormErrors(false);
-                if (!selectedCita) {
-                  setNuevaCita({
-                    clienteId: 0,
-                    cliente: '',
-                    telefono: '',
-                    servicioId: null,
-                    paqueteId: null,
-                    servicio: '',
-                    barberoId: 0,
-                    barbero: '',
-                    fecha: selectedSlot?.fecha || '',
-                    hora: selectedSlot?.hora.toString().padStart(2, '0') + ':00' || '',
-                    duracion: 60,
-                    precio: 0,
-                    estado: 'Pendiente',
-                    notas: ''
-                  });
+            {(() => {
+              // Validar si el slot seleccionado es en el pasado
+              let slotEsPasado = false;
+              if (selectedSlot) {
+                const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
+                if (selectedSlot.fecha < todayStr) {
+                  slotEsPasado = true;
+                } else if (selectedSlot.fecha === todayStr) {
+                  if (selectedSlot.hora <= today.getHours()) {
+                    slotEsPasado = true;
+                  }
                 }
-              }}
-              className={`px-6 py-3 border-b-2 transition-colors ${activeTab === 'crear'
-                ? 'border-orange-primary text-orange-primary'
-                : 'border-transparent text-gray-lightest hover:text-white-primary'
-                }`}
-            >
-              {selectedCita ? 'Editar Cita' : 'Nueva Cita'}
-            </button>
+              }
+
+              // Si el slot es pasado Y NO se ha seleccionado una cita (para editar tab), no mostramos el botón de crear.
+              // O si lo mostramos, lo deshabilitamos. Mejor ocultarlo si no hay cita seleccionada.
+              if (slotEsPasado && !selectedCita) {
+                 return null;
+              }
+
+              return (
+                <button
+                  onClick={() => {
+                    setActiveTab('crear');
+                    setShowFormErrors(false);
+                    if (!selectedCita) {
+                      setNuevaCita({
+                        clienteId: 0,
+                        cliente: '',
+                        telefono: '',
+                        servicioId: null,
+                        paqueteId: null,
+                        servicio: '',
+                        barberoId: 0,
+                        barbero: '',
+                        fecha: selectedSlot?.fecha || '',
+                        hora: selectedSlot?.hora.toString().padStart(2, '0') + ':00' || '',
+                        duracion: 60,
+                        precio: 0,
+                        estado: 'Pendiente',
+                        notas: ''
+                      });
+                    }
+                  }}
+                  className={`px-6 py-3 border-b-2 transition-colors ${activeTab === 'crear'
+                    ? 'border-orange-primary text-orange-primary'
+                    : 'border-transparent text-gray-lightest hover:text-white-primary'
+                    }`}
+                >
+                  {selectedCita ? 'Editar Cita' : 'Nueva Cita'}
+                </button>
+              );
+            })()}
             {activeTab === 'detalle' && selectedCita && (
               <button
                 onClick={() => setActiveTab('detalle')}
@@ -822,67 +969,85 @@ export function AgendamientoPage() {
 
               {/* Lista de citas */}
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {selectedSlot && getCitasEnSlot(selectedSlot.dia, selectedSlot.hora).map((cita) => (
-                  <div key={cita.id} className="bg-gray-darker border border-gray-dark rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: getCitaColor(cita.estado) }}
-                        />
-                        <h4 className="font-semibold text-white-primary">{cita.clienteNombre}</h4>
-                        <div className={`elegante-tag ${getEstadoInfo(cita.estado).color} text-white text-xs`}>
-                          {getEstadoInfo(cita.estado).label}
+                {selectedSlot && getCitasEnSlot(selectedSlot.dia, selectedSlot.hora).map((cita) => {
+                  let isPasada = false;
+                  const today = new Date();
+                  const todayStr = today.toISOString().split('T')[0];
+                  if (cita.fecha < todayStr) {
+                    isPasada = true;
+                  } else if (cita.fecha === todayStr) {
+                    const [hh] = String(cita.hora || '0').split(':');
+                    if (parseInt(hh, 10) <= today.getHours()) {
+                      isPasada = true;
+                    }
+                  }
+
+                  return (
+                    <div key={cita.id} className="bg-gray-darker border border-gray-dark rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-4 h-4 rounded-full"
+                            style={{ backgroundColor: getCitaColor(cita.estado) }}
+                          />
+                          <h4 className="font-semibold text-white-primary">{cita.clienteNombre}</h4>
+                          <div className={`elegante-tag ${getEstadoInfo(cita.estado).color} text-white text-xs`}>
+                            {getEstadoInfo(cita.estado).label}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          {/* Cambio rápido de estado */}
+                          <Select value={cita.estado} onValueChange={(value) => handleChangeEstado(cita.id, value)}>
+                            <SelectTrigger className="w-32 h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-gray-darkest border-gray-dark">
+                              {estados.map((estado) => (
+                                <SelectItem key={estado.value} value={estado.value} className="text-white-primary text-xs">
+                                  {estado.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDetail(cita);
+                            }}
+                            className="p-2 rounded bg-blue-600/20 hover:bg-blue-600/30 transition-colors"
+                            title="Ver detalle"
+                          >
+                            <Eye className="w-4 h-4 text-blue-400" />
+                          </button>
+                          
+                          {!isPasada && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditCita(cita);
+                                }}
+                                className="p-2 rounded bg-orange-primary/20 hover:bg-orange-primary/30 transition-colors"
+                                title="Editar"
+                              >
+                                <Edit className="w-4 h-4 text-orange-primary" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  console.log("Click en icono Eliminar (Trash2)");
+                                  handleDeleteCita(cita);
+                                }}
+                                className="p-2 rounded bg-red-600/20 hover:bg-red-600/30 transition-colors"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-400" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
-
-                      <div className="flex gap-2">
-                        {/* Cambio rápido de estado */}
-                        <Select value={cita.estado} onValueChange={(value) => handleChangeEstado(cita.id, value)}>
-                          <SelectTrigger className="w-32 h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-gray-darkest border-gray-dark">
-                            {estados.map((estado) => (
-                              <SelectItem key={estado.value} value={estado.value} className="text-white-primary text-xs">
-                                {estado.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewDetail(cita);
-                          }}
-                          className="p-2 rounded bg-blue-600/20 hover:bg-blue-600/30 transition-colors"
-                          title="Ver detalle"
-                        >
-                          <Eye className="w-4 h-4 text-blue-400" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditCita(cita);
-                          }}
-                          className="p-2 rounded bg-orange-primary/20 hover:bg-orange-primary/30 transition-colors"
-                          title="Editar"
-                        >
-                          <Edit className="w-4 h-4 text-orange-primary" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            console.log("Click en icono Eliminar (Trash2)");
-                            handleDeleteCita(cita);
-                          }}
-                          className="p-2 rounded bg-red-600/20 hover:bg-red-600/30 transition-colors"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </button>
-                      </div>
-                    </div>
 
                     <div className="grid grid-cols-2 gap-4 text-sm text-gray-lightest">
                       <div>
@@ -905,7 +1070,8 @@ export function AgendamientoPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                );
+              })}
 
                 {selectedSlot && getCitasEnSlot(selectedSlot.dia, selectedSlot.hora).length === 0 && (
                   <div className="text-center py-8">
@@ -1077,6 +1243,42 @@ export function AgendamientoPage() {
                     </div>
                     {showFormErrors && !nuevaCita.barberoId && (
                       <p className="text-xs text-red-400 mt-1">Este campo es obligatorio.</p>
+                    )}
+                    {nuevaCita.barberoId > 0 && (
+                      <div className="mt-2 p-3 bg-gray-darker border border-gray-dark rounded-lg">
+                        <p className="text-[11px] font-semibold text-gray-light mb-2">
+                          Horas disponibles el {nuevaCita.fecha ? new Date(`${nuevaCita.fecha}T12:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' }) : 'día seleccionado'} (Click para usar):
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(() => {
+                            if (!nuevaCita.fecha) {
+                              return <div className="text-[11px] text-gray-lightest italic">Selecciona una fecha en 'Programación' primero</div>;
+                            }
+
+                            const horasLibres = getHorasDisponiblesParaDia(nuevaCita.fecha, nuevaCita.barberoId, nuevaCita.duracion || 60);
+                            
+                            if (horasLibres.length === 0) {
+                              return <div className="text-[11px] text-red-400 italic">El barbero no trabaja este día o ya no tiene disponibilidad.</div>;
+                            }
+
+                            return horasLibres.map((horaDisp, idx) => (
+                              <div 
+                                key={idx}
+                                className={`cursor-pointer text-[11px] px-2 py-1 rounded transition-all border flex items-center gap-1 ${
+                                  nuevaCita.hora === horaDisp 
+                                    ? "bg-orange-primary/20 border-orange-primary/80 shadow-[0_0_8px_rgba(216,176,129,0.3)]" 
+                                    : "bg-gray-darkest border-gray-dark hover:border-orange-primary/50 hover:bg-orange-primary/10"
+                                }`}
+                                onClick={() => setNuevaCita({ ...nuevaCita, hora: horaDisp })}
+                                title={`Seleccionar las ${horaDisp}`}
+                              >
+                                <Clock className="w-3 h-3 text-orange-primary/70" />
+                                <span className={nuevaCita.hora === horaDisp ? "text-orange-primary font-bold" : "text-gray-lightest"}>{horaDisp}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

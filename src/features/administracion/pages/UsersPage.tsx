@@ -593,6 +593,14 @@ export function UsersPage() {
     const user = users.find(u => u.id === userId);
     if (!user) return;
 
+    if (currentUser?.id === userId.toString()) {
+      showError(
+        "Acción no permitida",
+        "Este es el usuario en uso. No puedes eliminar tu propia cuenta mientras estás en una sesión activa."
+      );
+      return;
+    }
+
     setUserToDelete(user);
     setIsDeleteDialogOpen(true);
   };
@@ -1133,7 +1141,7 @@ export function UsersPage() {
                         </td>
                         <td className="text-right py-4 px-4">
                           <div className="flex justify-end gap-1">
-                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin'].includes(user.rol?.toLowerCase() || '')) && (
+                            {currentUser?.id !== user.id.toString() && (currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin', 'administrador', 'admin'].includes(user.rol?.toLowerCase() || '')) && (
                               <button
                                 onClick={() => toggleUserStatus(user.id)}
                                 className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -1156,7 +1164,7 @@ export function UsersPage() {
                             >
                               <Eye className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
                             </button>
-                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin'].includes(user.rol?.toLowerCase() || '')) && (
+                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin', 'administrador', 'admin'].includes(user.rol?.toLowerCase() || '')) && (
                               <button
                                 onClick={() => handleEditUser(user)}
                                 className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
@@ -1172,7 +1180,7 @@ export function UsersPage() {
                             >
                               <KeyRound className="w-4 h-4 text-gray-lightest group-hover:text-orange-primary" />
                             </button>
-                            {(currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin', 'administrador', 'admin'].includes(user.rol?.toLowerCase() || '')) && (
+                            {currentUser?.id !== user.id.toString() && (currentUser?.role === 'super_admin' || !['super administrador', 'gerente', 'super_admin', 'administrador', 'admin'].includes(user.rol?.toLowerCase() || '')) && (
                               <button
                                 onClick={() => handleDeleteUser(user.id)}
                                 className="p-2 hover:bg-gray-darker rounded-lg transition-colors group"
